@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+yfinance
+pandas
+numpy
+scipy
+httpx
+beautifulsoup4
+python-dotenv
+pydantic
+sqlalchemy
+aiosqlite
+pyjwt
+passlib[bcrypt]
+cryptography
