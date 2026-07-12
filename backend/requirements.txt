@@ -13,3 +13,5 @@ aiosqlite
 pyjwt
 passlib[bcrypt]
 cryptography
+dhanhq
+
