@@ -8,7 +8,7 @@ db_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.ab
 os.makedirs(db_dir, exist_ok=True)
 db_path = os.path.join(db_dir, "options_oracle.db")
 
-DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
 
 engine = create_async_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
