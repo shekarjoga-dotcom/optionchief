@@ -76,3 +76,26 @@ def get_execution_config(current_user: User = Depends(get_current_user)):
             "mode": "sandbox_simulation"
         }
     }
+
+class SetDhanTokenRequest(BaseModel):
+    token: str
+
+@router.post("/dhan-token")
+def set_dhan_token(
+    data: SetDhanTokenRequest,
+    current_user: User = Depends(get_current_user)
+):
+    import os
+    token_dir = "/data" if os.path.exists("/data") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+    os.makedirs(token_dir, exist_ok=True)
+    token_path = os.path.join(token_dir, "dhan_token.txt")
+    
+    try:
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(data.token.strip())
+        return {"status": "success", "message": "Dhan token updated successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save Dhan token: {str(e)}"
+        )

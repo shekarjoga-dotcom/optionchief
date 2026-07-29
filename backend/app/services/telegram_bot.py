@@ -103,8 +103,29 @@ async def handle_message(token: str, message: dict):
         await handle_list_batch(token, chat_id)
     elif command == "/run_batch":
         await handle_run_batch(token, chat_id, args)
+    elif command == "/set_dhan_token":
+        await handle_set_dhan_token(token, chat_id, args)
     else:
         await send_telegram_msg(token, chat_id, f"Unknown command: {command}. Type /help to see all available commands.")
+
+async def handle_set_dhan_token(token: str, chat_id: int, args: list):
+    if not args:
+        await send_telegram_msg(token, chat_id, "❌ <b>Usage:</b> <code>/set_dhan_token &lt;token&gt;</code>")
+        return
+        
+    dhan_token = args[0].strip()
+    
+    # Resolve token path dynamically
+    token_dir = "/data" if os.path.exists("/data") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+    os.makedirs(token_dir, exist_ok=True)
+    token_path = os.path.join(token_dir, "dhan_token.txt")
+    
+    try:
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(dhan_token)
+        await send_telegram_msg(token, chat_id, "✅ <b>Dhan access token updated successfully!</b> OptionsOracle will now use this token dynamically for F&O data queries.")
+    except Exception as e:
+        await send_telegram_msg(token, chat_id, f"❌ <b>Failed to write token file:</b> {e}")
 
 async def handle_help(token: str, chat_id: int):
     allowed_chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -125,7 +146,8 @@ async def handle_help(token: str, chat_id: int):
         "/scan - Trigger the options alert scanner manually\n\n"
         "⚙️ <b>Remote Administration</b>\n"
         "/list_batch - List all batch (.bat) files in the server root\n"
-        "/run_batch &lt;file.bat&gt; - Run a batch file and see output"
+        "/run_batch &lt;file.bat&gt; - Run a batch file and see output\n"
+        "/set_dhan_token &lt;token&gt; - Set the daily Dhan Access Token"
     )
     await send_telegram_msg(token, chat_id, help_text)
 

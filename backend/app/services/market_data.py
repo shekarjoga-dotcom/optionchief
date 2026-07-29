@@ -73,21 +73,45 @@ class MarketDataService:
             self._has_curl_cffi = False
             self._nse_session = None
         
-        # Dhan API configuration
+        # Dhan API configuration (dynamically loaded via properties)
         self.dhan_client_id = os.getenv("DHAN_CLIENT_ID")
-        self.dhan_access_token = os.getenv("DHAN_ACCESS_TOKEN")
-        self.is_dhan_enabled = bool(self.dhan_client_id and self.dhan_access_token)
+        self._cached_token = None
+        self._dhan_client = None
+
+    @property
+    def dhan(self):
+        token_path = "/data/dhan_token.txt" if os.path.exists("/data") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "dhan_token.txt")
         
-        if self.is_dhan_enabled:
-            print(f"[Dhan API] Found Dhan API credentials. Initializing live client for ID: {self.dhan_client_id}")
+        active_token = None
+        if os.path.exists(token_path):
             try:
-                from dhanhq import dhanhq, DhanContext
-                context = DhanContext(self.dhan_client_id, self.dhan_access_token)
-                self.dhan = dhanhq(context)
-                print("[Dhan API] Live client connected successfully.")
-            except ImportError:
-                print("[Dhan API] dhanhq library is not installed. Please run 'pip install dhanhq' to enable live broker feeds.")
-                self.is_dhan_enabled = False
+                with open(token_path, "r", encoding="utf-8") as f:
+                    active_token = f.read().strip()
+            except Exception:
+                pass
+                
+        if not active_token:
+            active_token = os.getenv("DHAN_ACCESS_TOKEN")
+            
+        if active_token != self._cached_token or self._dhan_client is None:
+            self._cached_token = active_token
+            if self.dhan_client_id and active_token:
+                try:
+                    from dhanhq import dhanhq, DhanContext
+                    context = DhanContext(self.dhan_client_id, active_token)
+                    self._dhan_client = dhanhq(context)
+                    print(f"[Dhan API] Live client dynamically initialized/refreshed for ID: {self.dhan_client_id}")
+                except Exception as e:
+                    print(f"[Dhan API] Dynamic client connection failed: {e}")
+                    self._dhan_client = None
+            else:
+                self._dhan_client = None
+                
+        return self._dhan_client
+
+    @property
+    def is_dhan_enabled(self) -> bool:
+        return self.dhan is not None
 
     def _clean_symbol(self, symbol: str) -> str:
         symbol_upper = symbol.upper()

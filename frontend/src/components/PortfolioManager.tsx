@@ -43,6 +43,7 @@ export const PortfolioManager: React.FC = () => {
   } | null>(null);
   const [selectedBroker, setSelectedBroker] = useState<'paper' | 'dhan' | 'kotak'>('paper');
   const [isExecutingTrade, setIsExecutingTrade] = useState(false);
+  const [dhanInputToken, setDhanInputToken] = useState('');
 
   const handleExecuteTrade = async () => {
     if (!executeModalData) return;
@@ -968,6 +969,51 @@ export const PortfolioManager: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {selectedBroker === 'dhan' && (
+              <div className="bg-gray-950/40 border border-borderClr/30 rounded-xl p-3 flex flex-col gap-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Dhan Daily Token Manager</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="Paste new daily Dhan token..."
+                    value={dhanInputToken}
+                    onChange={(e) => setDhanInputToken(e.target.value)}
+                    className="flex-1 bg-gray-900 border border-borderClr/40 rounded-lg px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-greenBrand"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!dhanInputToken.trim()) return;
+                      const authTok = localStorage.getItem("options_oracle_token") || "mock_bypass_token";
+                      try {
+                        const response = await fetch(`${BACKEND_URL}/api/trade/dhan-token`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authTok}`
+                          },
+                          body: JSON.stringify({ token: dhanInputToken.trim() })
+                        });
+                        if (response.ok) {
+                          alert('Dhan Token updated successfully!');
+                          setDhanInputToken('');
+                        } else {
+                          const errData = await response.json();
+                          alert(`Error: ${errData.detail || 'Failed to update token'}`);
+                        }
+                      } catch (err: any) {
+                        alert(`Connection error: ${err.message}`);
+                      }
+                    }}
+                    className="bg-greenBrand/25 hover:bg-greenBrand/40 text-greenBrand border border-greenBrand/50 rounded-lg px-3 py-1 text-xs font-semibold transition-all animate-pulse-subtle"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Leg Breakdown */}
             <div className="flex flex-col gap-2">
