@@ -185,7 +185,7 @@ export const AlertsPanel: React.FC = () => {
 
   // Order execution state
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
-  const [selectedBroker, setSelectedBroker] = useState<'paper' | 'delta_demo' | 'delta_live'>('paper');
+  const [selectedBroker, setSelectedBroker] = useState<'paper' | 'dhan' | 'kotak'>('paper');
   const [isExecutingTrade, setIsExecutingTrade] = useState(false);
 
   // Countdown timer local state
@@ -1267,11 +1267,11 @@ export const AlertsPanel: React.FC = () => {
                 <select
                   value={selectedBroker}
                   onChange={(e: any) => setSelectedBroker(e.target.value)}
-                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs outline-none focus:border-emerald-400"
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs outline-none focus:border-emerald-400 animate-fadeIn"
                 >
                   <option value="paper">Paper Trading (Simulated Account)</option>
-                  <option value="delta_demo">Delta Exchange Demo (Demo/Testnet API)</option>
-                  <option value="delta_live">Delta Exchange Live (Live API)</option>
+                  <option value="dhan">Dhan API (Live Trading)</option>
+                  <option value="kotak">Kotak Neo (Live Trading)</option>
                 </select>
               </div>
 
@@ -1281,26 +1281,22 @@ export const AlertsPanel: React.FC = () => {
                 <span className="block mt-1 text-[11px]">Expiry: {selectedAlert.expiry} • POP: {selectedAlert.pop}%</span>
               </div>
 
-              {(selectedBroker === 'delta_demo' || selectedBroker === 'delta_live') && executionConfig ? (
+              {(selectedBroker === 'dhan' || selectedBroker === 'kotak') && executionConfig ? (
                 (() => {
-                  const isLive = selectedBroker === 'delta_live';
-                  const networkConfig = isLive ? (executionConfig as any).live : (executionConfig as any).demo;
-                  const isSandbox = networkConfig?.mode === 'sandbox_simulation';
+                  const isDhan = selectedBroker === 'dhan';
+                  const brokerConfig = isDhan ? (executionConfig as any).dhan : (executionConfig as any).kotak;
+                  const isSandbox = brokerConfig?.mode === 'sandbox_simulation';
 
                   return (
                     <div className={`p-3 rounded-lg text-[11px] border ${
                       isSandbox
                         ? "bg-blue-500/10 border-blue-500/25 text-blue-300"
-                        : isLive
-                          ? "bg-amber-500/10 border-amber-500/25 text-amber-300"
-                          : "bg-green-500/10 border-green-500/25 text-green-300"
+                        : "bg-green-500/10 border-green-500/25 text-green-300"
                     }`}>
                       {isSandbox ? (
-                        <span>ℹ️ Delta Exchange ({isLive ? "Live" : "Demo"}) is running in <strong>Sandbox Simulation Mode</strong>. Order requests are logged locally in the backend without placing real trades.</span>
-                      ) : isLive ? (
-                        <span>⚠️ Live executions immediately submit real orders to Delta Exchange. Verify your live API credentials.</span>
+                        <span>ℹ️ {isDhan ? "Dhan" : "Kotak Neo"} is running in <strong>Sandbox Simulation Mode</strong>. Order requests are logged locally in the backend without placing real trades.</span>
                       ) : (
-                        <span>ℹ️ Demo execution submits orders to the Delta Exchange Demo (testnet) environment. Verify your demo API credentials.</span>
+                        <span>⚠️ Live executions immediately submit real F&O orders to {isDhan ? "DhanHQ" : "Kotak Neo"}. Verify your credentials.</span>
                       )}
                     </div>
                   );
