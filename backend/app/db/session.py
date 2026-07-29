@@ -10,15 +10,26 @@ db_path = os.path.join(db_dir, "options_oracle.db")
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
 
-# Automatically ensure parent directory of DATABASE_URL exists to prevent sqlite connection errors
+# Automatically ensure parent directory of DATABASE_URL exists and is writable to prevent sqlite connection errors
 if DATABASE_URL.startswith("sqlite+aiosqlite:///"):
     db_file_path = DATABASE_URL.replace("sqlite+aiosqlite:///", "")
     parent_dir = os.path.dirname(db_file_path)
     if parent_dir:
+        is_writable = False
         try:
             os.makedirs(parent_dir, exist_ok=True)
+            # Test writing to directory to verify permissions
+            test_file = os.path.join(parent_dir, ".write_test")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            is_writable = True
         except Exception as e:
-            print(f"[DB Session] Warning: could not create parent directory {parent_dir}: {e}")
+            print(f"[DB Session] Warning: database directory {parent_dir} is not writable or cannot be created: {e}")
+            
+        if not is_writable:
+            print(f"[DB Session] Falling back to default database path: {db_path}")
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
 
 engine = create_async_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
