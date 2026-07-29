@@ -464,6 +464,53 @@ export const PortfolioManager: React.FC = () => {
         </div>
       </div>
 
+      {/* Dhan Access Token Banner */}
+      <div className="bg-gray-950/40 border border-borderClr/30 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 px-4">
+        <div className="flex flex-col">
+          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+            🔑 Dhan Daily API Token
+          </span>
+          <span className="text-[9px] text-gray-500">Update your daily access token to fetch F&O live option chains.</span>
+        </div>
+        <div className="flex gap-2 items-center w-full md:w-auto md:max-w-md">
+          <input
+            type="password"
+            placeholder="Paste your daily Dhan token here..."
+            value={dhanInputToken}
+            onChange={(e) => setDhanInputToken(e.target.value)}
+            className="flex-1 min-w-[200px] bg-gray-900 border border-borderClr/40 rounded-lg px-2.5 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-greenBrand"
+          />
+          <button
+            onClick={async () => {
+              if (!dhanInputToken.trim()) return;
+              const authTok = localStorage.getItem("options_oracle_token") || "mock_bypass_token";
+              try {
+                const response = await fetch(`${BACKEND_URL}/api/trade/dhan-token`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authTok}`
+                  },
+                  body: JSON.stringify({ token: dhanInputToken.trim() })
+                });
+                if (response.ok) {
+                  alert('Dhan Token updated successfully!');
+                  setDhanInputToken('');
+                } else {
+                  const errData = await response.json();
+                  alert(`Error: ${errData.detail || 'Failed to update token'}`);
+                }
+              } catch (err: any) {
+                alert(`Connection error: ${err.message}`);
+              }
+            }}
+            className="bg-greenBrand/20 hover:bg-greenBrand/35 text-greenBrand border border-greenBrand/40 rounded-lg px-4 py-1 text-xs font-semibold transition-all shrink-0"
+          >
+            Update Token
+          </button>
+        </div>
+      </div>
+
       <div className="glass-panel rounded-xl p-4">
         {/* Render Open Positions */}
         {viewMode === 'open' && (
