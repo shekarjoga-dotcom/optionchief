@@ -13,6 +13,7 @@ import { PortfolioManager } from './components/PortfolioManager';
 import { HedgingAdvisor } from './components/HedgingAdvisor';
 import { LoginView } from './components/LoginView';
 import { HelpPanel } from './components/HelpPanel';
+import RsiScannerPanel from './components/RsiScannerPanel';
 import {
   TrendingUp,
   Layers,
@@ -24,7 +25,8 @@ import {
   User,
   Bell,
   History,
-  HelpCircle
+  HelpCircle,
+  Zap
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -52,7 +54,7 @@ const App: React.FC = () => {
   const symbolRef = useRef(symbol);
   const alertRulesRef = useRef(alertRules);
 
-  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help'>('chain');
+  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner'>('chain');
   const [backgroundNotification, setBackgroundNotification] = useState<string | null>(null);
   const [marketTickers, setMarketTickers] = useState<any[]>([]);
   const [businessNews, setBusinessNews] = useState<any[]>([]);
@@ -599,7 +601,7 @@ const App: React.FC = () => {
         {error && (
           <div className="bg-redBrand/10 border border-redBrand/30 text-redBrand rounded-xl p-3 flex items-center gap-2 text-xs">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span><strong>Connection Error:</strong> {error}. Make sure the FastAPI backend is running on http://localhost:8000. Showing mock fallbacks.</span>
+            <span><strong>Connection Error:</strong> {error}. Make sure the FastAPI backend is running on <code className="bg-redBrand/5 px-1.5 py-0.5 rounded border border-redBrand/20">{BACKEND_URL}</code>. Showing mock fallbacks.</span>
           </div>
         )}
 
@@ -612,6 +614,7 @@ const App: React.FC = () => {
             {[
               { id: 'chain', label: 'Option Chain', icon: Layers },
               { id: 'scanner', label: 'Strategy Scanner', icon: Search },
+              { id: 'rsi_scanner', label: 'RSI Scanner', icon: Zap },
               { id: 'alerts', label: 'Strategy Alerts', icon: Bell },
               { id: 'backtest', label: 'Backtester', icon: History },
               { id: 'builder', label: 'Strategy Analyzer', icon: TrendingUp },
@@ -674,6 +677,10 @@ const App: React.FC = () => {
 
           {activeTab === 'portfolios' && (
             <PortfolioManager />
+          )}
+
+          {activeTab === 'rsi_scanner' && (
+            <RsiScannerPanel />
           )}
 
           {activeTab === 'help' && (
