@@ -644,48 +644,48 @@ const App: React.FC = () => {
 
         {/* Tab Contents */}
         <div className="flex flex-col gap-6 min-h-[400px]">
-          {activeTab === 'chain' && (
+          <div style={{ display: activeTab === 'chain' ? 'block' : 'none' }}>
             <div className="flex flex-col gap-6">
               <ExpirySelector />
               <OptionChainTable />
             </div>
-          )}
+          </div>
 
-          {activeTab === 'scanner' && (
+          <div style={{ display: activeTab === 'scanner' ? 'block' : 'none' }}>
             <ScannerPanel />
-          )}
+          </div>
 
-          {activeTab === 'alerts' && (
+          <div style={{ display: activeTab === 'alerts' ? 'block' : 'none' }}>
             <AlertsPanel />
-          )}
+          </div>
 
-          {activeTab === 'backtest' && (
+          <div style={{ display: activeTab === 'backtest' ? 'block' : 'none' }}>
             <BacktesterPanel />
-          )}
+          </div>
 
-          {activeTab === 'builder' && (
+          <div style={{ display: activeTab === 'builder' ? 'block' : 'none' }}>
             <div className="flex flex-col gap-6">
               <LegManager />
               <HedgingAdvisor />
               <PayoffChart />
             </div>
-          )}
+          </div>
 
-          {activeTab === 'cone' && (
+          <div style={{ display: activeTab === 'cone' ? 'block' : 'none' }}>
             <VolatilityCone />
-          )}
+          </div>
 
-          {activeTab === 'portfolios' && (
+          <div style={{ display: activeTab === 'portfolios' ? 'block' : 'none' }}>
             <PortfolioManager />
-          )}
+          </div>
 
-          {activeTab === 'rsi_scanner' && (
+          <div style={{ display: activeTab === 'rsi_scanner' ? 'block' : 'none' }}>
             <RsiScannerPanel />
-          )}
+          </div>
 
-          {activeTab === 'help' && (
+          <div style={{ display: activeTab === 'help' ? 'block' : 'none' }}>
             <HelpPanel />
-          )}
+          </div>
         </div>
       </main>
     </div>

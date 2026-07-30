@@ -31,14 +31,17 @@ if DATABASE_URL.startswith("sqlite+aiosqlite:///"):
             print(f"[DB Session] Falling back to default database path: {db_path}")
             DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
 
-engine = create_async_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
+if "sqlite" in DATABASE_URL:
+    engine = create_async_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
-@event.listens_for(engine.sync_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.close()
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+else:
+    engine = create_async_engine(DATABASE_URL, echo=False)
 
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
