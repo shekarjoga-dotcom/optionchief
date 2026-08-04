@@ -12,7 +12,9 @@ import os
 # Map user-friendly symbols to Yahoo tickers
 SYMBOL_MAPPING = {
     "NIFTY": "^NSEI",
+    "NIFTY 50": "^NSEI",
     "BANKNIFTY": "^NSEBANK",
+    "BANK NIFTY": "^NSEBANK",
     "SENSEX": "^BSESN",
     "NIFTYIT": "^CNXIT",
     "NIFTYCPSE": "NIFTY_CPSE.NS", # or custom mock
@@ -114,7 +116,15 @@ class MarketDataService:
         return self.dhan is not None
 
     def _clean_symbol(self, symbol: str) -> str:
-        symbol_upper = symbol.upper()
+        symbol_upper = symbol.upper().strip()
+        if symbol_upper in ["NIFTY 50", "NIFTY50"]:
+            return "NIFTY"
+        if symbol_upper in ["BANK NIFTY", "BANKNIFTY"]:
+            return "BANKNIFTY"
+        if symbol_upper in ["FIN NIFTY", "FINNIFTY"]:
+            return "FINNIFTY"
+        if symbol_upper in ["MIDCAP NIFTY", "MIDCPNIFTY"]:
+            return "MIDCPNIFTY"
         if symbol_upper.endswith("1!"):
             symbol_upper = symbol_upper[:-2]
         if symbol_upper == "NATURALGASM":
