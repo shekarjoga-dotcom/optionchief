@@ -10,7 +10,6 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
-  Activity,
   Search,
   History,
   BarChart2,
@@ -22,6 +21,7 @@ import {
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 
 export const LoginView: React.FC = () => {
   const { 
@@ -154,12 +154,14 @@ export const LoginView: React.FC = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
             {/* Logo */}
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-accentBrand to-accentCyan flex items-center justify-center shadow-lg shadow-accentBrand/20">
-                <Activity className="w-4 h-4 text-black stroke-[3px]" />
-              </div>
+              <img 
+                src={logoImg} 
+                className="w-9 h-9 rounded-lg object-cover bg-gray-900 border border-borderClr/60 shadow-lg shadow-accentBrand/10" 
+                alt="OptionChief Logo" 
+              />
               <div>
-                <h1 className="text-sm font-extrabold text-white tracking-wider uppercase leading-none">OptionsOracle</h1>
-                <span className="text-[9px] text-accentCyan font-bold tracking-widest uppercase">Reborn v2.0</span>
+                <h1 className="text-sm font-extrabold text-white tracking-wider leading-none">optionchief.in</h1>
+                <span className="text-[9px] text-accentCyan font-bold tracking-widest uppercase">F&O Analytics v2.0</span>
               </div>
             </div>
 
@@ -361,7 +363,7 @@ export const LoginView: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-extrabold text-white uppercase">Dynamic Auto-Scanner</h4>
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  Set target yield criteria, Greeks parameters, or margin caps. OptionsOracle runs background checks on selected expiries, flashing desktop audio triggers on a match.
+                  Set target yield criteria, Greeks parameters, or margin caps. optionchief.in runs background checks on selected expiries, flashing desktop audio triggers on a match.
                 </p>
               </div>
 
@@ -496,20 +498,20 @@ export const LoginView: React.FC = () => {
             <div className="flex flex-col gap-4">
               {[
                 {
-                  q: "What is OptionsOracle Reborn?",
-                  a: "OptionsOracle Reborn is an advanced multi-leg options analytics, scanning, and execution terminal. It allows you to visualize potential strategy payoff curves, calculate portfolio-wide Greeks (Delta, Gamma, Theta), and execute simulated or live trades instantly on ticking feeds."
+                  q: "What is optionchief.in?",
+                  a: "optionchief.in is an advanced multi-leg options analytics, scanning, and execution terminal. It allows you to visualize potential strategy payoff curves, calculate portfolio-wide Greeks (Delta, Gamma, Theta), and execute simulated or live trades instantly on ticking feeds."
                 },
                 {
                   q: "How does the Live Broker Integration work?",
                   a: "By upgrading to the Live Execution plan, you can securely link your Dhan or Kotak Neo accounts via their official API integrations. Alerts matched in the background scanner can be routed as basket orders directly to your broker terminal in one click."
                 },
                 {
-                  q: "Can I use OptionsOracle on mobile devices?",
+                  q: "Can I use optionchief.in on mobile devices?",
                   a: "Yes. The platform is built using fully responsive CSS frameworks and designed to adapt perfectly to mobile screens, allowing you to track open positions and review alerts on the go."
                 },
                 {
                   q: "Is there support for commodity options (MCX)?",
-                  a: "Yes. OptionsOracle fully supports commodity continuous futures and options contracts for Gold, Silver, Crude Oil, and Natural Gas, automatically routing orders to commodity broker exchanges."
+                  a: "Yes. optionchief.in fully supports commodity continuous futures and options contracts for Gold, Silver, Crude Oil, and Natural Gas, automatically routing orders to commodity broker exchanges."
                 }
               ].map((faq, index) => {
                 const isExpanded = expandedFaq === index;
@@ -542,7 +544,7 @@ export const LoginView: React.FC = () => {
         <footer className="border-t border-borderClr/20 py-8 bg-gray-950">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-[10px] text-gray-500">
             <div>
-              © 2026 OptionsOracle Reborn. A product of B.Networks F&O Hub.
+              © 2026 optionchief.in. A product of B.Networks F&O Hub.
             </div>
             <div className="flex gap-4">
               <a href="#features" className="hover:underline">Features</a>
@@ -580,9 +582,9 @@ export const LoginView: React.FC = () => {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-accentBrand/10 border border-accentBrand/20 text-accentBrand text-xs font-bold mb-4 animate-pulse">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>OptionsOracle Secure Portal</span>
+            <span>optionchief.in Secure Portal</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">OptionsOracle</h1>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">optionchief.in</h1>
           <p className="text-xs text-gray-400 mt-1">Real-time Options Analytics & Execution Desk</p>
         </div>
 

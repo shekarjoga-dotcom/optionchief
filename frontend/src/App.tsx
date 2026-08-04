@@ -19,7 +19,6 @@ import {
   Layers,
   BarChart2,
   Briefcase,
-  Activity,
   AlertCircle,
   Search,
   User,
@@ -32,6 +31,7 @@ import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
 
 import { BACKEND_URL } from './config';
+import logoImg from './assets/logo.png';
 
 const App: React.FC = () => {
   const { 
@@ -545,12 +545,14 @@ const App: React.FC = () => {
       <header className="border-b border-borderClr/60 bg-gray-950/80 sticky top-0 z-40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-accentBrand to-accentCyan flex items-center justify-center shadow-lg shadow-accentBrand/20">
-              <Activity className="w-4 h-4 text-black stroke-[3px]" />
-            </div>
+            <img 
+              src={logoImg} 
+              className="w-9 h-9 rounded-lg object-cover bg-gray-900 border border-borderClr/60 shadow-lg shadow-accentBrand/10" 
+              alt="OptionChief Logo" 
+            />
             <div>
-              <h1 className="text-sm font-extrabold text-white tracking-wider uppercase leading-none">OptionsOracle</h1>
-              <span className="text-[10px] text-accentCyan font-bold tracking-widest uppercase">Reborn v2.0</span>
+              <h1 className="text-sm font-extrabold text-white tracking-wider leading-none">optionchief.in</h1>
+              <span className="text-[10px] text-accentCyan font-bold tracking-widest uppercase">F&O Analytics v2.0</span>
             </div>
           </div>
 

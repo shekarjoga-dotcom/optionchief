@@ -9,7 +9,7 @@ from app.routes import market, analytics, portfolio, auth, notifications, backte
 from app.db.session import engine, Base
 
 app = FastAPI(
-    title="OptionsOracle Reborn API",
+    title="optionchief.in API",
     description="Quantitative Option Strategy Analysis and Portfolio Management Backend Engine",
     version="1.0.0"
 )
@@ -84,6 +84,6 @@ app.include_router(rsi_scanner.router)
 def read_root():
     return {
         "status": "online",
-        "service": "OptionsOracle Reborn API",
+        "service": "optionchief.in API",
         "description": "Calculations and option chain scraper server."
     }

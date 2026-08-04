@@ -463,7 +463,7 @@ export const HelpPanel: React.FC = () => {
               <div className="flex items-start gap-2">
                 <Mail className="w-3.5 h-3.5 text-accentCyan shrink-0 mt-0.5" />
                 <div className="flex flex-col">
-                  <span className="text-white font-semibold">support@optionsoracle.in</span>
+                  <span className="text-white font-semibold">support@optionchief.in</span>
                   <span>We usually reply within 24 business hours.</span>
                 </div>
               </div>
