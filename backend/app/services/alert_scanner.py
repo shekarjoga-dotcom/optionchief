@@ -778,10 +778,15 @@ async def active_alerts_scanner_loop():
                         tp_val = p.takeProfit if p.takeProfit is not None else 20.0
                         sl_val = p.stopLoss if p.stopLoss is not None else 0.0
                         
-                        tp_trigger = round(max_profit_num * (tp_val / 100.0), 2)
+                        if metrics["maxProfit"] == 'Unlimited':
+                            # For Option Buying, target profit is calculated as % of premium paid (which is max_loss_num)
+                            tp_trigger = round(max_loss_num * (tp_val / 100.0), 2)
+                            is_tp_triggered = tp_val > 0.0 and unrealized_pnl >= tp_trigger
+                        else:
+                            tp_trigger = round(max_profit_num * (tp_val / 100.0), 2)
+                            is_tp_triggered = tp_val > 0.0 and unrealized_pnl >= tp_trigger and metrics["maxProfit"] != 'Unlimited'
+                            
                         sl_trigger = round(-max_loss_num * (sl_val / 100.0), 2)
-                        
-                        is_tp_triggered = tp_val > 0.0 and unrealized_pnl >= tp_trigger and metrics["maxProfit"] != 'Unlimited'
                         is_sl_triggered = sl_val > 0.0 and unrealized_pnl <= sl_trigger and metrics["maxLoss"] != 'Unlimited'
                         
                         if is_tp_triggered or is_sl_triggered:

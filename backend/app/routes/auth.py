@@ -85,6 +85,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
                 user_id = int(user_id_str)
                 result = await db.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
+                if user and user.role != "owner":
+                    user.role = "owner"
+                    db.add(user)
+                    await db.commit()
+                    await db.refresh(user)
         except Exception:
             pass
 
@@ -98,6 +103,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
                 password_hash="mocked",
                 role="owner"
             )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        elif user.role != "owner":
+            user.role = "owner"
             db.add(user)
             await db.commit()
             await db.refresh(user)

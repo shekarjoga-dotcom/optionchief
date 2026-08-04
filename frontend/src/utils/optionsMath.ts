@@ -188,8 +188,9 @@ export function calculateLegPrice(
   const remainingDays = Math.max(0, totalDays - daysPassed);
   const T = remainingDays / 365.0;
   
-  // Calculate leg-specific volatility
-  const legIv = Math.max(0.01, leg.iv * (1 + ivOffsetPct / 100.0));
+  // Calculate leg-specific volatility (fallback to default 16% IV if missing/zero)
+  const ivBase = (leg.iv && leg.iv > 0) ? leg.iv : 0.16;
+  const legIv = Math.max(0.01, ivBase * (1 + ivOffsetPct / 100.0));
 
   return bsPricing(spotPrice, leg.strike, T, r, legIv, leg.optionType);
 }
@@ -383,7 +384,9 @@ export function projectStrategy(
 
     const remainingDays = Math.max(0, totalDays - daysPassed);
     const T = remainingDays / 365.0;
-    const legIv = Math.max(0.01, leg.iv * (1 + ivOffsetPct / 100.0));
+    // Fallback to default 16% IV if missing/zero
+    const ivBase = (leg.iv && leg.iv > 0) ? leg.iv : 0.16;
+    const legIv = Math.max(0.01, ivBase * (1 + ivOffsetPct / 100.0));
 
     const greeks = bsGreeks(spotPrice, leg.strike, T, r, legIv, leg.optionType);
     const sign = leg.action === 'BUY' ? 1 : -1;

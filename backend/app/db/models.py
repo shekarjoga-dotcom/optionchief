@@ -91,3 +91,43 @@ class TriggeredAlert(Base):
     created_at = Column(DateTime, default=func.now())
 
     user = relationship("User")
+
+
+class RSIScannerConfig(Base):
+    __tablename__ = "rsi_scanner_configs"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    symbol = Column(String, nullable=False, default="BANKNIFTY")
+    timeframe = Column(String, nullable=False, default="5m")
+    rsi_period = Column(Integer, default=3, nullable=False)
+    rsi_upper = Column(Float, default=80.0, nullable=False)
+    rsi_lower = Column(Float, default=20.0, nullable=False)
+    lot_size = Column(Integer, default=1, nullable=False)
+    moneyness = Column(String, default="ATM", nullable=False)
+    auto_execute = Column(Boolean, default=False, nullable=False)
+    tp_pct = Column(Float, default=30.0, nullable=False)
+    sl_pct = Column(Float, default=15.0, nullable=False)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User")
+
+
+class RSIScannerLog(Base):
+    __tablename__ = "rsi_scanner_logs"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    symbol = Column(String, nullable=False)
+    direction = Column(String, nullable=False)  # "BULLISH_CE" or "BEARISH_PE"
+    trigger_time = Column(String, nullable=False)
+    spot_price = Column(Float, nullable=False)
+    rsi_value = Column(Float, nullable=False)
+    option_leg_details = Column(JSON, nullable=False)
+    status = Column(String, default="PENDING")  # PENDING, EXECUTED, CLOSED, FAILED
+    realized_pnl = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User")
+
