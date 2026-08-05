@@ -1,3 +1,6 @@
+import sys
+sys.dont_write_bytecode = True
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv

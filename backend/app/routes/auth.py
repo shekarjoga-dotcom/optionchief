@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.db.models import User, OTPRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+AUTH_ROUTE_VERSION = "2026.08.05.v2"
 
 # Security Configurations
 JWT_SECRET = os.getenv("JWT_SECRET", "options_oracle_reborn_super_secret_key_change_me_in_prod_2026")
