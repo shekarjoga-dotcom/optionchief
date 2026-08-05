@@ -972,57 +972,56 @@ async def active_alerts_scanner_loop():
                                 print(f"[Alert Scanner] Persistent alert logged for rule {rule.id} on asset {sym}.")
                                 today_alerts.append(db_triggered)
                                 
-                                # B. Auto-Execute Paper Trade if checked!
-                                if rule.auto_execute:
-                                    print(f"[Alert Scanner Bot] AUTO EXECUTE Paper Trade triggered for rule {rule.id} on asset {sym}!")
-                                    legs_saved = []
-                                    for leg in scan["legs"]:
-                                        legs_saved.append({
-                                            "id": str(uuid.uuid4())[:8],
-                                            "strike": leg["strike"],
-                                            "optionType": leg["optionType"],
-                                            "expiry": leg["expiry"],
-                                            "action": leg["action"],
-                                            "quantity": 1, # default 1 lot
-                                            "entryPrice": leg.get("entryPrice") or 1.0,
-                                            "currentPrice": leg.get("entryPrice") or 1.0,
-                                            "iv": leg.get("iv") or 0.25,
-                                            "status": "ACTIVE",
-                                            "realizedPnL": 0.0
-                                        })
-                                    
-                                    # Create Portfolio entry
-                                    portfolio_name = f"Paper Auto: {scan['name']}"
-                                    portfolio_id = str(uuid.uuid4())
-                                    
-                                    db_portfolio = Portfolio(
-                                        id=portfolio_id,
-                                        user_id=rule.user_id,
-                                        name=portfolio_name,
-                                        symbol=sym,
-                                        description=f"Auto-Executed Paper Trade via Alert Rule {rule.id}",
-                                        legs=legs_saved,
-                                        createdAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                        marginDeployed=0.0,
-                                        realizedPnL=0.0,
-                                        entrySpot=spot,
-                                        peakProfit=0.0,
-                                        maxDrawdown=0.0,
-                                        takeProfit=rule.take_profit if rule.take_profit is not None else 20.0,
-                                        stopLoss=rule.stop_loss if rule.stop_loss is not None else 0.0
+                                # B. Always Auto-Execute Paper Trade for strategy alert triggers!
+                                print(f"[Alert Scanner Bot] Strategy alert triggered for rule {rule.id} on asset {sym}! Adding paper trade to book...")
+                                legs_saved = []
+                                for leg in scan["legs"]:
+                                    legs_saved.append({
+                                        "id": str(uuid.uuid4())[:8],
+                                        "strike": leg["strike"],
+                                        "optionType": leg["optionType"],
+                                        "expiry": leg["expiry"],
+                                        "action": leg["action"],
+                                        "quantity": 1, # default 1 lot
+                                        "entryPrice": leg.get("entryPrice") or 1.0,
+                                        "currentPrice": leg.get("entryPrice") or 1.0,
+                                        "iv": leg.get("iv") or 0.25,
+                                        "status": "ACTIVE",
+                                        "realizedPnL": 0.0
+                                    })
+                                
+                                # Create Portfolio entry
+                                portfolio_name = f"Paper Auto: {scan['name']}"
+                                portfolio_id = str(uuid.uuid4())
+                                
+                                db_portfolio = Portfolio(
+                                    id=portfolio_id,
+                                    user_id=rule.user_id,
+                                    name=portfolio_name,
+                                    symbol=sym,
+                                    description=f"Auto-Executed Paper Trade via Alert Rule {rule.id}",
+                                    legs=legs_saved,
+                                    createdAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    marginDeployed=0.0,
+                                    realizedPnL=0.0,
+                                    entrySpot=spot,
+                                    peakProfit=0.0,
+                                    maxDrawdown=0.0,
+                                    takeProfit=rule.take_profit if rule.take_profit is not None else 20.0,
+                                    stopLoss=rule.stop_loss if rule.stop_loss is not None else 0.0
+                                )
+                                
+                                # Save position & Deactivate rule
+                                async with async_session() as session2:
+                                    session2.add(db_portfolio)
+                                    await session2.execute(
+                                        update(AlertRule)
+                                        .where(AlertRule.id == rule.id)
+                                        .values(active=False)
                                     )
-                                    
-                                    # Save position & Deactivate rule
-                                    async with async_session() as session2:
-                                        session2.add(db_portfolio)
-                                        await session2.execute(
-                                            update(AlertRule)
-                                            .where(AlertRule.id == rule.id)
-                                            .values(active=False)
-                                        )
-                                        await session2.commit()
-                                    print(f"[Alert Scanner Bot] Deactivated rule {rule.id} and saved paper portfolio {portfolio_id}.")
-                                    break
+                                    await session2.commit()
+                                print(f"[Alert Scanner Bot] Deactivated rule {rule.id} and added paper trade portfolio {portfolio_id} to paper trading book.")
+                                break
                                     
                 except Exception as e:
                     print(f"[Alert Scanner] Error scanning symbol {sym}: {e}")

@@ -178,28 +178,27 @@ async def rsi_scanner_loop():
                     log_id = str(uuid.uuid4())
                     status_log = "PENDING"
                     
-                    # Execute position if configured
-                    if config.auto_execute:
-                        status_log = "EXECUTED"
-                        async with async_session() as session:
-                            new_portfolio = Portfolio(
-                                id=str(uuid.uuid4()),
-                                user_id=config.user_id,
-                                name=f"RSI-Auto {config.symbol} {leg_type}E {today.strftime('%d%b %H:%M')}",
-                                symbol=config.symbol,
-                                description=f"PA+RSI auto-trade: Spot={spot}, RSI={rsi_val:.1f}, Moneyness={config.moneyness}",
-                                legs=[leg_details],  # Store leg list directly in JSON column
-                                createdAt=today.isoformat(),
-                                marginDeployed=entry_price * total_qty,
-                                realizedPnL=0.0,
-                                entrySpot=spot,
-                                peakProfit=0.0,
-                                maxDrawdown=0.0,
-                                takeProfit=config.tp_pct,
-                                stopLoss=config.sl_pct
-                            )
-                            session.add(new_portfolio)
-                            await session.commit()
+                    # Always execute position to Paper Trade Book on strategy alert trigger
+                    status_log = "EXECUTED"
+                    async with async_session() as session:
+                        new_portfolio = Portfolio(
+                            id=str(uuid.uuid4()),
+                            user_id=config.user_id,
+                            name=f"Paper RSI: {config.symbol} {leg_type}E {today.strftime('%d%b %H:%M')}",
+                            symbol=config.symbol,
+                            description=f"PA+RSI auto-trade: Spot={spot}, RSI={rsi_val:.1f}, Moneyness={config.moneyness}",
+                            legs=[leg_details],  # Store leg list directly in JSON column
+                            createdAt=today.isoformat(),
+                            marginDeployed=entry_price * total_qty,
+                            realizedPnL=0.0,
+                            entrySpot=spot,
+                            peakProfit=0.0,
+                            maxDrawdown=0.0,
+                            takeProfit=config.tp_pct,
+                            stopLoss=config.sl_pct
+                        )
+                        session.add(new_portfolio)
+                        await session.commit()
                             
                     # Log the signal
                     async with async_session() as session:
