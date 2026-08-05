@@ -14,6 +14,7 @@ import { HedgingAdvisor } from './components/HedgingAdvisor';
 import { LoginView } from './components/LoginView';
 import { HelpPanel } from './components/HelpPanel';
 import RsiScannerPanel from './components/RsiScannerPanel';
+import { AdminPanel } from './components/AdminPanel';
 import {
   TrendingUp,
   Layers,
@@ -25,7 +26,9 @@ import {
   Bell,
   History,
   HelpCircle,
-  Zap
+  Zap,
+  Shield,
+  Key
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -47,6 +50,7 @@ const App: React.FC = () => {
     isAuthLoading, 
     checkAuthSession, 
     logout,
+    updateUserProfile,
     triggeredAlerts,
     fetchTriggeredAlerts
   } = useStore();
@@ -54,10 +58,14 @@ const App: React.FC = () => {
   const symbolRef = useRef(symbol);
   const alertRulesRef = useRef(alertRules);
 
-  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner'>('chain');
+  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>('chain');
   const [backgroundNotification, setBackgroundNotification] = useState<string | null>(null);
   const [marketTickers, setMarketTickers] = useState<any[]>([]);
   const [businessNews, setBusinessNews] = useState<any[]>([]);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [dhanClientIdInput, setDhanClientIdInput] = useState(user?.dhan_client_id || '');
+  const [dhanAccessTokenInput, setDhanAccessTokenInput] = useState(user?.dhan_access_token || '');
+  const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
 
   const seenAlertIdsRef = useRef<Set<string>>(new Set());
 
@@ -557,7 +565,7 @@ const App: React.FC = () => {
           </div>
 
           {/* User Profile & Actions */}
-          <div className="flex items-center gap-6 text-xs">
+          <div className="flex items-center gap-4 text-xs">
             <button
               onClick={() => setActiveTab('portfolios')}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 border border-borderClr/60 hover:border-gray-500 text-gray-300 hover:text-white font-bold transition-all"
@@ -565,15 +573,27 @@ const App: React.FC = () => {
               <Briefcase className="w-3.5 h-3.5" />
               <span>Paper Trading Book</span>
             </button>
+
+            <button
+              onClick={() => {
+                setDhanClientIdInput(user.dhan_client_id || '');
+                setDhanAccessTokenInput(user.dhan_access_token || '');
+                setShowProfileModal(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold transition-all"
+            >
+              <Key className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Profile & Keys</span>
+            </button>
             
-            <div className="flex items-center gap-3 border-l border-borderClr/60 pl-5">
+            <div className="flex items-center gap-3 border-l border-borderClr/60 pl-4">
               <div className="flex flex-col items-end">
                 <span className="text-[11px] text-white font-semibold flex items-center gap-1">
                   <User className="w-3 h-3 text-gray-500" />
                   {user.phone_number}
                 </span>
                 <span className={`text-[9px] uppercase tracking-wider font-extrabold ${
-                  user.role === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
+                  user.role?.toLowerCase() === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
                 }`}>
                   {user.role} Account
                 </span>
@@ -591,6 +611,89 @@ const App: React.FC = () => {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 mt-6 flex flex-col gap-6">
+        {/* Profile & Broker Settings Modal */}
+        {showProfileModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+                <div className="flex items-center space-x-2">
+                  <Key className="w-5 h-5 text-emerald-400" />
+                  <h3 className="text-lg font-bold text-white">Profile & Broker Settings</h3>
+                </div>
+                <button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Account Phone</label>
+                  <input type="text" value={user.phone_number} disabled className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-400 cursor-not-allowed" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Platform Role</label>
+                  <span className="inline-block px-2.5 py-1 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase">
+                    {user.role} Account
+                  </span>
+                </div>
+
+                <div className="border-t border-slate-800 pt-3">
+                  <label className="block text-xs font-semibold text-emerald-400 mb-1">Dhan Client ID (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 1000392812"
+                    value={dhanClientIdInput}
+                    onChange={(e) => setDhanClientIdInput(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-emerald-400 mb-1">Dhan Access Token (Optional)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Paste your daily Dhan Access Token here for live orders"
+                    value={dhanAccessTokenInput}
+                    onChange={(e) => setDhanAccessTokenInput(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+
+                {profileSaveSuccess && (
+                  <div className="bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-3 py-2 rounded text-xs">
+                    Profile settings saved successfully!
+                  </div>
+                )}
+
+                <div className="flex justify-end space-x-2 pt-2">
+                  <button
+                    onClick={() => setShowProfileModal(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const ok = await updateUserProfile(dhanClientIdInput, dhanAccessTokenInput);
+                      if (ok) {
+                        setProfileSaveSuccess(true);
+                        setTimeout(() => {
+                          setProfileSaveSuccess(false);
+                          setShowProfileModal(false);
+                        }, 1200);
+                      } else {
+                        alert("Failed to save profile settings");
+                      }
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded font-bold"
+                  >
+                    Save Credentials
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Floating Notifications Toast */}
         {backgroundNotification && (
           <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-amber-500 text-black px-6 py-3 rounded-xl shadow-2xl z-50 flex items-center gap-2.5 font-extrabold border border-amber-400 animate-bounce">
@@ -622,6 +725,7 @@ const App: React.FC = () => {
               { id: 'builder', label: 'Strategy Analyzer', icon: TrendingUp },
               { id: 'cone', label: 'Volatility Cone', icon: BarChart2 },
               { id: 'portfolios', label: 'Paper Trading Book', icon: Briefcase },
+              ...(user?.role?.toLowerCase() === 'owner' ? [{ id: 'admin', label: 'Admin Dashboard', icon: Shield }] : []),
               { id: 'help', label: 'Help & Videos', icon: HelpCircle }
             ].map((tab) => {
               const Icon = tab.icon;
@@ -683,6 +787,10 @@ const App: React.FC = () => {
 
           <div style={{ display: activeTab === 'rsi_scanner' ? 'block' : 'none' }}>
             <RsiScannerPanel />
+          </div>
+
+          <div style={{ display: activeTab === 'admin' ? 'block' : 'none' }}>
+            <AdminPanel />
           </div>
 
           <div style={{ display: activeTab === 'help' ? 'block' : 'none' }}>

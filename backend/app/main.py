@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from app.routes import market, analytics, portfolio, auth, notifications, backtest, alerts, trade, rsi_scanner
+from app.routes import market, analytics, portfolio, auth, notifications, backtest, alerts, trade, rsi_scanner, admin
 from app.db.session import engine, Base
 
 app = FastAPI(
@@ -79,6 +79,7 @@ app.include_router(backtest.router, prefix="/api/backtest", tags=["Backtester"])
 app.include_router(alerts.router)
 app.include_router(trade.router)
 app.include_router(rsi_scanner.router)
+app.include_router(admin.router)
 
 @app.get("/")
 def read_root():

@@ -238,9 +238,41 @@ async def login(data: LoginSchema, db: AsyncSession = Depends(get_db)):
         }
     }
 
+class ProfileUpdateSchema(BaseModel):
+    dhan_client_id: Optional[str] = None
+    dhan_access_token: Optional[str] = None
+
+@router.put("/profile")
+async def update_profile(
+    data: ProfileUpdateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if data.dhan_client_id is not None:
+        current_user.dhan_client_id = data.dhan_client_id.strip()
+    if data.dhan_access_token is not None:
+        current_user.dhan_access_token = data.dhan_access_token.strip()
+    
+    await db.commit()
+    await db.refresh(current_user)
+    return {
+        "status": "success",
+        "message": "Profile updated successfully",
+        "user": {
+            "id": current_user.id,
+            "phone_number": current_user.phone_number,
+            "role": current_user.role,
+            "dhan_client_id": current_user.dhan_client_id,
+            "dhan_access_token": current_user.dhan_access_token
+        }
+    }
+
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
     return {
+        "id": current_user.id,
         "phone_number": current_user.phone_number,
-        "role": current_user.role
+        "role": current_user.role,
+        "dhan_client_id": current_user.dhan_client_id,
+        "dhan_access_token": current_user.dhan_access_token
     }

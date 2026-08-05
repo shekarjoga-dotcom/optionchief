@@ -2,8 +2,11 @@ import { create } from 'zustand';
 import type { OptionChainData, StrikeChain, StrategyLeg, SavedPortfolio, Underlying, AlertRule, TriggeredAlert } from '../types';
 
 interface UserProfile {
+  id?: number;
   phone_number: string;
-  role: 'owner' | 'viewer';
+  role: string;
+  dhan_client_id?: string;
+  dhan_access_token?: string;
 }
 
 interface AppState {
@@ -46,6 +49,7 @@ interface AppState {
   requestOtp: (phone: string) => Promise<boolean>;
   registerUser: (phone: string, otp: string, pass: string) => Promise<boolean>;
   loginUser: (phone: string, password?: string, otp?: string) => Promise<boolean>;
+  updateUserProfile: (dhanClientId?: string, dhanAccessToken?: string) => Promise<boolean>;
   logout: () => void;
   checkAuthSession: () => Promise<void>;
 
@@ -369,24 +373,67 @@ export const useStore = create<AppState>((set, get) => ({
 
   logout: () => {
     localStorage.removeItem("options_oracle_token");
-    set({ token: "mock_bypass_token", user: { phone_number: "+919999999999", role: "owner" } as any, portfolios: [], alertRules: [], executionConfig: null });
+    set({ token: null, user: null, portfolios: [], alertRules: [], executionConfig: null });
   },
 
   checkAuthSession: async () => {
-    const token = localStorage.getItem("options_oracle_token") || "mock_bypass_token";
-    set({ token, user: { phone_number: "+919999999999", role: "owner" } as any, isAuthLoading: false });
-    
-    const localScanning = localStorage.getItem("options_oracle_is_auto_scanning") === "true";
-    fetch(`${BACKEND_URL}/api/alerts/toggle-scanner?active=${localScanning}`, {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${token}`
-      }
-    }).catch(() => {});
+    const savedToken = localStorage.getItem("options_oracle_token");
+    if (!savedToken) {
+      set({ token: null, user: null, isAuthLoading: false });
+      return;
+    }
 
-    get().fetchAlertRules();
-    get().fetchExecutionConfig();
-    get().fetchPortfolios();
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
+        headers: { "Authorization": `Bearer ${savedToken}` }
+      });
+      if (response.ok) {
+        const userData = await response.json();
+        set({ token: savedToken, user: userData, isAuthLoading: false });
+
+        const localScanning = localStorage.getItem("options_oracle_is_auto_scanning") === "true";
+        fetch(`${BACKEND_URL}/api/alerts/toggle-scanner?active=${localScanning}`, {
+          method: "PUT",
+          headers: { "Authorization": `Bearer ${savedToken}` }
+        }).catch(() => {});
+
+        get().fetchAlertRules();
+        get().fetchExecutionConfig();
+        get().fetchPortfolios();
+      } else {
+        localStorage.removeItem("options_oracle_token");
+        set({ token: null, user: null, isAuthLoading: false });
+      }
+    } catch (err) {
+      set({ isAuthLoading: false });
+    }
+  },
+
+  updateUserProfile: async (dhanClientId, dhanAccessToken) => {
+    const { token } = get();
+    if (!token) return false;
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          dhan_client_id: dhanClientId,
+          dhan_access_token: dhanAccessToken
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        set({ user: data.user });
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to update profile", err);
+      return false;
+    }
   },
 
   setAutoScanning: async (active, intervalSeconds = 30) => {

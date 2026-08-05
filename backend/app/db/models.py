@@ -12,6 +12,8 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     role = Column(String, default="viewer", nullable=False)  # "owner" or "viewer"
     is_auto_scanning = Column(Boolean, default=False, nullable=False)
+    dhan_client_id = Column(String, nullable=True)
+    dhan_access_token = Column(String, nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     portfolios = relationship("Portfolio", back_populates="user", cascade="all, delete-orphan")
