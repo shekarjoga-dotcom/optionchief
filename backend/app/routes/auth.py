@@ -1,11 +1,11 @@
 import random
 import os
 import jwt
+import bcrypt
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
-from passlib.context import CryptContext
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,6 @@ JWT_SECRET = os.getenv("JWT_SECRET", "options_oracle_reborn_super_secret_key_cha
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # Tokens expire in 7 days
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 # Pydantic Schemas
@@ -37,11 +36,17 @@ class LoginSchema(BaseModel):
     otp_code: str = None
 
 # JWT & Password Helpers
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        pwd_bytes = plain_password.encode('utf-8')
+        return bcrypt.checkpw(pwd_bytes[:72], hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def get_password_hash(password: str) -> str:
+    pwd_bytes = password.encode('utf-8')
+    hashed = bcrypt.hashpw(pwd_bytes[:72], bcrypt.gensalt())
+    return hashed.decode('utf-8')
 
 def create_access_token(data: dict):
     to_encode = data.copy()
