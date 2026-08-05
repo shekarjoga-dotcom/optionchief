@@ -383,10 +383,16 @@ export const useStore = create<AppState>((set, get) => ({
       return;
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     try {
       const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
-        headers: { "Authorization": `Bearer ${savedToken}` }
+        headers: { "Authorization": `Bearer ${savedToken}` },
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
+
       if (response.ok) {
         const userData = await response.json();
         set({ token: savedToken, user: userData, isAuthLoading: false });
@@ -405,7 +411,9 @@ export const useStore = create<AppState>((set, get) => ({
         set({ token: null, user: null, isAuthLoading: false });
       }
     } catch (err) {
-      set({ isAuthLoading: false });
+      clearTimeout(timeoutId);
+      localStorage.removeItem("options_oracle_token");
+      set({ token: null, user: null, isAuthLoading: false });
     }
   },
 
