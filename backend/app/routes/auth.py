@@ -3,6 +3,7 @@ import os
 import jwt
 import bcrypt
 from datetime import datetime, timedelta
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
