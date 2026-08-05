@@ -327,6 +327,7 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(data.detail || "Registration failed");
       }
       localStorage.setItem("options_oracle_token", data.token);
+      localStorage.setItem("options_oracle_user", JSON.stringify(data.user));
       set({ token: data.token, user: data.user, isAuthLoading: false });
       get().fetchAlertRules();
       get().fetchExecutionConfig();
@@ -351,6 +352,7 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(data.detail || "Login failed");
       }
       localStorage.setItem("options_oracle_token", data.token);
+      localStorage.setItem("options_oracle_user", JSON.stringify(data.user));
       set({ token: data.token, user: data.user, isAuthLoading: false });
       
       const localScanning = localStorage.getItem("options_oracle_is_auto_scanning") === "true";
@@ -373,29 +375,39 @@ export const useStore = create<AppState>((set, get) => ({
 
   logout: () => {
     localStorage.removeItem("options_oracle_token");
+    localStorage.removeItem("options_oracle_user");
     set({ token: null, user: null, portfolios: [], alertRules: [], executionConfig: null });
   },
 
   checkAuthSession: async () => {
     const savedToken = localStorage.getItem("options_oracle_token");
+    const savedUserStr = localStorage.getItem("options_oracle_user");
+
+    let cachedUser: UserProfile | null = null;
+    if (savedUserStr) {
+      try {
+        cachedUser = JSON.parse(savedUserStr);
+      } catch (e) {}
+    }
+
     if (!savedToken) {
       set({ token: null, user: null, isAuthLoading: false });
       return;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    // Instantly load cached user & token so UI renders immediately on refresh without waiting for network!
+    set({ token: savedToken, user: cachedUser, isAuthLoading: false });
 
+    // Quietly verify token with backend
     try {
       const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
-        headers: { "Authorization": `Bearer ${savedToken}` },
-        signal: controller.signal
+        headers: { "Authorization": `Bearer ${savedToken}` }
       });
-      clearTimeout(timeoutId);
 
       if (response.ok) {
         const userData = await response.json();
-        set({ token: savedToken, user: userData, isAuthLoading: false });
+        localStorage.setItem("options_oracle_user", JSON.stringify(userData));
+        set({ user: userData });
 
         const localScanning = localStorage.getItem("options_oracle_is_auto_scanning") === "true";
         fetch(`${BACKEND_URL}/api/alerts/toggle-scanner?active=${localScanning}`, {
@@ -406,14 +418,17 @@ export const useStore = create<AppState>((set, get) => ({
         get().fetchAlertRules();
         get().fetchExecutionConfig();
         get().fetchPortfolios();
-      } else {
+      } else if (response.status === 401 || response.status === 403) {
+        // Only wipe token if server explicitly rejects token as invalid/expired
         localStorage.removeItem("options_oracle_token");
-        set({ token: null, user: null, isAuthLoading: false });
+        localStorage.removeItem("options_oracle_user");
+        set({ token: null, user: null });
       }
     } catch (err) {
-      clearTimeout(timeoutId);
-      localStorage.removeItem("options_oracle_token");
-      set({ token: null, user: null, isAuthLoading: false });
+      // On network timeout or server cold start: keep cached user logged in!
+      get().fetchAlertRules();
+      get().fetchExecutionConfig();
+      get().fetchPortfolios();
     }
   },
 
