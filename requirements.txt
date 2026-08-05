@@ -11,6 +11,7 @@ pydantic
 sqlalchemy
 aiosqlite
 pyjwt
+bcrypt==3.2.2
 passlib[bcrypt]
 cryptography
 dhanhq
