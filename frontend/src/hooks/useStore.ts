@@ -165,17 +165,49 @@ export const useStore = create<AppState>((set, get) => ({
   loadLegs: (legs) => set({ legs }),
 
   fetchPortfolios: async () => {
-    const { token } = get();
+    const { token, user } = get();
     if (!token) return;
+
+    const userPhone = user?.phone_number || "guest";
+    let localPortfolios: SavedPortfolio[] = [];
+    try {
+      const raw = localStorage.getItem(`options_oracle_portfolios_${userPhone}`);
+      if (raw) localPortfolios = JSON.parse(raw);
+    } catch (e) {}
+
+    // Load local cache immediately so UI shows trades without delay
+    if (localPortfolios.length > 0) {
+      set({ portfolios: localPortfolios });
+    }
+
     try {
       const response = await fetch(`${BACKEND_URL}/api/portfolio/list`, {
-        headers: {
-          "Authorization": `Bearer ${token}`
-        }
+        headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
-        const data = await response.json();
-        set({ portfolios: data });
+        const remotePortfolios: SavedPortfolio[] = await response.json();
+
+        // Auto-recovery: If server database reset (Render restart) returned empty list, but local has trades:
+        // Automatically restore local trades back to the server!
+        if (remotePortfolios.length === 0 && localPortfolios.length > 0) {
+          console.warn("Backend database reset detected. Auto-restoring paper trades from local backup...");
+          for (const port of localPortfolios) {
+            fetch(`${BACKEND_URL}/api/portfolio/save`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify(port)
+            }).catch(() => {});
+          }
+          set({ portfolios: localPortfolios });
+        } else {
+          set({ portfolios: remotePortfolios });
+          try {
+            localStorage.setItem(`options_oracle_portfolios_${userPhone}`, JSON.stringify(remotePortfolios));
+          } catch (e) {}
+        }
       }
     } catch (err) {
       console.error("Failed to load portfolios", err);
@@ -183,7 +215,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   saveCurrentPortfolio: async (name, description = "") => {
-    const { legs, symbol, portfolios, underlying, token } = get();
+    const { legs, symbol, portfolios, underlying, token, user } = get();
     if (legs.length === 0) return;
 
     const newPortfolio: SavedPortfolio = {
@@ -200,6 +232,11 @@ export const useStore = create<AppState>((set, get) => ({
       stopLoss: 0.0
     };
 
+    const updated = [...portfolios, newPortfolio];
+    set({ portfolios: updated });
+    const userPhone = user?.phone_number || "guest";
+    try { localStorage.setItem(`options_oracle_portfolios_${userPhone}`, JSON.stringify(updated)); } catch (e) {}
+
     try {
       const response = await fetch(`${BACKEND_URL}/api/portfolio/save`, {
         method: "POST",
@@ -210,20 +247,22 @@ export const useStore = create<AppState>((set, get) => ({
         body: JSON.stringify(newPortfolio)
       });
 
-      if (response.ok) {
-        set({ portfolios: [...portfolios, newPortfolio] });
-      } else {
+      if (!response.ok) {
         const data = await response.json();
         throw new Error(data.detail || "Save request failed");
       }
     } catch (err: any) {
-      console.error("Error saving portfolio", err);
-      alert(err.message || "Failed to save portfolio to server.");
+      console.error("Error saving portfolio to server", err);
     }
   },
 
   updatePortfolio: async (portfolio) => {
-    const { token } = get();
+    const { token, portfolios, user } = get();
+    const updated = portfolios.map((p) => p.id === portfolio.id ? portfolio : p);
+    set({ portfolios: updated });
+    const userPhone = user?.phone_number || "guest";
+    try { localStorage.setItem(`options_oracle_portfolios_${userPhone}`, JSON.stringify(updated)); } catch (e) {}
+
     try {
       const response = await fetch(`${BACKEND_URL}/api/portfolio/save`, {
         method: "POST",
@@ -233,17 +272,12 @@ export const useStore = create<AppState>((set, get) => ({
         },
         body: JSON.stringify(portfolio)
       });
-      if (response.ok) {
-        set((state) => ({
-          portfolios: state.portfolios.map((p) => p.id === portfolio.id ? portfolio : p)
-        }));
-      } else {
+      if (!response.ok) {
         const data = await response.json();
         throw new Error(data.detail || "Update request failed");
       }
     } catch (err: any) {
-      console.error("Failed to update portfolio", err);
-      alert(err.message || "Failed to update portfolio settings.");
+      console.error("Failed to update portfolio on server", err);
     }
   },
 
@@ -271,7 +305,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   deletePortfolio: async (id) => {
-    const { token } = get();
+    const { token, portfolios, user } = get();
+    const updated = portfolios.filter((p) => p.id !== id);
+    set({ portfolios: updated });
+    const userPhone = user?.phone_number || "guest";
+    try { localStorage.setItem(`options_oracle_portfolios_${userPhone}`, JSON.stringify(updated)); } catch (e) {}
+
     try {
       const response = await fetch(`${BACKEND_URL}/api/portfolio/delete/${id}`, {
         method: "DELETE",
@@ -280,17 +319,12 @@ export const useStore = create<AppState>((set, get) => ({
         }
       });
 
-      if (response.ok) {
-        set((state) => ({
-          portfolios: state.portfolios.filter((p) => p.id !== id)
-        }));
-      } else {
+      if (!response.ok) {
         const data = await response.json();
         throw new Error(data.detail || "Delete request failed");
       }
     } catch (err: any) {
-      console.error("Error deleting portfolio", err);
-      alert(err.message || "Failed to delete portfolio.");
+      console.error("Error deleting portfolio from server", err);
     }
   },
 
