@@ -8,6 +8,7 @@ load_dotenv()
 from app.routes import market, analytics, portfolio, auth, notifications, backtest, alerts, trade, rsi_scanner, admin
 from app.db.session import engine, Base
 
+# Trigger fresh deployment for Render multi-tenant auth
 app = FastAPI(
     title="optionchief.in API",
     description="Quantitative Option Strategy Analysis and Portfolio Management Backend Engine",
