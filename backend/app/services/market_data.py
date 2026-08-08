@@ -139,7 +139,7 @@ class MarketDataService:
         """
         symbol_clean = self._clean_symbol(symbol)
         
-        if self.is_dhan_enabled:
+        if self.is_dhan_enabled and symbol_clean != "SENSEX":
             scrip_info = self._get_dhan_scrip_info(symbol_clean)
             if scrip_info:
                 try:
