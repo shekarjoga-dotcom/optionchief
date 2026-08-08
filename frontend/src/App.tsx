@@ -30,7 +30,8 @@ import {
   Shield,
   Key,
   X,
-  RefreshCw
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -61,7 +62,30 @@ const App: React.FC = () => {
   const symbolRef = useRef(symbol);
   const alertRulesRef = useRef(alertRules);
 
-  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>('chain');
+  const getInitialTab = (): 'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin' => {
+    const hash = window.location.hash.replace('#', '');
+    const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin'];
+    return validTabs.includes(hash) ? (hash as any) : 'chain';
+  };
+
+  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>(getInitialTab);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin'];
+      if (validTabs.includes(hash)) {
+        setActiveTab(hash as any);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const handleTabChange = (tabId: any) => {
+    setActiveTab(tabId);
+    window.location.hash = tabId;
+  };
   const [backgroundNotification, setBackgroundNotification] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [dhanClientIdInput, setDhanClientIdInput] = useState(user?.dhan_client_id || '');
@@ -656,18 +680,28 @@ const App: React.FC = () => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 px-4 py-3 text-xs font-bold transition-all border-b-2 -mb-[2px] ${
-                    isActive
-                      ? "border-accentBrand text-white"
-                      : "border-transparent text-gray-500 hover:text-gray-300"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
+                <div key={tab.id} className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => handleTabChange(tab.id as any)}
+                    className={`flex items-center gap-2 px-3 py-3 text-xs font-bold transition-all border-b-2 -mb-[2px] ${
+                      isActive
+                        ? "border-accentBrand text-white"
+                        : "border-transparent text-gray-500 hover:text-gray-300"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {tab.label}
+                  </button>
+                  <a
+                    href={`#${tab.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1 text-gray-600 hover:text-accentCyan transition-colors rounded hover:bg-gray-800/60"
+                    title={`Open ${tab.label} in a new browser tab`}
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
               );
             })}
           </div>
