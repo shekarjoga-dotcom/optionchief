@@ -187,13 +187,30 @@ class MarketDataService:
             # Extract standard fields
             spot = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose")
             
-            if spot is None:
+            if spot is None or (symbol_clean in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"] and float(spot) < 1000):
                 # Try fetching recent history
-                hist = ticker.history(period="5d")
-                if not hist.empty:
-                    spot = hist['Close'].iloc[-1]
-                else:
-                    spot = 100.0 # final fallback
+                try:
+                    hist = ticker.history(period="5d")
+                    if not hist.empty and not hist['Close'].empty:
+                        spot = float(hist['Close'].iloc[-1])
+                    else:
+                        fallback_map = {
+                            "SENSEX": 79500.0,
+                            "NIFTY": 24500.0,
+                            "BANKNIFTY": 50500.0,
+                            "FINNIFTY": 23500.0,
+                            "MIDCPNIFTY": 12500.0
+                        }
+                        spot = fallback_map.get(symbol_clean, 100.0)
+                except Exception:
+                    fallback_map = {
+                        "SENSEX": 79500.0,
+                        "NIFTY": 24500.0,
+                        "BANKNIFTY": 50500.0,
+                        "FINNIFTY": 23500.0,
+                        "MIDCPNIFTY": 12500.0
+                    }
+                    spot = fallback_map.get(symbol_clean, 100.0)
                     
             prev_close = info.get("regularMarketPreviousClose") or spot
             
@@ -379,7 +396,7 @@ class MarketDataService:
         # Decide whether to fetch from US options (yfinance) or simulate/scrape NSE
         # Standard domestic assets that route to MCX or NSE fallbacks (versus US options)
         is_nse_symbol = symbol_clean in NSE_FO_STOCKS or symbol_clean in [
-            "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE", 
+            "NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE", 
             "GOLD", "GOLDM", "SILVER", "SILVERM", "CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"
         ]
 
