@@ -157,6 +157,33 @@ LOT_SIZES = {
 }
 
 
+def safe_download_historical_df(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Safely downloads historical OHLC data using yfinance, fallback to Ticker.history,
+    and flattens multi-index columns to avoid AttributeError.
+    """
+    try:
+        t = yf.Ticker(ticker)
+        df = t.history(start=start_date, end=end_date)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+            return df
+    except Exception as e:
+        print(f"[safe_download] yf.Ticker history failed for {ticker}: {e}")
+
+    try:
+        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+            return df
+    except Exception as e:
+        print(f"[safe_download] yf.download failed for {ticker}: {e}")
+
+    return pd.DataFrame()
+
+
 def get_expiry_date(date_obj: datetime, symbol: str, expiry_type: str = "weekly") -> datetime:
     import calendar
     etype = str(expiry_type).lower()
@@ -662,12 +689,10 @@ async def run_intraday_backtest(req: BacktestRequest):
     # Load VIX data to use as daily base IV
     vix_ticker = VIX_TICKERS.get(symbol_upper, "^VIX")
     try:
-        vix_df = yf.download(vix_ticker, start=req.startDate, end=req.endDate)
+        vix_df = safe_download_historical_df(vix_ticker, start_date=req.startDate, end_date=req.endDate)
         if vix_df.empty:
             vix_series = pd.Series(15.0, index=pd.to_datetime(list(day_candles.keys())))
         else:
-            if isinstance(vix_df.columns, pd.MultiIndex):
-                vix_df.columns = vix_df.columns.get_level_values(0)
             vix_series = vix_df["Close"].dropna()
     except Exception:
         vix_series = pd.Series(15.0, index=pd.to_datetime(list(day_candles.keys())))
@@ -1064,27 +1089,23 @@ async def run_backtest(req: BacktestRequest):
     # 1. Fetch historical spot and VIX quotes from yfinance
     print(f"[Backtester] Fetching historical spot data for {spot_ticker}...")
     try:
-        spot_df = yf.download(spot_ticker, start=req.startDate, end=req.endDate)
+        spot_df = safe_download_historical_df(spot_ticker, start_date=req.startDate, end_date=req.endDate)
         if spot_df.empty:
             raise HTTPException(status_code=400, detail=f"No spot price data found for ticker {spot_ticker}")
             
-        # Standardize columns to handle multi-index headers from yfinance download
-        if isinstance(spot_df.columns, pd.MultiIndex):
-            spot_df.columns = spot_df.columns.get_level_values(0)
-            
         spot_series = spot_df["Close"].dropna()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to download spot prices: {str(e)}")
         
     print(f"[Backtester] Fetching historical VIX data for {vix_ticker}...")
     try:
-        vix_df = yf.download(vix_ticker, start=req.startDate, end=req.endDate)
+        vix_df = safe_download_historical_df(vix_ticker, start_date=req.startDate, end_date=req.endDate)
         if vix_df.empty:
             # Fallback to constant VIX if download fails
             vix_series = pd.Series(15.0, index=spot_series.index)
         else:
-            if isinstance(vix_df.columns, pd.MultiIndex):
-                vix_df.columns = vix_df.columns.get_level_values(0)
             vix_series = vix_df["Close"].dropna()
             # Align indices
             vix_series = vix_series.reindex(spot_series.index, method="ffill").fillna(15.0)
@@ -1454,25 +1475,23 @@ async def optimize_backtest(req: OptimizationRequest):
         spot_ticker = SPOT_TICKERS.get(symbol_upper, symbol_upper)
         print(f"[Optimizer] Fetching historical spot data for {spot_ticker}...")
         try:
-            spot_df = yf.download(spot_ticker, start=req.startDate, end=req.endDate)
+            spot_df = safe_download_historical_df(spot_ticker, start_date=req.startDate, end_date=req.endDate)
             if spot_df.empty:
                 raise HTTPException(status_code=400, detail=f"No spot price data found for ticker {spot_ticker}")
-            if isinstance(spot_df.columns, pd.MultiIndex):
-                spot_df.columns = spot_df.columns.get_level_values(0)
             spot_series = spot_df["Close"].dropna()
             dates_list = spot_series.index.tolist()
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to download spot prices: {str(e)}")
 
     # Fetch VIX series
     vix_ticker = VIX_TICKERS.get(symbol_upper, "^VIX")
     try:
-        vix_df = yf.download(vix_ticker, start=req.startDate, end=req.endDate)
+        vix_df = safe_download_historical_df(vix_ticker, start_date=req.startDate, end_date=req.endDate)
         if vix_df.empty:
             vix_series = pd.Series(15.0, index=pd.to_datetime(sorted_days if req.backtestType.upper() == "INTRADAY" else dates_list))
         else:
-            if isinstance(vix_df.columns, pd.MultiIndex):
-                vix_df.columns = vix_df.columns.get_level_values(0)
             vix_series = vix_df["Close"].dropna()
             if req.backtestType.upper() != "INTRADAY":
                 vix_series = vix_series.reindex(spot_series.index, method="ffill").fillna(15.0)
