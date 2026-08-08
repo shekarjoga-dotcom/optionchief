@@ -1273,9 +1273,9 @@ class MarketDataService:
         return candles
 
     def get_ticker_prices(self) -> dict:
-        import time
+        import time, gc
         now = time.time()
-        if hasattr(self, "_ticker_prices_cache") and self._ticker_prices_cache and (now - self._ticker_prices_cache_time < 60.0):
+        if hasattr(self, "_ticker_prices_cache") and self._ticker_prices_cache and (now - self._ticker_prices_cache_time < 1800.0):
             return self._ticker_prices_cache
 
         tickers_mapping = {
@@ -1327,6 +1327,8 @@ class MarketDataService:
                         })
                     except Exception as te:
                         print(f"Error parsing ticker {ticker}: {str(te)}")
+                del df
+                gc.collect()
         except Exception as e:
             print(f"Error downloading tickers from yfinance: {str(e)}")
 

@@ -63,8 +63,6 @@ const App: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>('chain');
   const [backgroundNotification, setBackgroundNotification] = useState<string | null>(null);
-  const [marketTickers, setMarketTickers] = useState<any[]>([]);
-  const [businessNews, setBusinessNews] = useState<any[]>([]);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [dhanClientIdInput, setDhanClientIdInput] = useState(user?.dhan_client_id || '');
   const [dhanAccessTokenInput, setDhanAccessTokenInput] = useState(user?.dhan_access_token || '');
@@ -109,48 +107,6 @@ const App: React.FC = () => {
       setTimeout(() => setBackgroundNotification(null), 6000);
     }
   }, [triggeredAlerts]);
-
-  // Fetch market tickers on load & periodically
-  useEffect(() => {
-    if (!token || !user) return;
-    const fetchTickers = async () => {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/market/ticker-prices`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.tickers) {
-            setMarketTickers(data.tickers);
-          }
-        }
-      } catch (e) {
-        console.error("Error fetching ticker prices:", e);
-      }
-    };
-    fetchTickers();
-    const interval = setInterval(fetchTickers, 45000); // refresh every 45s
-    return () => clearInterval(interval);
-  }, [token, user]);
-
-  // Fetch business news on load & periodically
-  useEffect(() => {
-    if (!token || !user) return;
-    const fetchNews = async () => {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/market/news`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.news) {
-            setBusinessNews(data.news);
-          }
-        }
-      } catch (e) {
-        console.error("Error fetching business news feed:", e);
-      }
-    };
-    fetchNews();
-    const interval = setInterval(fetchNews, 120000); // refresh news every 2 minutes
-    return () => clearInterval(interval);
-  }, [token, user]);
 
   useEffect(() => {
     symbolRef.current = symbol;
@@ -498,60 +454,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-darkBg text-gray-200 pb-12">
-      {/* Tickers container */}
-      <div className="w-full bg-gray-950 border-b border-borderClr/40 overflow-hidden text-[11px] font-medium tracking-wide">
-        {/* Ticker 1: Live Prices */}
-        <div className="marquee-container relative border-b border-borderClr/20 py-1 bg-black/30 overflow-hidden flex items-center">
-          <div className="absolute left-0 z-10 bg-gray-950 px-2 py-0.5 border-r border-borderClr/30 text-[9px] font-extrabold uppercase text-accentCyan">
-            Market Live
-          </div>
-          <div className="pl-[85px] w-full overflow-hidden flex">
-            <div className="animate-marquee-fast whitespace-nowrap">
-              {marketTickers.length > 0 ? (
-                [...marketTickers, ...marketTickers, ...marketTickers].map((t, idx) => {
-                  const isUp = t.change >= 0;
-                  const isInd = t.name.includes("Nifty") || t.name.includes("Reliance") || t.name.includes("State Bank") || t.name.includes("ITC");
-                  const curSym = isInd ? "₹" : "$";
-                  return (
-                    <span key={idx} className="inline-flex items-center gap-1.5 mx-4">
-                      <span className="text-gray-400 font-bold">{t.name}</span>
-                      <span className="text-white font-mono">{curSym}{typeof t.price === 'number' ? t.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : t.price}</span>
-                      <span className={`inline-flex items-center font-bold font-mono ${isUp ? 'text-green-400' : 'text-red-400'}`}>
-                        {isUp ? '▲' : '▼'} {Math.abs(t.change).toFixed(2)}%
-                      </span>
-                    </span>
-                  );
-                })
-              ) : (
-                <span className="text-gray-500 font-bold px-4">Loading Live Market Ticker Data...</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Ticker 2: Latest Business News */}
-        <div className="marquee-container relative py-1 bg-gradient-to-r from-accentBrand/5 to-accentCyan/5 overflow-hidden flex items-center">
-          <div className="absolute left-0 z-10 bg-gray-950 px-2 py-0.5 border-r border-borderClr/30 text-[9px] font-extrabold uppercase text-accentBrand">
-            Business News
-          </div>
-          <div className="pl-[85px] w-full overflow-hidden flex">
-            <div className="animate-marquee-slow whitespace-nowrap">
-              {businessNews.length > 0 ? (
-                [...businessNews, ...businessNews, ...businessNews].map((n, idx) => (
-                  <span key={idx} className="inline-flex items-center gap-2 mx-6 border-r border-borderClr/20 pr-6 last:border-none">
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-400 uppercase">{n.source}</span>
-                    <span className="text-white font-bold">{n.title}</span>
-                    {n.time && <span className="text-gray-500 font-mono text-[9px]">{n.time}</span>}
-                  </span>
-                ))
-              ) : (
-                <span className="text-gray-500 font-bold px-4">Loading Latest Business News Feed...</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Top Navigation Bar */}
       <header className="border-b border-borderClr/60 bg-gray-950/80 sticky top-0 z-40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
