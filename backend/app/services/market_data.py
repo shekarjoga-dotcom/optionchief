@@ -304,7 +304,7 @@ class MarketDataService:
                 chain["underlying"]["ticker"] = "ALL_NSE"
             return chain
         
-        if self.is_dhan_enabled:
+        if self.is_dhan_enabled and symbol_clean != "SENSEX":
             scrip_info = self._get_dhan_scrip_info(symbol_clean)
             if scrip_info:
                 try:
