@@ -971,7 +971,7 @@ class MarketDataService:
         quick_map = {
             "NIFTY": {"security_id": "13", "segment": "IDX_I", "name": "Nifty 50"},
             "BANKNIFTY": {"security_id": "25", "segment": "IDX_I", "name": "Nifty Bank"},
-            "SENSEX": {"security_id": "51", "segment": "IDX_I", "name": "BSE SENSEX"},
+            "SENSEX": {"security_id": "51", "segment": "BSE_IDX", "name": "BSE SENSEX"},
             "FINNIFTY": {"security_id": "27", "segment": "IDX_I", "name": "Nifty Financial Services"},
             "MIDCPNIFTY": {"security_id": "50", "segment": "IDX_I", "name": "Nifty Midcap Select"},
             "SBIN": {"security_id": "3045", "segment": "NSE_EQ", "name": "State Bank of India"},
