@@ -982,16 +982,19 @@ class MarketDataService:
             "TCS": {"security_id": "11536", "segment": "NSE_EQ", "name": "Tata Consultancy Services"}
         }
         
+        if symbol_clean in quick_map:
+            return quick_map[symbol_clean]
+        
         if not hasattr(self, "_dhan_scrip_cache"):
             self._dhan_scrip_cache = {}
             self._dhan_expiries_cache = {}
             self._dhan_options_cache = {}
             try:
-                print("[Dhan API] Downloading Dhan Scrip Master to resolve new symbols...")
+                print(f"[Dhan API] Resolving scrip info for symbol: {symbol_clean}...")
                 url = "https://images.dhan.co/api-data/api-scrip-master.csv"
                 resp = httpx.get(url, timeout=15.0)
                 if resp.status_code == 200:
-                    import csv
+                    import csv, gc
                     from io import StringIO
                     csv_data = StringIO(resp.text)
                     reader = csv.DictReader(csv_data)
@@ -1015,37 +1018,11 @@ class MarketDataService:
                                     "segment": seg,
                                     "name": name
                                 }
-                            
-                            # Cache options contracts
-                            opt_type = row.get("SEM_OPTION_TYPE")
-                            strike_str = row.get("SEM_STRIKE_PRICE")
-                            expiry_date = row.get("SEM_EXPIRY_DATE")
-                            if opt_type in ["CE", "PE"] and strike_str and expiry_date:
-                                try:
-                                    strike = float(strike_str)
-                                    exp_str = expiry_date.split(" ")[0]
-                                    self._dhan_options_cache[(base_sym, strike, opt_type, exp_str)] = sec_id
-                                except ValueError:
-                                    pass
-                                
-                            # Collect expiries
-                            if expiry_date and expiry_date != "0001-01-01":
-                                exp_str = expiry_date.split(" ")[0]
-                                try:
-                                    # Filter out past expiries for cleanliness
-                                    dt = datetime.strptime(exp_str, "%Y-%m-%d")
-                                    if dt >= datetime.today().replace(hour=0, minute=0, second=0, microsecond=0):
-                                        if base_sym not in self._dhan_expiries_cache:
-                                            self._dhan_expiries_cache[base_sym] = set()
-                                        self._dhan_expiries_cache[base_sym].add(exp_str)
-                                except ValueError:
-                                    pass
-                print(f"[Dhan API] Loaded {len(self._dhan_scrip_cache)} symbols and {len(self._dhan_options_cache)} option contracts from Dhan Scrip Master.")
+                    del csv_data, resp
+                    gc.collect()
+                print(f"[Dhan API] Cached {len(self._dhan_scrip_cache)} custom symbols from Dhan Scrip Master.")
             except Exception as e:
                 print(f"[Dhan API] Error downloading Dhan scrip master: {str(e)}")
-                
-        if symbol_clean in quick_map:
-            return quick_map[symbol_clean]
             
         return self._dhan_scrip_cache.get(symbol_clean)
 
