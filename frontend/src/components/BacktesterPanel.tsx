@@ -47,6 +47,42 @@ const STRATEGY_PRESETS: Record<string, StrategyPreset> = {
       { action: "SELL", optionType: "P", strikeOffset: -200, quantity: 1 }
     ]
   },
+  "short_iron_condor": {
+    name: "Short Iron Condor (Credit)",
+    legs: [
+      { action: "BUY", optionType: "P", strikeOffset: -300, quantity: 1 },
+      { action: "SELL", optionType: "P", strikeOffset: -200, quantity: 1 },
+      { action: "SELL", optionType: "C", strikeOffset: 200, quantity: 1 },
+      { action: "BUY", optionType: "C", strikeOffset: 300, quantity: 1 }
+    ]
+  },
+  "long_iron_condor": {
+    name: "Long Iron Condor (Breakout Debit)",
+    legs: [
+      { action: "SELL", optionType: "P", strikeOffset: -300, quantity: 1 },
+      { action: "BUY", optionType: "P", strikeOffset: -200, quantity: 1 },
+      { action: "BUY", optionType: "C", strikeOffset: 200, quantity: 1 },
+      { action: "SELL", optionType: "C", strikeOffset: 300, quantity: 1 }
+    ]
+  },
+  "call_condor": {
+    name: "Call Condor",
+    legs: [
+      { action: "BUY", optionType: "C", strikeOffset: -200, quantity: 1 },
+      { action: "SELL", optionType: "C", strikeOffset: -100, quantity: 1 },
+      { action: "SELL", optionType: "C", strikeOffset: 100, quantity: 1 },
+      { action: "BUY", optionType: "C", strikeOffset: 200, quantity: 1 }
+    ]
+  },
+  "put_condor": {
+    name: "Put Condor",
+    legs: [
+      { action: "BUY", optionType: "P", strikeOffset: -200, quantity: 1 },
+      { action: "SELL", optionType: "P", strikeOffset: -100, quantity: 1 },
+      { action: "SELL", optionType: "P", strikeOffset: 100, quantity: 1 },
+      { action: "BUY", optionType: "P", strikeOffset: 200, quantity: 1 }
+    ]
+  },
   "iron_condor": {
     name: "Iron Condor",
     legs: [
@@ -176,6 +212,10 @@ const STRATEGY_PRESETS: Record<string, StrategyPreset> = {
 
 const OPTIMIZATION_PROMPTS: Record<string, string> = {
   "straddle_short": "Optimize the Short Straddle by sweeping Stop Loss from 10% to 50% (increments of 10%) and Entry Times from 09:20 to 10:15. Goal: Maximize win rate and minimize Max Drawdown.",
+  "short_iron_condor": "Optimize the Short Iron Condor (Credit) by sweeping wing widths (100 to 400 points) and entry days of the week. Goal: Maximize Profit Factor while keeping drawdowns low.",
+  "long_iron_condor": "Optimize the Long Iron Condor (Breakout Debit) by sweeping inner/outer strike offsets and entry days. Goal: Maximize Net Return on breakout moves.",
+  "call_condor": "Optimize the Call Condor by sweeping strike offsets and exit days. Goal: Maximize Win Rate.",
+  "put_condor": "Optimize the Put Condor by sweeping strike offsets and exit days. Goal: Maximize Win Rate.",
   "strangle_short": "Optimize the Short Strangle by sweeping OTM strike offsets and Stop Loss levels (20% to 60%). Goal: Find the highest profit factor while keeping net return positive.",
   "iron_condor": "Optimize the Iron Condor by sweeping wing widths (100 to 300 points) and entry days of the week (Monday, Tuesday, Thursday). Goal: Find the configuration that minimizes Max Drawdown.",
   "ratio_iron_condor_12": "Optimize the Ratio Iron Condor (1:2) by sweeping Call/Put spreads offsets, take profit targets, and stop loss levels. Goal: Maximize profit factor.",
@@ -196,7 +236,7 @@ const OPTIMIZATION_PROMPTS: Record<string, string> = {
 };
 
 const SYMBOL_OPTIONS = [
-  "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", 
+  "NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY", 
   "RELIANCE", "SBIN", "ITC", 
   "CRUDEOIL", "SILVER", "GOLD", 
   "SPY", "AAPL", "TSLA",
@@ -218,6 +258,7 @@ const formatErrorDetail = (detail: any, fallback: string): string => {
 const STRIKE_ROUND_INTERVALS: Record<string, number> = {
   "NIFTY": 50,
   "BANKNIFTY": 100,
+  "SENSEX": 100,
   "FINNIFTY": 100,
   "MIDCPNIFTY": 50,
   "RELIANCE": 10,
@@ -237,6 +278,7 @@ const STRIKE_ROUND_INTERVALS: Record<string, number> = {
 const DEFAULT_STRIKE_WIDTHS: Record<string, number[]> = {
   "NIFTY": [50, 100, 150, 200, 250, 300, 350, 400],
   "BANKNIFTY": [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000],
+  "SENSEX": [100, 200, 300, 400, 500, 600, 700, 800, 1000],
   "FINNIFTY": [100, 200, 300],
   "MIDCPNIFTY": [50, 100, 150],
   "RELIANCE": [10, 20, 30, 50],
