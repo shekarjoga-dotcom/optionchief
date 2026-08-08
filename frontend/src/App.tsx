@@ -28,7 +28,9 @@ import {
   HelpCircle,
   Zap,
   Shield,
-  Key
+  Key,
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -45,6 +47,7 @@ const App: React.FC = () => {
     fetchMarketData, 
     fetchPortfolios, 
     error, 
+    clearError,
     token, 
     user, 
     isAuthLoading, 
@@ -704,9 +707,29 @@ const App: React.FC = () => {
 
         {/* Error Notification banner if any */}
         {error && (
-          <div className="bg-redBrand/10 border border-redBrand/30 text-redBrand rounded-xl p-3 flex items-center gap-2 text-xs">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span><strong>Connection Error:</strong> {error}. Make sure the FastAPI backend is running on <code className="bg-redBrand/5 px-1.5 py-0.5 rounded border border-redBrand/20">{BACKEND_URL}</code>. Showing mock fallbacks.</span>
+          <div className="bg-redBrand/10 border border-redBrand/30 text-redBrand rounded-xl p-3 flex items-center justify-between text-xs transition-all shadow-sm">
+            <div className="flex items-center gap-2 pr-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>
+                <strong>Connection Alert:</strong> {error}. <span className="opacity-80">(Cloud backend may take ~30-60s to wake up on first visit)</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => fetchMarketData()}
+                className="px-2.5 py-1 bg-redBrand/20 hover:bg-redBrand/30 text-redBrand rounded-lg flex items-center gap-1.5 transition-colors font-medium text-xs"
+                title="Retry connecting to backend"
+              >
+                <RefreshCw className="w-3 h-3" /> Retry
+              </button>
+              <button
+                onClick={() => clearError()}
+                className="p-1 hover:bg-redBrand/20 rounded-lg transition-colors text-redBrand"
+                title="Dismiss message"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         )}
 

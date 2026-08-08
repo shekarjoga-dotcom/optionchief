@@ -75,6 +75,8 @@ interface AppState {
   // Execution state & actions
   executionConfig: { dhan: any; kotak: any; paper: any } | null;
   fetchExecutionConfig: () => Promise<void>;
+
+  clearError: () => void;
 }
 
 import { BACKEND_URL } from '../config';
@@ -90,6 +92,7 @@ export const useStore = create<AppState>((set, get) => ({
   portfolios: [],
   isLoading: false,
   error: null,
+  clearError: () => set({ error: null }),
 
   alertRules: [],
   triggeredAlerts: [],
