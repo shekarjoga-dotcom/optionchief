@@ -582,11 +582,11 @@ export const ScannerPanel: React.FC = () => {
     setLotSize(getLotSizeForSymbol(sym));
 
     // 2. Adjust Strike Parameters (Wings, Distance, Step)
-    if (sym === "NIFTY" || sym === "BANKNIFTY" || sym === "FINNIFTY" || sym === "MIDCPNIFTY") {
+    if (sym === "NIFTY" || sym === "BANKNIFTY" || sym === "SENSEX" || sym === "FINNIFTY" || sym === "MIDCPNIFTY") {
       setMinWingWidth(1);
       setMaxWingWidth(4);
-      setMinDist(2);
-      setMaxDist(10);
+      setMinDist(1);
+      setMaxDist(12);
       setScanStep(1);
     } else if (sym === "GOLD" || sym === "GOLDM") {
       setMinWingWidth(1);
@@ -672,15 +672,15 @@ export const ScannerPanel: React.FC = () => {
 
         const typesToScan = subCategory === "ALL"
           ? (category === "safe_hedged"
-              ? ["IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
+              ? ["SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
               : category === "neutral"
-                ? ["IRON CONDOR", "IRON BUTTERFLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE"]
+                ? ["SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE"]
                 : category === "bullish"
                   ? ["BULL CALL SPREAD", "BULL PUT SPREAD", "DIR BULL FLY", "BULL CONDOR", "BULL IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:2 PUT RATIO SPREAD", "BULL STRADDLE", "BULL STRANGLE", "SHORT BULL STRADDLE", "SHORT BULL STRANGLE", "COVERED CALL", "SYNTHETIC LONG", "SYNTHETIC LONG CALL"]
                   : category === "bearish"
                     ? ["BEAR CALL SPREAD", "BEAR PUT SPREAD", "DIR BEAR FLY", "BEAR CONDOR", "BEAR IRON BUTTERFLY", "1:3:2 PUT RATIO FLY", "1:2 CALL RATIO SPREAD", "BEAR STRADDLE", "BEAR STRANGLE", "SHORT BEAR STRADDLE", "SHORT BEAR STRANGLE", "COVERED PUT", "SYNTHETIC SHORT", "SYNTHETIC LONG PUT"]
                     : [
-                        "IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", 
+                        "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", 
                         "BULL CALL SPREAD", "BEAR PUT SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", 
                         "CALL CONDOR", "PUT CONDOR", "DIR BULL FLY", "DIR BEAR FLY", 
                         "BULL CONDOR", "BEAR CONDOR", "BULL IRON BUTTERFLY", "BEAR IRON BUTTERFLY", 
@@ -734,11 +734,12 @@ export const ScannerPanel: React.FC = () => {
           const loss = typeof scan.maxLoss === 'number' ? Math.abs(scan.maxLoss) : null;
           const margin = scan.margin || 100000;
 
-          // Discard if profit is too low to cover transaction fees (e.g. < ₹150)
-          if (profit !== null && profit < 150) continue;
+          // Discard if profit is too low to cover transaction fees (e.g. < ₹50 for small lot sizes like SENSEX)
+          const minProfitCutoff = lotSize <= 25 ? 40 : 100;
+          if (profit !== null && profit < minProfitCutoff) continue;
 
-          // Discard if return on margin is less than 0.25% (250 INR for 1L margin)
-          if (profit !== null && (profit / margin) < 0.0025) continue;
+          // Discard if return on margin is less than 0.05%
+          if (profit !== null && (profit / margin) < 0.0005) continue;
 
           // Discard if risk-to-reward ratio is too extreme (risking > 50x of potential profit)
           if (profit !== null && loss !== null && profit > 0 && (loss / profit) > 50) continue;
