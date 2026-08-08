@@ -105,10 +105,10 @@ export function scanStrategies(
 
   const typeUpper = strategyType.toUpperCase();
 
-  // 1. IRON CONDOR / HEDGED SHORT STRANGLE (Neutral / Safe Hedged)
-  if (typeUpper === "IRON CONDOR" || typeUpper === "HEDGED SHORT STRANGLE") {
+  // 1. SHORT IRON CONDOR / HEDGED SHORT STRANGLE (Neutral / Safe Hedged Credit)
+  if (typeUpper === "IRON CONDOR" || typeUpper === "SHORT IRON CONDOR" || typeUpper === "HEDGED SHORT STRANGLE") {
     const isStrangleName = typeUpper === "HEDGED SHORT STRANGLE";
-    const namePrefix = isStrangleName ? "Hedged Short Strangle" : "Iron Condor";
+    const namePrefix = isStrangleName ? "Hedged Short Strangle" : "Short Iron Condor";
     for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {
       for (let sCallOff = minDist; sCallOff <= maxDist; sCallOff += step) {
         const shortPutIdx = atmIdx - sPutOff;
@@ -128,7 +128,35 @@ export function scanStrategies(
               [lPut, sPut, sCall, lCall],
               isStrangleName
                 ? `Hedged Strangle: Sell Put at ${strikesList[shortPutIdx]} and Sell Call at ${strikesList[shortCallIdx]}, protected by wings at ${strikesList[longPutIdx]} and ${strikesList[longCallIdx]}.`
-                : `Sell Put Spread at ${strikesList[shortPutIdx]} & Sell Call Spread at ${strikesList[shortCallIdx]}.`
+                : `Short Iron Condor (Credit): Sell Put Spread at ${strikesList[shortPutIdx]} & Sell Call Spread at ${strikesList[shortCallIdx]}. Range-bound theta setup.`
+            );
+            if (scanRes) results.push(scanRes);
+          }
+        }
+      }
+    }
+  }
+
+  // 1b. LONG IRON CONDOR (Breakout / Volatility Expansion Debit Setup)
+  else if (typeUpper === "LONG IRON CONDOR") {
+    for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {
+      for (let sCallOff = minDist; sCallOff <= maxDist; sCallOff += step) {
+        const outerPutIdx = atmIdx - sPutOff - wingWidth;
+        const innerPutIdx = atmIdx - sPutOff;
+        const innerCallIdx = atmIdx + sCallOff;
+        const outerCallIdx = atmIdx + sCallOff + wingWidth;
+
+        if (outerPutIdx >= 0 && outerCallIdx < strikesList.length) {
+          const sPut = getLegHelper(strikesList[outerPutIdx], 'P', 'SELL');
+          const lPut = getLegHelper(strikesList[innerPutIdx], 'P', 'BUY');
+          const lCall = getLegHelper(strikesList[innerCallIdx], 'C', 'BUY');
+          const sCall = getLegHelper(strikesList[outerCallIdx], 'C', 'SELL');
+
+          if (sPut && lPut && lCall && sCall) {
+            const scanRes = buildScanResult(
+              `Long Iron Condor (${strikesList[outerPutIdx]}/${strikesList[innerPutIdx]}/${strikesList[innerCallIdx]}/${strikesList[outerCallIdx]})`,
+              [sPut, lPut, lCall, sCall],
+              `Long Iron Condor (Debit): Buy Inner Put (${strikesList[innerPutIdx]}) & Call (${strikesList[innerCallIdx]}), capped by outer Sell wings (${strikesList[outerPutIdx]} & ${strikesList[outerCallIdx]}). Breakout volatility setup.`
             );
             if (scanRes) results.push(scanRes);
           }

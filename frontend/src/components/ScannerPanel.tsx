@@ -55,6 +55,8 @@ const CATEGORIES = [
 const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   all: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "SHORT IRON CONDOR", label: "Short Iron Condor (Credit)", icon: Compass },
+    { id: "LONG IRON CONDOR", label: "Long Iron Condor (Breakout)", icon: Activity },
     { id: "IRON CONDOR", label: "Iron Condor", icon: Compass },
     { id: "WIDE WING IRON CONDOR", label: "Wide Wing Iron Condor", icon: Compass },
     { id: "RATIO IRON CONDOR (1:2)", label: "Ratio Iron Condor (1:2)", icon: Compass },
@@ -125,6 +127,8 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   neutral: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "SHORT IRON CONDOR", label: "Short Iron Condor (Credit)", icon: Compass },
+    { id: "LONG IRON CONDOR", label: "Long Iron Condor (Breakout)", icon: Activity },
     { id: "IRON CONDOR", label: "Iron Condor", icon: Compass },
     { id: "WIDE WING IRON CONDOR", label: "Wide Wing Iron Condor", icon: Compass },
     { id: "RATIO IRON CONDOR (1:2)", label: "Ratio Iron Condor (1:2)", icon: Compass },
