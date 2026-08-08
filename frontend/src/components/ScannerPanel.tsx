@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../hooks/useStore';
 import { scanStrategies } from '../utils/scanner';
 import type { ScannedStrategy } from '../utils/scanner';
@@ -549,16 +549,24 @@ export const ScannerPanel: React.FC = () => {
     setPayoffIvOffset(0);
   };
 
-  // Reset results and selection when expiry or symbol changes
+  const prevSymbolRef = useRef(symbol);
+  const prevExpiryRef = useRef(selectedExpiry);
+
+  // Only reset scanned results when symbol or selectedExpiry explicitly changes from user selection
   useEffect(() => {
-    setScannedResults([]);
-    setSelectedStrategy(null);
+    if (prevSymbolRef.current !== symbol || prevExpiryRef.current !== selectedExpiry) {
+      prevSymbolRef.current = symbol;
+      prevExpiryRef.current = selectedExpiry;
+      setScannedResults([]);
+      setSelectedStrategy(null);
+    }
+
     if (selectedExpiry && expiryDates.includes(selectedExpiry)) {
       setSelectedExpiries([selectedExpiry]);
-    } else if (expiryDates.length > 0) {
+    } else if (expiryDates.length > 0 && selectedExpiries.length === 0) {
       setSelectedExpiries([expiryDates[0]]);
     }
-  }, [selectedExpiry, symbol, expiryDates]);
+  }, [symbol, selectedExpiry, expiryDates]);
 
   const selectedProjection = useMemo(() => {
     if (!selectedStrategy) return null;
