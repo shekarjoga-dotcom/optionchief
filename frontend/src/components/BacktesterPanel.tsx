@@ -624,7 +624,48 @@ export const BacktesterPanel: React.FC = () => {
   const [monthlyGrid, setMonthlyGrid] = useState<any[]>([]);
   const [tradesLog, setTradesLog] = useState<any[]>([]);
 
-  // Apply a preset configuration
+  const parseAndApplyPrompt = (promptText: string) => {
+    setOptimizationPrompt(promptText);
+    const p = promptText.toLowerCase();
+
+    // 1. Objective Parsing
+    if (p.includes("profit factor")) {
+      setOptObjective("profitFactor");
+    } else if (p.includes("drawdown") || p.includes("lowest drawdown") || p.includes("minimize drawdown")) {
+      setOptObjective("maxDrawdown");
+    } else if (p.includes("sharpe")) {
+      setOptObjective("sharpeRatio");
+    } else if (p.includes("win rate")) {
+      setOptObjective("winRate");
+    } else if (p.includes("net return") || p.includes("highest profit") || p.includes("net pnl")) {
+      setOptObjective("netPnL");
+    }
+
+    // 2. Stop Loss Range Parsing e.g. "Stop Loss levels (20% to 60%)" or "20% to 50%"
+    const slMatch = p.match(/(?:stop loss|sl)[^\d]*(\d+)%\s*to\s*(\d+)%/i) || p.match(/\((\d+)%\s*to\s*(\d+)%\)/i);
+    if (slMatch) {
+      const minSL = parseInt(slMatch[1]);
+      const maxSL = parseInt(slMatch[2]);
+      const range: number[] = [];
+      for (let sl = 10; sl <= 100; sl += 10) {
+        if (sl >= minSL && sl <= maxSL) range.push(sl);
+      }
+      if (range.length > 0) setOptStopLossRange(range);
+    }
+
+    // 3. Take Profit Range Parsing e.g. "take profit (20% to 80%)"
+    const tpMatch = p.match(/(?:take profit|tp)[^\d]*(\d+)%\s*to\s*(\d+)%/i);
+    if (tpMatch) {
+      const minTP = parseInt(tpMatch[1]);
+      const maxTP = parseInt(tpMatch[2]);
+      const range: number[] = [];
+      for (let tp = 10; tp <= 100; tp += 10) {
+        if (tp >= minTP && tp <= maxTP) range.push(tp);
+      }
+      if (range.length > 0) setOptTakeProfitRange(range);
+    }
+  };
+
   const handleApplyPreset = (key: string) => {
     const preset = STRATEGY_PRESETS[key];
     if (preset) {
@@ -634,7 +675,8 @@ export const BacktesterPanel: React.FC = () => {
       }));
       setLegs(newLegs);
       setOptimizerActivePreset(key);
-      setOptimizationPrompt(OPTIMIZATION_PROMPTS[key] || "");
+      const pr = OPTIMIZATION_PROMPTS[key] || "";
+      parseAndApplyPrompt(pr);
     }
   };
 
@@ -748,6 +790,7 @@ export const BacktesterPanel: React.FC = () => {
         symbol: backtestSymbol,
         startDate,
         endDate,
+        prompt: optimizationPrompt,
         legs: legs.map(({ action, optionType, strikeOffset, quantity }) => ({
           action,
           optionType,
@@ -1573,7 +1616,7 @@ export const BacktesterPanel: React.FC = () => {
                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Strategy Guidance Prompt</span>
                 <textarea
                   value={optimizationPrompt}
-                  onChange={(e) => setOptimizationPrompt(e.target.value)}
+                  onChange={(e) => parseAndApplyPrompt(e.target.value)}
                   rows={2}
                   className="w-full bg-gray-900 border border-borderClr/60 rounded p-2.5 text-white text-xs outline-none focus:border-amber-400 resize-none font-medium leading-relaxed"
                 />

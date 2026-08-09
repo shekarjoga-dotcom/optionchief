@@ -131,6 +131,7 @@ class OptimizationRequest(BaseModel):
     
     # Goal parameter: "netPnL", "winRate", "maxDrawdown", "sharpeRatio", "profitFactor"
     objective: str = "netPnL"
+    prompt: Optional[str] = None
 
 
 LOT_SIZES = {
