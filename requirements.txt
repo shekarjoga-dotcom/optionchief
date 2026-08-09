@@ -16,4 +16,5 @@ passlib[bcrypt]
 cryptography
 dhanhq
 asyncpg
+psycopg2-binary
 greenlet

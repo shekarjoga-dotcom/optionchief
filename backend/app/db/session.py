@@ -10,6 +10,12 @@ db_path = os.path.join(db_dir, "options_oracle.db")
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
 
+# Normalize PostgreSQL URLs for async SQLAlchemy (Render environment variables provide postgresql:// or postgres://)
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+
 # Automatically ensure parent directory of DATABASE_URL exists and is writable to prevent sqlite connection errors
 if DATABASE_URL.startswith("sqlite+aiosqlite:///"):
     db_file_path = DATABASE_URL.replace("sqlite+aiosqlite:///", "")
