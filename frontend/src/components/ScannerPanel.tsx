@@ -737,10 +737,14 @@ export const ScannerPanel: React.FC = () => {
           
           if (seenKeys.has(legKey)) continue;
 
-          // 2. Filter out meaningless strategies (e.g., risk-reward > 50x or return on margin < 0.25%)
+          // 2. Filter out meaningless strategies
           const profit = typeof scan.maxProfit === 'number' ? scan.maxProfit : null;
           const loss = typeof scan.maxLoss === 'number' ? Math.abs(scan.maxLoss) : null;
           const margin = scan.margin || 100000;
+
+          const isNakedStrategy = scan.name.toLowerCase().includes("strangle") || 
+                                 scan.name.toLowerCase().includes("straddle") || 
+                                 scan.maxLoss === "Unlimited";
 
           // Discard if profit is too low to cover transaction fees (e.g. < ₹50 for small lot sizes like SENSEX)
           const minProfitCutoff = lotSize <= 25 ? 40 : 100;
@@ -749,8 +753,8 @@ export const ScannerPanel: React.FC = () => {
           // Discard if return on margin is less than 0.05%
           if (profit !== null && (profit / margin) < 0.0005) continue;
 
-          // Discard if risk-to-reward ratio is too extreme (risking > 50x of potential profit)
-          if (profit !== null && loss !== null && profit > 0 && (loss / profit) > 50) continue;
+          // Discard if risk-to-reward ratio is too extreme ONLY for hedged strategies (unhedged straddles/strangles have theoretical unlimited loss)
+          if (!isNakedStrategy && profit !== null && loss !== null && profit > 0 && (loss / profit) > 50) continue;
 
           seenKeys.add(legKey);
           uniqueScans.push(scan);

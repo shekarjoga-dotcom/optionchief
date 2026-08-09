@@ -750,21 +750,23 @@ export function scanStrategies(
 
   // 25. SHORT STRANGLE
   else if (typeUpper === "SHORT STRANGLE") {
-    for (let sOff = minDist; sOff <= maxDist; sOff += step) {
-      const putIdx = atmIdx - sOff;
-      const callIdx = atmIdx + sOff;
+    for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {
+      for (let sCallOff = minDist; sCallOff <= maxDist; sCallOff += step) {
+        const putIdx = atmIdx - sPutOff;
+        const callIdx = atmIdx + sCallOff;
 
-      if (putIdx >= 0 && callIdx < strikesList.length) {
-        const sPut = getLegHelper(strikesList[putIdx], 'P', 'SELL');
-        const sCall = getLegHelper(strikesList[callIdx], 'C', 'SELL');
+        if (putIdx >= 0 && callIdx < strikesList.length) {
+          const sPut = getLegHelper(strikesList[putIdx], 'P', 'SELL');
+          const sCall = getLegHelper(strikesList[callIdx], 'C', 'SELL');
 
-        if (sPut && sCall) {
-          const scanRes = buildScanResult(
-            `Short Strangle (${strikesList[putIdx]}/${strikesList[callIdx]})`,
-            [sPut, sCall],
-            `Sell OTM Put at ${strikesList[putIdx]} & OTM Call at ${strikesList[callIdx]} to collect premium with wider break-evens.`
-          );
-          if (scanRes) results.push(scanRes);
+          if (sPut && sCall) {
+            const scanRes = buildScanResult(
+              `Short Strangle (${strikesList[putIdx]}/${strikesList[callIdx]})`,
+              [sPut, sCall],
+              `Sell OTM Put at ${strikesList[putIdx]} & OTM Call at ${strikesList[callIdx]} to collect premium with wider break-evens.`
+            );
+            if (scanRes) results.push(scanRes);
+          }
         }
       }
     }
