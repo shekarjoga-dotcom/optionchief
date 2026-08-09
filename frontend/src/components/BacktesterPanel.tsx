@@ -47,6 +47,22 @@ const STRATEGY_PRESETS: Record<string, StrategyPreset> = {
       { action: "SELL", optionType: "P", strikeOffset: -200, quantity: 1 }
     ]
   },
+  "jade_lizard": {
+    name: "Jade Lizard (No Upside Risk)",
+    legs: [
+      { action: "SELL", optionType: "P", strikeOffset: -200, quantity: 1 },
+      { action: "SELL", optionType: "C", strikeOffset: 200, quantity: 1 },
+      { action: "BUY", optionType: "C", strikeOffset: 300, quantity: 1 }
+    ]
+  },
+  "twisted_jade_lizard": {
+    name: "Twisted Jade Lizard (No Downside Risk)",
+    legs: [
+      { action: "SELL", optionType: "C", strikeOffset: 200, quantity: 1 },
+      { action: "SELL", optionType: "P", strikeOffset: -200, quantity: 1 },
+      { action: "BUY", optionType: "P", strikeOffset: -300, quantity: 1 }
+    ]
+  },
   "short_iron_condor": {
     name: "Short Iron Condor (Credit)",
     legs: [
@@ -217,6 +233,8 @@ const OPTIMIZATION_PROMPTS: Record<string, string> = {
   "call_condor": "Optimize the Call Condor by sweeping strike offsets and exit days. Goal: Maximize Win Rate.",
   "put_condor": "Optimize the Put Condor by sweeping strike offsets and exit days. Goal: Maximize Win Rate.",
   "strangle_short": "Optimize the Short Strangle by sweeping OTM strike offsets and Stop Loss levels (20% to 60%). Goal: Find the highest profit factor while keeping net return positive.",
+  "jade_lizard": "Optimize the Jade Lizard by sweeping OTM Put offsets and Call spread wing widths. Goal: Maximize Profit Factor while eliminating upside risk.",
+  "twisted_jade_lizard": "Optimize the Twisted Jade Lizard by sweeping OTM Call offsets and Put spread wing widths. Goal: Maximize Profit Factor while eliminating downside risk.",
   "iron_condor": "Optimize the Iron Condor by sweeping wing widths (100 to 300 points) and entry days of the week (Monday, Tuesday, Thursday). Goal: Find the configuration that minimizes Max Drawdown.",
   "ratio_iron_condor_12": "Optimize the Ratio Iron Condor (1:2) by sweeping Call/Put spreads offsets, take profit targets, and stop loss levels. Goal: Maximize profit factor.",
   "bull_call_spread": "Optimize the Bull Call Spread by sweeping Stop Loss levels (10% to 40%) and Entry Times. Goal: Find the configuration that maximizes Sharpe ratio.",

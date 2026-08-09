@@ -527,9 +527,10 @@ export const AlertsPanel: React.FC = () => {
                 className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-amber-400 outline-none"
               >
                 <option value="ALL">All Strategies</option>
-                <option value="1:3:2">1:3:2 Ratio Butterfly (All)</option>
-                <option value="1:3:2 CALL RATIO FLY">1:3:2 Call Ratio Fly</option>
-                <option value="1:3:2 PUT RATIO FLY">1:3:2 Put Ratio Fly</option>
+                <option value="JADE LIZARD">Jade Lizard (No Upside Risk)</option>
+                <option value="TWISTED JADE LIZARD">Twisted Jade Lizard (No Downside Risk)</option>
+                <option value="SHORT IRON CONDOR">Short Iron Condor (Credit)</option>
+                <option value="LONG IRON CONDOR">Long Iron Condor (Breakout)</option>
                 <option value="IRON CONDOR">Iron Condor</option>
                 <option value="RATIO IRON CONDOR (1:2)">Ratio Iron Condor (1:2)</option>
                 <option value="IRON BUTTERFLY">Iron Butterfly</option>

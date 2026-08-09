@@ -55,6 +55,8 @@ const CATEGORIES = [
 const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   all: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "JADE LIZARD", label: "Jade Lizard (No Upside Risk)", icon: Sparkles },
+    { id: "TWISTED JADE LIZARD", label: "Twisted Jade Lizard (No Downside Risk)", icon: Sparkles },
     { id: "SHORT IRON CONDOR", label: "Short Iron Condor (Credit)", icon: Compass },
     { id: "LONG IRON CONDOR", label: "Long Iron Condor (Breakout)", icon: Activity },
     { id: "IRON CONDOR", label: "Iron Condor", icon: Compass },

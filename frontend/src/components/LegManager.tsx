@@ -72,7 +72,7 @@ export const LegManager: React.FC = () => {
     alert(`Executed Paper Trade for "${tradeName}"! Added to Paper Trading Book.`);
   };
 
-  const loadPresetStrategy = (presetType: 'short_iron_condor' | 'long_iron_condor') => {
+  const loadPresetStrategy = (presetType: 'short_iron_condor' | 'long_iron_condor' | 'jade_lizard' | 'twisted_jade_lizard') => {
     clearLegs();
     const spot = underlying?.spot || 24500;
     const roundSpot = Math.round(spot / 100) * 100;
@@ -86,11 +86,21 @@ export const LegManager: React.FC = () => {
       addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 70, currentPrice: 70, iv: 0.16 });
       addLeg({ strike: roundSpot + 300, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 40, currentPrice: 40, iv: 0.16 });
     } else if (presetType === 'long_iron_condor') {
-      // Long Iron Condor (Debit): Buy inner legs, sell outer legs (Breakout setup as in screenshot)
+      // Long Iron Condor (Debit): Buy inner legs, sell outer legs (Breakout setup)
       addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 90, currentPrice: 90, iv: 0.16 });
       addLeg({ strike: roundSpot - 300, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 65, currentPrice: 65, iv: 0.16 });
       addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 150, currentPrice: 150, iv: 0.16 });
       addLeg({ strike: roundSpot + 300, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 110, currentPrice: 110, iv: 0.16 });
+    } else if (presetType === 'jade_lizard') {
+      // Jade Lizard: Sell OTM Put (-200), Sell OTM Call (+200), Buy OTM Call (+300) -> Zero Upside Risk
+      addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 85, currentPrice: 85, iv: 0.16 });
+      addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 65, currentPrice: 65, iv: 0.16 });
+      addLeg({ strike: roundSpot + 300, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 35, currentPrice: 35, iv: 0.16 });
+    } else if (presetType === 'twisted_jade_lizard') {
+      // Twisted Jade Lizard: Sell OTM Call (+200), Sell OTM Put (-200), Buy OTM Put (-300) -> Zero Downside Risk
+      addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 85, currentPrice: 85, iv: 0.16 });
+      addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 65, currentPrice: 65, iv: 0.16 });
+      addLeg({ strike: roundSpot - 300, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 35, currentPrice: 35, iv: 0.16 });
     }
   };
 
@@ -119,13 +129,25 @@ export const LegManager: React.FC = () => {
             onClick={() => loadPresetStrategy('short_iron_condor')}
             className="px-2.5 py-1 rounded bg-accentBrand/10 hover:bg-accentBrand/20 border border-accentBrand/30 text-accentBrand text-xs font-bold transition-colors"
           >
-            ⚡ Short Iron Condor (Credit)
+            ⚡ Short Iron Condor
           </button>
           <button
             onClick={() => loadPresetStrategy('long_iron_condor')}
             className="px-2.5 py-1 rounded bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 text-xs font-bold transition-colors"
           >
-            ⚡ Long Iron Condor (Breakout)
+            ⚡ Long Iron Condor
+          </button>
+          <button
+            onClick={() => loadPresetStrategy('jade_lizard')}
+            className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold transition-colors"
+          >
+            ⚡ Jade Lizard (No Upside Risk)
+          </button>
+          <button
+            onClick={() => loadPresetStrategy('twisted_jade_lizard')}
+            className="px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-colors"
+          >
+            ⚡ Twisted Jade Lizard (No Downside Risk)
           </button>
         </div>
 

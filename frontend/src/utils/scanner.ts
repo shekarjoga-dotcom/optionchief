@@ -1206,6 +1206,58 @@ export function scanStrategies(
     }
   }
 
+  // 42. JADE LIZARD (Bullish to Neutral Credit Strategy with Zero Upside Risk)
+  else if (typeUpper === "JADE LIZARD") {
+    for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {
+      for (let sCallOff = minDist; sCallOff <= maxDist; sCallOff += step) {
+        const putIdx = atmIdx - sPutOff;
+        const shortCallIdx = atmIdx + sCallOff;
+        const longCallIdx = shortCallIdx + wingWidth;
+
+        if (putIdx >= 0 && longCallIdx < strikesList.length) {
+          const sPut = getLegHelper(strikesList[putIdx], 'P', 'SELL');
+          const sCall = getLegHelper(strikesList[shortCallIdx], 'C', 'SELL');
+          const lCall = getLegHelper(strikesList[longCallIdx], 'C', 'BUY');
+
+          if (sPut && sCall && lCall) {
+            const scanRes = buildScanResult(
+              `Jade Lizard (${strikesList[putIdx]}/${strikesList[shortCallIdx]}/${strikesList[longCallIdx]})`,
+              [sPut, sCall, lCall],
+              `Sell OTM Put at ${strikesList[putIdx]} & Bear Call Spread (${strikesList[shortCallIdx]}/${strikesList[longCallIdx]}). Zero upside risk if credit exceeds call width.`
+            );
+            if (scanRes) results.push(scanRes);
+          }
+        }
+      }
+    }
+  }
+
+  // 43. TWISTED JADE LIZARD (Bearish to Neutral Credit Strategy with Zero Downside Risk)
+  else if (typeUpper === "TWISTED JADE LIZARD") {
+    for (let sCallOff = minDist; sCallOff <= maxDist; sCallOff += step) {
+      for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {
+        const callIdx = atmIdx + sCallOff;
+        const shortPutIdx = atmIdx - sPutOff;
+        const longPutIdx = shortPutIdx - wingWidth;
+
+        if (longPutIdx >= 0 && callIdx < strikesList.length) {
+          const sCall = getLegHelper(strikesList[callIdx], 'C', 'SELL');
+          const sPut = getLegHelper(strikesList[shortPutIdx], 'P', 'SELL');
+          const lPut = getLegHelper(strikesList[longPutIdx], 'P', 'BUY');
+
+          if (sCall && sPut && lPut) {
+            const scanRes = buildScanResult(
+              `Twisted Jade Lizard (${strikesList[longPutIdx]}/${strikesList[shortPutIdx]}/${strikesList[callIdx]})`,
+              [sCall, sPut, lPut],
+              `Sell OTM Call at ${strikesList[callIdx]} & Bull Put Spread (${strikesList[longPutIdx]}/${strikesList[shortPutIdx]}). Zero downside risk if credit exceeds put width.`
+            );
+            if (scanRes) results.push(scanRes);
+          }
+        }
+      }
+    }
+  }
+
   // Rank scanned results
   const ranked = results.sort((a, b) => {
     const lossA = typeof a.maxLoss === 'number' ? Math.abs(a.maxLoss) : 10000;
