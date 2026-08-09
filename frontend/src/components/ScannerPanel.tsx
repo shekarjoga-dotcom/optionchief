@@ -638,15 +638,24 @@ export const ScannerPanel: React.FC = () => {
     }
   }, [symbol]);
 
+  // Automatically trigger scan when options data or expiries are ready
+  const hasAutoScannedRef = useRef(false);
+  useEffect(() => {
+    if (!hasAutoScannedRef.current && selectedExpiries.length > 0) {
+      hasAutoScannedRef.current = true;
+      handleScan();
+    }
+  }, [options, selectedExpiries]);
+
   const fetchOptionsForSymbolAndExpiry = async (sym: string, exp: string) => {
-    if (sym === symbol && exp === selectedExpiry) {
+    if (sym === symbol && exp === selectedExpiry && options && options.length >= 5 && spot > 0) {
       return { options, spot };
     }
     try {
       const response = await fetch(`${BACKEND_URL}/api/market/option-chain?symbol=${sym}&expiry=${exp}`);
       if (!response.ok) throw new Error("Fetch failed");
       const data = await response.json();
-      return { options: data.options, spot: data.underlying.spot };
+      return { options: data.options || [], spot: data.underlying?.spot || 0 };
     } catch (err) {
       console.error(`Error fetching option chain for ${sym} expiry ${exp}`, err);
       return { options: [], spot: 0 };
