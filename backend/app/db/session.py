@@ -10,11 +10,18 @@ db_path = os.path.join(db_dir, "options_oracle.db")
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
 
-# Normalize PostgreSQL URLs for async SQLAlchemy (Render environment variables provide postgresql:// or postgres://)
+# Normalize PostgreSQL URLs for async SQLAlchemy (Render environment variables provide postgresql:// or postgres:// with sslmode=)
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+
+if "sslmode=" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("sslmode=require", "ssl=require")
+    DATABASE_URL = DATABASE_URL.replace("sslmode=prefer", "ssl=require")
+    DATABASE_URL = DATABASE_URL.replace("sslmode=no-verify", "ssl=no-verify")
+    DATABASE_URL = DATABASE_URL.replace("sslmode=disable", "ssl=disable")
+    DATABASE_URL = DATABASE_URL.replace("sslmode=", "ssl=")
 
 # Automatically ensure parent directory of DATABASE_URL exists and is writable to prevent sqlite connection errors
 if DATABASE_URL.startswith("sqlite+aiosqlite:///"):
