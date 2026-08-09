@@ -345,7 +345,7 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
         }
 
     type_upper = strategy_type.upper()
-    if type_upper in ["IRON CONDOR", "HEDGED SHORT STRANGLE", "ALL"]:
+    if type_upper in ["IRON CONDOR", "SHORT IRON CONDOR", "LONG IRON CONDOR", "HEDGED SHORT STRANGLE", "ALL"]:
         wing = 2
         for d_put in range(2, 12):
             for d_call in range(2, 12):
@@ -529,9 +529,11 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                         "theta": metrics["theta"]
                     })
 
-    if type_upper in ["1:3:2", "1:3:2 CALL RATIO FLY", "ALL"]:
-        for d in [2, 3]:
+    # 1:3:2 Call & Put Ratio Flies
+    if type_upper in ["1:3:2", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "1:3:2 RATIO BUTTERFLY", "1:3:2 BUTTERFLY", "ALL"]:
+        for d in [1, 2, 3, 4]:
             wing = 2
+            # 1:3:2 Call Ratio Fly
             sc_idx = atm_idx + d
             lc_idx1 = sc_idx - wing
             lc_idx2 = sc_idx + wing
@@ -565,6 +567,101 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                         "gamma": metrics["gamma"],
                         "theta": metrics["theta"]
                     })
+
+            # 1:3:2 Put Ratio Fly
+            sp_idx = atm_idx - d
+            lp_idx1 = sp_idx - wing
+            lp_idx2 = sp_idx + wing
+
+            if lp_idx1 >= 0 and lp_idx2 < len(strikes):
+                l_put1 = get_leg(strikes[lp_idx1], 'P', 'BUY')
+                s_put = get_leg(strikes[sp_idx], 'P', 'SELL')
+                l_put2 = get_leg(strikes[lp_idx2], 'P', 'BUY')
+
+                if l_put1 and s_put and l_put2:
+                    l_put1["quantity"] = 2.0
+                    s_put["quantity"] = 3.0
+                    l_put2["quantity"] = 1.0
+
+                    legs = [l_put2, s_put, l_put1]
+                    metrics = project_strategy_py(legs, spot)
+                    rr = 0.0
+                    if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0:
+                        rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxProfit"], (int, float)) else 999.0
+
+                    results.append({
+                        "name": f"1:3:2 Put Ratio Fly ({strikes[lp_idx1]}/{strikes[sp_idx]}/{strikes[lp_idx2]})",
+                        "symbol": "",
+                        "expiry": expiry,
+                        "legs": legs,
+                        "pop": metrics["pop"],
+                        "maxProfit": metrics["maxProfit"],
+                        "maxLoss": metrics["maxLoss"],
+                        "rr_ratio": rr,
+                        "delta": metrics["delta"],
+                        "gamma": metrics["gamma"],
+                        "theta": metrics["theta"]
+                    })
+
+    # Jade Lizard (Sell OTM Put + Bear Call Spread)
+    if type_upper in ["JADE LIZARD", "ALL"]:
+        for p_off in range(1, 6):
+            for c_off in range(1, 6):
+                short_put_idx = atm_idx - p_off
+                short_call_idx = atm_idx + c_off
+                long_call_idx = short_call_idx + 2
+                
+                if short_put_idx >= 0 and long_call_idx < len(strikes):
+                    s_put = get_leg(strikes[short_put_idx], 'P', 'SELL')
+                    s_call = get_leg(strikes[short_call_idx], 'C', 'SELL')
+                    l_call = get_leg(strikes[long_call_idx], 'C', 'BUY')
+
+                    if s_put and s_call and l_call:
+                        legs = [s_put, s_call, l_call]
+                        metrics = project_strategy_py(legs, spot)
+                        results.append({
+                            "name": f"Jade Lizard ({strikes[short_put_idx]}/{strikes[short_call_idx]}/{strikes[long_call_idx]})",
+                            "symbol": "",
+                            "expiry": expiry,
+                            "legs": legs,
+                            "pop": metrics["pop"],
+                            "maxProfit": metrics["maxProfit"],
+                            "maxLoss": metrics["maxLoss"],
+                            "rr_ratio": 999.0,
+                            "delta": metrics["delta"],
+                            "gamma": metrics["gamma"],
+                            "theta": metrics["theta"]
+                        })
+
+    # Twisted Jade Lizard (Sell OTM Call + Bull Put Spread)
+    if type_upper in ["TWISTED JADE LIZARD", "ALL"]:
+        for c_off in range(1, 6):
+            for p_off in range(1, 6):
+                short_call_idx = atm_idx + c_off
+                short_put_idx = atm_idx - p_off
+                long_put_idx = short_put_idx - 2
+
+                if long_put_idx >= 0 and short_call_idx < len(strikes):
+                    s_call = get_leg(strikes[short_call_idx], 'C', 'SELL')
+                    s_put = get_leg(strikes[short_put_idx], 'P', 'SELL')
+                    l_put = get_leg(strikes[long_put_idx], 'P', 'BUY')
+
+                    if s_call and s_put and l_put:
+                        legs = [s_call, s_put, l_put]
+                        metrics = project_strategy_py(legs, spot)
+                        results.append({
+                            "name": f"Twisted Jade Lizard ({strikes[long_put_idx]}/{strikes[short_put_idx]}/{strikes[short_call_idx]})",
+                            "symbol": "",
+                            "expiry": expiry,
+                            "legs": legs,
+                            "pop": metrics["pop"],
+                            "maxProfit": metrics["maxProfit"],
+                            "maxLoss": metrics["maxLoss"],
+                            "rr_ratio": 999.0,
+                            "delta": metrics["delta"],
+                            "gamma": metrics["gamma"],
+                            "theta": metrics["theta"]
+                        })
                     
     if type_upper in ["PROTECTIVE PUT", "ALL"]:
         for offset in range(0, 8):
