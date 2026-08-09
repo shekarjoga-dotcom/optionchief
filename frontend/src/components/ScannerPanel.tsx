@@ -55,6 +55,9 @@ const CATEGORIES = [
 const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   all: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "1:3:2 RATIO BUTTERFLY", label: "1:3:2 Ratio Butterfly (All)", icon: Sparkles },
+    { id: "1:3:2 CALL RATIO FLY", label: "1:3:2 Call Ratio Fly", icon: Scale },
+    { id: "1:3:2 PUT RATIO FLY", label: "1:3:2 Put Ratio Fly", icon: Scale },
     { id: "JADE LIZARD", label: "Jade Lizard (No Upside Risk)", icon: Sparkles },
     { id: "TWISTED JADE LIZARD", label: "Twisted Jade Lizard (No Downside Risk)", icon: Sparkles },
     { id: "SHORT IRON CONDOR", label: "Short Iron Condor (Credit)", icon: Compass },
