@@ -10,18 +10,30 @@ db_path = os.path.join(db_dir, "options_oracle.db")
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
 
-# Normalize PostgreSQL URLs for async SQLAlchemy (Render environment variables provide postgresql:// or postgres:// with sslmode=)
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+# Normalize PostgreSQL URLs for async SQLAlchemy (Render environment variables provide postgresql:// or postgres://)
+if DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://"):
+    import urllib.parse
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    else:
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
-if "sslmode=" in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace("sslmode=require", "ssl=require")
-    DATABASE_URL = DATABASE_URL.replace("sslmode=prefer", "ssl=require")
-    DATABASE_URL = DATABASE_URL.replace("sslmode=no-verify", "ssl=no-verify")
-    DATABASE_URL = DATABASE_URL.replace("sslmode=disable", "ssl=disable")
-    DATABASE_URL = DATABASE_URL.replace("sslmode=", "ssl=")
+    parsed = urllib.parse.urlparse(DATABASE_URL)
+    if parsed.query:
+        qs = urllib.parse.parse_qs(parsed.query)
+        clean_params = {}
+        for k, v in qs.items():
+            if k == 'sslmode':
+                val = v[0] if v else ''
+                if val in ['require', 'prefer']:
+                    clean_params['ssl'] = ['require']
+                elif val == 'no-verify':
+                    clean_params['ssl'] = ['no-verify']
+            elif k in ['ssl', 'timeout', 'command_timeout', 'server_settings']:
+                clean_params[k] = v
+
+        new_query = urllib.parse.urlencode(clean_params, doseq=True)
+        DATABASE_URL = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
 # Automatically ensure parent directory of DATABASE_URL exists and is writable to prevent sqlite connection errors
 if DATABASE_URL.startswith("sqlite+aiosqlite:///"):
