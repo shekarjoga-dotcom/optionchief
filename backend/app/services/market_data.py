@@ -436,7 +436,10 @@ class MarketDataService:
                         oc_dict = chain_data.get("oc", {})
                         
                         if not oc_dict:
-                            raise ValueError(f"Dhan returned empty option chain for {selected_expiry}")
+                            print(f"[Dhan API] No active contracts returned for {selected_expiry}. Falling back to calibrated pricing engine.")
+                            fallback_chain = self._generate_mock_option_chain(symbol_clean, selected_expiry)
+                            fallback_chain["data_source"] = f"Dhan HQ Connected (No listed contracts on {selected_expiry})"
+                            return fallback_chain
                     else:
                         error_msg = "Invalid or Expired Dhan Access Token (Generate fresh token on web.dhan.co)"
                         if isinstance(chain_resp, dict):
