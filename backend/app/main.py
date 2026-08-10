@@ -51,39 +51,51 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.on_event("startup")
 async def on_startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-    # Auto-migrate users table for Dhan credentials columns if missing
-    from sqlalchemy import text
-    async with engine.begin() as conn:
-        try:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN dhan_client_id VARCHAR"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN dhan_access_token VARCHAR"))
-        except Exception:
-            pass
-
-    # Promote all users to owner to prevent local lockouts
-    from sqlalchemy import update
-    from app.db.models import User
-    async with engine.begin() as conn:
-        await conn.execute(update(User).values(role="owner"))
-        
-    # Start server-side active alerts scanner background loop
     import asyncio
-    from app.services.alert_scanner import active_alerts_scanner_loop
-    asyncio.create_task(active_alerts_scanner_loop())
+    
+    async def init_background_tasks():
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                
+            from sqlalchemy import text, update
+            from app.db.models import User
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN dhan_client_id VARCHAR"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN dhan_access_token VARCHAR"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(update(User).values(role="owner"))
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[Startup DB Init Warning] {e}")
 
-    # Start active Telegram Bot background loop
-    from app.services.telegram_bot import start_telegram_bot
-    asyncio.create_task(start_telegram_bot())
+        try:
+            from app.services.alert_scanner import active_alerts_scanner_loop
+            asyncio.create_task(active_alerts_scanner_loop())
+        except Exception as e:
+            print(f"[Alert Scanner Task Warning] {e}")
 
-    # Start active RSI Price Action scanner loop
-    from app.services.rsi_scanner import rsi_scanner_loop
-    asyncio.create_task(rsi_scanner_loop())
+        try:
+            from app.services.telegram_bot import start_telegram_bot
+            asyncio.create_task(start_telegram_bot())
+        except Exception as e:
+            print(f"[Telegram Bot Task Warning] {e}")
+
+        try:
+            from app.services.rsi_scanner import rsi_scanner_loop
+            asyncio.create_task(rsi_scanner_loop())
+        except Exception as e:
+            print(f"[RSI Scanner Task Warning] {e}")
+
+    # Launch asynchronously so FastAPI finishes startup instantly and Uvicorn binds $PORT immediately
+    asyncio.create_task(init_background_tasks())
 
 # Register routers
 app.include_router(auth.router)
