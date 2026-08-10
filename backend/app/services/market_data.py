@@ -904,6 +904,10 @@ class MarketDataService:
             step = 1000
         elif symbol_clean in ["SILVER", "SILVERM"]:
             step = 1000
+        elif symbol_clean in ["NIFTY", "FINNIFTY"]:
+            step = 50
+        elif symbol_clean in ["BANKNIFTY", "SENSEX"]:
+            step = 100
         elif spot > 10000:
             step = 100
         elif spot > 1000:
@@ -917,7 +921,7 @@ class MarketDataService:
 
         # Center strikes around ATM
         atm_strike = round(spot / step) * step
-        num_strikes = 15
+        num_strikes = 30
         strikes = [atm_strike + i * step for i in range(-num_strikes, num_strikes + 1)]
 
         options_list = []
@@ -944,8 +948,8 @@ class MarketDataService:
             default_base_iv = 0.16
             vix_key = "^VIX"
         else:
-            default_base_iv = 0.135
-            vix_key = "^INDIAVIX"
+            default_base_iv = 0.168 if days_to_expiry <= 2 else 0.155
+            vix_key = None # Bypass frozen Yahoo ^INDIAVIX (12.24%) for Indian indices
             
         if not hasattr(self, "_vix_cache"):
             self._vix_cache = {}
