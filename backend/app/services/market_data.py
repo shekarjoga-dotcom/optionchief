@@ -95,14 +95,15 @@ class MarketDataService:
         if not active_token:
             active_token = os.getenv("DHAN_ACCESS_TOKEN")
             
+        client_id = os.getenv("DHAN_CLIENT_ID") or self.dhan_client_id
         if active_token != self._cached_token or self._dhan_client is None:
             self._cached_token = active_token
-            if self.dhan_client_id and active_token:
+            if client_id and active_token:
                 try:
                     from dhanhq import dhanhq, DhanContext
-                    context = DhanContext(self.dhan_client_id, active_token)
+                    context = DhanContext(client_id, active_token)
                     self._dhan_client = dhanhq(context)
-                    print(f"[Dhan API] Live client dynamically initialized/refreshed for ID: {self.dhan_client_id}")
+                    print(f"[Dhan API] Live client dynamically initialized/refreshed for ID: {client_id}")
                 except Exception as e:
                     print(f"[Dhan API] Dynamic client connection failed: {e}")
                     self._dhan_client = None

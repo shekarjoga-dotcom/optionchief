@@ -257,8 +257,19 @@ async def update_profile(
 ):
     if data.dhan_client_id is not None:
         current_user.dhan_client_id = data.dhan_client_id.strip()
+        os.environ["DHAN_CLIENT_ID"] = current_user.dhan_client_id
     if data.dhan_access_token is not None:
         current_user.dhan_access_token = data.dhan_access_token.strip()
+        os.environ["DHAN_ACCESS_TOKEN"] = current_user.dhan_access_token
+        try:
+            token_dir = "/data" if os.path.exists("/data") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+            os.makedirs(token_dir, exist_ok=True)
+            token_file = os.path.join(token_dir, "dhan_token.txt")
+            with open(token_file, "w", encoding="utf-8") as f:
+                f.write(current_user.dhan_access_token)
+            print(f"[Dhan Token Sync] Written active Dhan token to {token_file}")
+        except Exception as e:
+            print(f"[Dhan Token Sync] Error writing token file: {e}")
     
     await db.commit()
     await db.refresh(current_user)
