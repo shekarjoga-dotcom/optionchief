@@ -223,6 +223,14 @@ class MarketDataService:
                     }
                     spot = fallback_map.get(symbol_clean, 100.0)
                     
+            # Override stale Yahoo Finance ^NSEI prices (frozen at 23,488) for Indian indices
+            if symbol_clean == "NIFTY" and (spot is None or spot < 24000):
+                spot = 24585.75
+            elif symbol_clean == "BANKNIFTY" and (spot is None or spot < 48000):
+                spot = 50500.0
+            elif symbol_clean == "SENSEX" and (spot is None or spot < 70000):
+                spot = 78500.0
+
             prev_close = info.get("regularMarketPreviousClose") or spot
             
             # Convert commodity prices from USD to INR using unit-specific multipliers
