@@ -129,7 +129,13 @@ export const useStore = create<AppState>((set, get) => ({
         url += `&expiry=${selectedExpiry}`;
       }
 
-      const response = await fetch(url);
+      const headers: Record<string, string> = {};
+      const localClientId = localStorage.getItem("dhan_client_id");
+      const localAccessToken = localStorage.getItem("dhan_access_token");
+      if (localClientId) headers["X-Dhan-Client-Id"] = localClientId;
+      if (localAccessToken) headers["X-Dhan-Access-Token"] = localAccessToken;
+
+      const response = await fetch(url, { headers });
       if (!response.ok) {
         throw new Error("Failed to fetch option chain data");
       }
@@ -476,6 +482,9 @@ export const useStore = create<AppState>((set, get) => ({
     const { token } = get();
     if (!token) return false;
     try {
+      if (dhanClientId) localStorage.setItem("dhan_client_id", dhanClientId);
+      if (dhanAccessToken) localStorage.setItem("dhan_access_token", dhanAccessToken);
+      
       const response = await fetch(`${BACKEND_URL}/api/auth/profile`, {
         method: "PUT",
         headers: {
@@ -490,6 +499,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (response.ok) {
         const data = await response.json();
         set({ user: data.user });
+        get().fetchMarketData();
         return true;
       }
       return false;

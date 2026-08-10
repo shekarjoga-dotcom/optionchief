@@ -371,20 +371,32 @@ class MarketDataService:
             print(f"Error fetching historical prices: {str(e)}")
             return [100.0 * (1.0 + 0.01 * math.sin(i / 10.0)) for i in range(250)]
 
-    def get_option_chain(self, symbol: str, expiry: str = None) -> dict:
+    def get_option_chain(self, symbol: str, expiry: str = None, dhan_client_id: str = None, dhan_access_token: str = None) -> dict:
         """
         Fetches the option chain for a given symbol and expiry.
         If expiry is None, returns the first available expiry data.
         """
         symbol_clean = self._clean_symbol(symbol)
         if symbol_clean == "ALL_NSE":
-            chain = self.get_option_chain("NIFTY", expiry)
+            chain = self.get_option_chain("NIFTY", expiry, dhan_client_id, dhan_access_token)
             if chain and "underlying" in chain:
                 chain["underlying"]["symbol"] = "ALL_NSE"
                 chain["underlying"]["ticker"] = "ALL_NSE"
             return chain
         
-        if self.is_dhan_enabled and symbol_clean != "SENSEX":
+        # Instantiate dynamic Dhan client if headers are provided
+        dhan_client = None
+        if dhan_client_id and dhan_access_token:
+            try:
+                from dhanhq import dhanhq, DhanContext
+                dhan_client = dhanhq(DhanContext(dhan_client_id.strip(), dhan_access_token.strip()))
+            except Exception as e:
+                print(f"[Dhan API] Failed initializing client from request headers: {e}")
+
+        if not dhan_client:
+            dhan_client = self.dhan
+            
+        if dhan_client and symbol_clean != "SENSEX":
             scrip_info = self._get_dhan_scrip_info(symbol_clean)
             if scrip_info:
                 try:
@@ -403,7 +415,7 @@ class MarketDataService:
                     print(f"[Dhan API] Fetching live option chain for {symbol_clean} / Expiry: {selected_expiry} (Seg: {api_seg})...")
                     
                     try:
-                        chain_resp = self.dhan.option_chain(
+                        chain_resp = dhan_client.option_chain(
                             under_security_id=sec_id,
                             under_exchange_segment=api_seg,
                             expiry=selected_expiry
@@ -411,7 +423,7 @@ class MarketDataService:
                     except Exception as err1:
                         alt_seg = "NSE_FNO" if api_seg == "IDX_I" else "IDX_I"
                         print(f"[Dhan API] Retry option chain with alt_seg: {alt_seg} due to: {err1}")
-                        chain_resp = self.dhan.option_chain(
+                        chain_resp = dhan_client.option_chain(
                             under_security_id=sec_id,
                             under_exchange_segment=alt_seg,
                             expiry=selected_expiry

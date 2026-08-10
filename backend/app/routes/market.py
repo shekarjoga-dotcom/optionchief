@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
+from typing import Optional
 from app.services.market_data import MarketDataService
 
 router = APIRouter(prefix="/api/market", tags=["market"])
@@ -15,10 +16,17 @@ def get_underlying(symbol: str = Query(..., description="Underlying symbol (e.g.
 @router.get("/option-chain")
 def get_option_chain(
     symbol: str = Query(..., description="Underlying symbol (e.g. NIFTY, AAPL, SPY)"),
-    expiry: str = Query(None, description="Expiry date in YYYY-MM-DD format")
+    expiry: str = Query(None, description="Expiry date in YYYY-MM-DD format"),
+    x_dhan_client_id: Optional[str] = Header(None, alias="X-Dhan-Client-Id"),
+    x_dhan_access_token: Optional[str] = Header(None, alias="X-Dhan-Access-Token")
 ):
     try:
-        data = market_service.get_option_chain(symbol, expiry)
+        data = market_service.get_option_chain(
+            symbol, 
+            expiry, 
+            dhan_client_id=x_dhan_client_id, 
+            dhan_access_token=x_dhan_access_token
+        )
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching option chain: {str(e)}")
