@@ -255,6 +255,14 @@ class MarketDataService:
             open_val = (info.get("regularMarketOpen") or (spot / multiplier)) * multiplier
             high_val = (info.get("regularMarketDayHigh") or (spot / multiplier)) * multiplier
             low_val = (info.get("regularMarketDayLow") or (spot / multiplier)) * multiplier
+
+            # Sanitize stale index OHLC quotes from Yahoo Finance
+            if symbol_clean in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"]:
+                if open_val < spot * 0.8 or open_val > spot * 1.2:
+                    open_val = spot
+                    high_val = spot
+                    low_val = spot
+                    prev_close = spot
             
             change = spot - prev_close
             pct_change = (change / prev_close) * 100 if prev_close else 0.0
