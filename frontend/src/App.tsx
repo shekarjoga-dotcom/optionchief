@@ -147,13 +147,19 @@ const App: React.FC = () => {
     checkAuthSession();
   }, []);
 
-  // Fetch data only after the session has been validated and token is set
+  // Fetch data and run 5-second continuous market data polling loop
   useEffect(() => {
     if (token && user) {
       fetchMarketData();
       fetchPortfolios();
+
+      const pollInterval = setInterval(() => {
+        fetchMarketData();
+      }, 5000); // Continuous 5-second market quote refresher
+
+      return () => clearInterval(pollInterval);
     }
-  }, [token, user]);
+  }, [token, user, fetchMarketData]);
 
   const playAlertSound = () => {
     try {

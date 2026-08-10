@@ -737,11 +737,18 @@ class MarketDataService:
         ask = float(leg.get("askPrice") or leg.get("sellPrice1") or 0)
         
         change = float(leg.get("change", 0))
-        pct_change = float(leg.get("pChange", 0))
-        volume = int(leg.get("totalTradedVolume", 0))
-        oi = int(leg.get("openInterest", 0))
-        oi_change = int(leg.get("changeinOpenInterest", 0))
         iv = float(leg.get("impliedVolatility", 0)) / 100.0 # NSE lists IV as percent
+
+        # Fallback ltp if 0
+        if ltp <= 0:
+            if bid > 0 and ask > 0:
+                ltp = (bid + ask) / 2.0
+            elif bid > 0:
+                ltp = bid
+            elif ask > 0:
+                ltp = ask
+            else:
+                ltp = bs_pricing(spot, strike, T, r, iv if iv > 0 else 0.15, option_type)
 
         # OI Analysis
         # Long Buildup: Price up, OI up
