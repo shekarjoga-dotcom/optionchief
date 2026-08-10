@@ -888,8 +888,11 @@ class MarketDataService:
         selected_expiry = expiry if expiry in expiries else expiries[0]
         
         today = datetime.now()
-        expiry_dt = datetime.strptime(selected_expiry, "%Y-%m-%d")
-        days_to_expiry = max(1, (expiry_dt - today).days)
+        try:
+            expiry_dt = datetime.strptime(selected_expiry, "%Y-%m-%d").replace(hour=15, minute=30)
+            days_to_expiry = max(0.2, (expiry_dt - today).total_seconds() / 86400.0)
+        except Exception:
+            days_to_expiry = 1.0
         T = days_to_expiry / 365.0
         
         # Calibrate risk-free rate (6.5% for Indian markets, 5.0% for US)
