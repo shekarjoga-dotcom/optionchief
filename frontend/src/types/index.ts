@@ -42,6 +42,7 @@ export interface OptionChainData {
   selected_expiry: string;
   pcr: number;
   options: StrikeChain[];
+  data_source?: string;
 }
 
 export interface StrategyLeg {

@@ -85,6 +85,8 @@ class MarketDataService:
         token_path = "/data/dhan_token.txt" if os.path.exists("/data") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "dhan_token.txt")
         
         active_token = None
+        client_id = None
+        
         if os.path.exists(token_path):
             try:
                 with open(token_path, "r", encoding="utf-8") as f:
@@ -94,8 +96,31 @@ class MarketDataService:
                 
         if not active_token:
             active_token = os.getenv("DHAN_ACCESS_TOKEN")
+            client_id = os.getenv("DHAN_CLIENT_ID")
             
-        client_id = os.getenv("DHAN_CLIENT_ID") or self.dhan_client_id
+        if not client_id:
+            client_id = getattr(self, "dhan_client_id", None) or os.getenv("DHAN_CLIENT_ID")
+
+        # Persistent DB fallback check if environment variables are blank after deployment restart
+        if not active_token or not client_id:
+            try:
+                import sqlite3
+                db_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+                db_path = os.path.join(db_dir, "options_oracle.db")
+                if os.path.exists(db_path):
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT dhan_client_id, dhan_access_token FROM users WHERE dhan_access_token IS NOT NULL AND dhan_access_token != '' LIMIT 1")
+                    row = cursor.fetchone()
+                    if row and row[1]:
+                        if not client_id:
+                            client_id = row[0]
+                        if not active_token:
+                            active_token = row[1]
+                    conn.close()
+            except Exception:
+                pass
+
         if active_token != self._cached_token or self._dhan_client is None:
             self._cached_token = active_token
             if client_id and active_token:
@@ -103,7 +128,7 @@ class MarketDataService:
                     from dhanhq import dhanhq, DhanContext
                     context = DhanContext(client_id, active_token)
                     self._dhan_client = dhanhq(context)
-                    print(f"[Dhan API] Live client dynamically initialized/refreshed for ID: {client_id}")
+                    print(f"[Dhan API] Live client dynamically initialized for Client ID: {client_id}")
                 except Exception as e:
                     print(f"[Dhan API] Dynamic client connection failed: {e}")
                     self._dhan_client = None
@@ -435,7 +460,8 @@ class MarketDataService:
                             "expiry_dates": expiries[:10],
                             "selected_expiry": selected_expiry,
                             "pcr": round(pcr, 4),
-                            "options": options_list
+                            "options": options_list,
+                            "data_source": "Dhan HQ (Live Direct Stream)"
                         }
                 except Exception as e:
                     print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}")
@@ -766,7 +792,8 @@ class MarketDataService:
                 "expiry_dates": [item[1] for item in formatted_expiries][:10],
                 "selected_expiry": selected_exp_fmt,
                 "pcr": round(pcr, 4),
-                "options": options_list
+                "options": options_list,
+                "data_source": "NSE India API Stream"
             }
         except Exception as e:
             print(f"[NSE Scraper] Scraping NSE failed: {str(e)}")
@@ -1084,7 +1111,8 @@ class MarketDataService:
             "expiry_dates": expiries,
             "selected_expiry": selected_expiry,
             "pcr": round(pcr, 4),
-            "options": options_list
+            "options": options_list,
+            "data_source": "Calibrated Exchange Pricing Engine"
         }
 
     def _get_dhan_scrip_info(self, symbol: str) -> dict:

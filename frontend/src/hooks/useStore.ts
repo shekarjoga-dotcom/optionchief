@@ -20,6 +20,7 @@ interface AppState {
   portfolios: SavedPortfolio[];
   isLoading: boolean;
   error: string | null;
+  dataSource: string | null;
 
   // Authentication state
   token: string | null;
@@ -92,6 +93,7 @@ export const useStore = create<AppState>((set, get) => ({
   portfolios: [],
   isLoading: false,
   error: null,
+  dataSource: null,
   clearError: () => set({ error: null }),
 
   alertRules: [],
@@ -139,6 +141,7 @@ export const useStore = create<AppState>((set, get) => ({
         selectedExpiry: data.selected_expiry,
         options: data.options,
         pcr: data.pcr,
+        dataSource: data.data_source || null,
         isLoading: false
       });
     } catch (err: any) {

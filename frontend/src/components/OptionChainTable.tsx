@@ -4,7 +4,7 @@ import { getLotSizeForSymbol, getCurrencySymbol } from '../utils/optionsMath';
 import { RefreshCw } from 'lucide-react';
 
 export const OptionChainTable: React.FC = () => {
-  const { options, underlying, addLeg, selectedExpiry, fetchMarketData } = useStore();
+  const { options, underlying, addLeg, selectedExpiry, fetchMarketData, dataSource } = useStore();
 
   const [refreshRate, setRefreshRate] = useState<number>(() => {
     const saved = localStorage.getItem("options_oracle_chain_refresh_rate");
@@ -40,6 +40,8 @@ export const OptionChainTable: React.FC = () => {
   const atmStrike = options.reduce((prev, curr) => {
     return Math.abs(curr.strike - spot) < Math.abs(prev.strike - spot) ? curr : prev;
   }).strike;
+
+
 
   const formatPrice = (price: number) => {
     if (price === 0) return `${cur}0.00`;
@@ -89,7 +91,16 @@ export const OptionChainTable: React.FC = () => {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-between items-center px-1">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Option Chain Matrix</h3>
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Option Chain Matrix</h3>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+            dataSource?.includes("Dhan") 
+              ? "bg-emerald-950 text-emerald-400 border-emerald-700/60 shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse" 
+              : "bg-blue-950 text-blue-400 border-blue-700/60"
+          }`}>
+            {dataSource ? `🟢 ${dataSource}` : "🟢 Live Market Stream"}
+          </span>
+        </div>
         <div className="flex items-center gap-4 text-xs text-gray-500 animate-fadeIn">
           <div className="flex items-center gap-2 bg-gray-900/80 border border-borderClr/40 px-2.5 py-1 rounded-lg">
             <RefreshCw 
