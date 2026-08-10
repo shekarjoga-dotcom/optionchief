@@ -317,17 +317,22 @@ async def test_dhan_connection(data: DhanTestSchema):
     try:
         from dhanhq import dhanhq, DhanContext
         client = dhanhq(DhanContext(client_id, token))
-        resp = client.option_chain(under_security_id=13, under_exchange_segment="IDX_I", expiry="2026-08-11")
         
-        if resp and resp.get("status") == "success":
+        # Test profile / fund limits first
+        resp = client.get_fund_limits()
+        if not (isinstance(resp, dict) and resp.get("status") == "success"):
+            # Fallback to test option chain
+            resp = client.option_chain(under_security_id=13, under_exchange_segment="IDX_I", expiry="2026-08-11")
+        
+        if isinstance(resp, dict) and resp.get("status") == "success":
             return {"status": "success", "message": "🟢 Connection Successful! Dhan HQ live stream is active."}
         else:
-            remarks = resp.get("remarks") if resp else "Authentication Failed"
+            remarks = resp.get("remarks") if isinstance(resp, dict) else "Authentication Failed"
             err_detail = "Invalid or Expired Dhan Access Token (Generate fresh token on web.dhan.co)"
             if isinstance(remarks, str) and remarks.strip():
                 err_detail = remarks
             elif isinstance(remarks, dict):
-                err_detail = remarks.get("error_message") or remarks.get("message") or "Invalid or Expired Dhan Access Token (Generate fresh token on web.dhan.co)"
+                err_detail = remarks.get("error_message") or remarks.get("message") or remarks.get("error_type") or str(remarks)
             raise HTTPException(status_code=400, detail=f"{err_detail}")
     except HTTPException:
         raise
