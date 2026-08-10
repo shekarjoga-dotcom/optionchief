@@ -425,6 +425,9 @@ class MarketDataService:
                         
                         if not oc_dict:
                             raise ValueError(f"Dhan returned empty option chain for {selected_expiry}")
+                    else:
+                        print(f"[Dhan API Warning] Option chain call returned failure status: {chain_resp}")
+                        raise ValueError(f"Dhan API returned failure: {chain_resp.get('remarks') or chain_resp}")
                         
                         underlying_data = {
                             "symbol": symbol.upper(),

@@ -270,6 +270,14 @@ async def update_profile(
             print(f"[Dhan Token Sync] Written active Dhan token to {token_file}")
         except Exception as e:
             print(f"[Dhan Token Sync] Error writing token file: {e}")
+            
+    # Reset market_service cache to force re-authenticating with new Dhan keys
+    try:
+        from app.routes.market import market_service
+        market_service._cached_token = None
+        market_service._dhan_client = None
+    except Exception:
+        pass
     
     await db.commit()
     await db.refresh(current_user)
