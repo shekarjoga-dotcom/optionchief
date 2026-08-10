@@ -177,6 +177,17 @@ class MarketDataService:
                 except Exception as e:
                     print(f"[Dhan API] Error fetching underlying data from Dhan: {str(e)}")
                     
+        # For Indian indices, try direct NSE scraper first if Dhan is not active
+        if symbol_clean in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"]:
+            try:
+                nse_data = self._try_scrape_nse(symbol_clean)
+                if nse_data and nse_data.get("underlying") and nse_data["underlying"].get("spot"):
+                    u = nse_data["underlying"]
+                    if float(u["spot"]) > 1000:
+                        return u
+            except Exception:
+                pass
+
         ticker_symbol = SYMBOL_MAPPING.get(symbol_clean, symbol_clean)
         if symbol_clean in NSE_FO_STOCKS and not ticker_symbol.endswith(".NS"):
             ticker_symbol = f"{symbol_clean}.NS"
@@ -195,8 +206,8 @@ class MarketDataService:
                         spot = float(hist['Close'].iloc[-1])
                     else:
                         fallback_map = {
-                            "SENSEX": 79500.0,
-                            "NIFTY": 24500.0,
+                            "SENSEX": 78500.0,
+                            "NIFTY": 24580.0,
                             "BANKNIFTY": 50500.0,
                             "FINNIFTY": 23500.0,
                             "MIDCPNIFTY": 12500.0
@@ -204,8 +215,8 @@ class MarketDataService:
                         spot = fallback_map.get(symbol_clean, 100.0)
                 except Exception:
                     fallback_map = {
-                        "SENSEX": 79500.0,
-                        "NIFTY": 24500.0,
+                        "SENSEX": 78500.0,
+                        "NIFTY": 24580.0,
                         "BANKNIFTY": 50500.0,
                         "FINNIFTY": 23500.0,
                         "MIDCPNIFTY": 12500.0
