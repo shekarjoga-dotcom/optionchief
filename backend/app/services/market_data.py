@@ -400,13 +400,22 @@ class MarketDataService:
                     # For MCX segment, convert M to MCX_COMM in Dhan API call
                     api_seg = "MCX_COMM" if segment == "M" else segment
                     
-                    print(f"[Dhan API] Fetching live option chain for {symbol_clean} / Expiry: {selected_expiry}...")
+                    print(f"[Dhan API] Fetching live option chain for {symbol_clean} / Expiry: {selected_expiry} (Seg: {api_seg})...")
                     
-                    chain_resp = self.dhan.option_chain(
-                        under_security_id=sec_id,
-                        under_exchange_segment=api_seg,
-                        expiry=selected_expiry
-                    )
+                    try:
+                        chain_resp = self.dhan.option_chain(
+                            under_security_id=sec_id,
+                            under_exchange_segment=api_seg,
+                            expiry=selected_expiry
+                        )
+                    except Exception as err1:
+                        alt_seg = "NSE_FNO" if api_seg == "IDX_I" else "IDX_I"
+                        print(f"[Dhan API] Retry option chain with alt_seg: {alt_seg} due to: {err1}")
+                        chain_resp = self.dhan.option_chain(
+                            under_security_id=sec_id,
+                            under_exchange_segment=alt_seg,
+                            expiry=selected_expiry
+                        )
                     
                     if chain_resp and chain_resp.get("status") == "success":
                         chain_data = chain_resp.get("data", {})
