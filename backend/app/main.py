@@ -54,6 +54,18 @@ async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
+    # Auto-migrate users table for Dhan credentials columns if missing
+    from sqlalchemy import text
+    async with engine.begin() as conn:
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN dhan_client_id VARCHAR"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN dhan_access_token VARCHAR"))
+        except Exception:
+            pass
+
     # Promote all users to owner to prevent local lockouts
     from sqlalchemy import update
     from app.db.models import User

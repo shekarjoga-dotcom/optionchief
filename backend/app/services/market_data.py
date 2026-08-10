@@ -104,22 +104,29 @@ class MarketDataService:
         # Persistent DB fallback check if environment variables are blank after deployment restart
         if not active_token or not client_id:
             try:
-                import sqlite3
-                db_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
-                db_path = os.path.join(db_dir, "options_oracle.db")
-                if os.path.exists(db_path):
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT dhan_client_id, dhan_access_token FROM users WHERE dhan_access_token IS NOT NULL AND dhan_access_token != '' LIMIT 1")
-                    row = cursor.fetchone()
-                    if row and row[1]:
+                from app.db.session import DATABASE_URL
+                from sqlalchemy import create_engine, text
+                sync_url = DATABASE_URL
+                if "sqlite+aiosqlite:///" in sync_url:
+                    sync_url = sync_url.replace("sqlite+aiosqlite:///", "sqlite:///")
+                elif "postgresql+asyncpg://" in sync_url:
+                    sync_url = sync_url.replace("postgresql+asyncpg://", "postgresql://")
+                elif "postgres://" in sync_url:
+                    sync_url = sync_url.replace("postgres://", "postgresql://")
+
+                engine_db = create_engine(sync_url)
+                with engine_db.connect() as conn_db:
+                    res = conn_db.execute(text("SELECT dhan_client_id, dhan_access_token FROM users WHERE dhan_access_token IS NOT NULL AND dhan_access_token != '' ORDER BY id DESC LIMIT 1")).fetchone()
+                    if res and res[1]:
                         if not client_id:
-                            client_id = row[0]
+                            client_id = str(res[0])
                         if not active_token:
-                            active_token = row[1]
-                    conn.close()
-            except Exception:
-                pass
+                            active_token = str(res[1])
+                            os.environ["DHAN_ACCESS_TOKEN"] = active_token
+                        if client_id:
+                            os.environ["DHAN_CLIENT_ID"] = client_id
+            except Exception as e:
+                print(f"[Dhan DB Lookup] Error: {e}")
 
         if active_token != self._cached_token or self._dhan_client is None:
             self._cached_token = active_token
