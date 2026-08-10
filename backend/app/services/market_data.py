@@ -177,7 +177,48 @@ class MarketDataService:
                 except Exception as e:
                     print(f"[Dhan API] Error fetching underlying data from Dhan: {str(e)}")
                     
-        # For Indian indices, try direct NSE scraper first if Dhan is not active
+        # Real-time Live NSE Index API (api/allIndices)
+        if symbol_clean in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE"]:
+            try:
+                if self._nse_session:
+                    resp = self._nse_session.get("https://www.nseindia.com/api/allIndices", impersonate="chrome120")
+                    if resp.status_code == 200:
+                        idx_data = resp.json().get("data", [])
+                        target_name = {
+                            "NIFTY": "NIFTY 50",
+                            "BANKNIFTY": "NIFTY BANK",
+                            "FINNIFTY": "NIFTY FINANCIAL SERVICES",
+                            "MIDCPNIFTY": "NIFTY MIDCAP SELECT",
+                            "NIFTYIT": "NIFTY IT"
+                        }.get(symbol_clean, symbol_clean)
+
+                        for item in idx_data:
+                            if item.get("index") == target_name or item.get("indexSymbol") == target_name:
+                                spot = float(item.get("last", 0))
+                                open_p = float(item.get("open", spot))
+                                high_p = float(item.get("high", spot))
+                                low_p = float(item.get("low", spot))
+                                prev_close = float(item.get("previousClose", spot))
+                                change = float(item.get("variation", spot - prev_close))
+                                pct_change = float(item.get("percentChange", (change / prev_close * 100) if prev_close else 0.0))
+
+                                if spot > 1000:
+                                    return {
+                                        "symbol": symbol.upper(),
+                                        "ticker": symbol_clean,
+                                        "spot": spot,
+                                        "open": open_p,
+                                        "high": high_p,
+                                        "low": low_p,
+                                        "previous_close": prev_close,
+                                        "change": round(change, 2),
+                                        "pct_change": round(pct_change, 2),
+                                        "volume": 0
+                                    }
+            except Exception as e:
+                print(f"[NSE Index Feed] Error querying allIndices: {e}")
+
+        # Direct Scrape Fallback
         if symbol_clean in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"]:
             try:
                 nse_data = self._try_scrape_nse(symbol_clean)
@@ -188,7 +229,7 @@ class MarketDataService:
             except Exception as e:
                 print(f"[NSE Scraper] Scrape error for {symbol_clean}: {e}")
 
-            # Guaranteed Live Index Baseline Fallback (Bypasses stale Yahoo Finance ^NSEI data)
+            # Guaranteed Live Index Baseline Fallback
             fallback_map = {
                 "SENSEX": 78500.0,
                 "NIFTY": 24585.75,
