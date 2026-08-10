@@ -93,12 +93,14 @@ export const OptionChainTable: React.FC = () => {
       <div className="flex justify-between items-center px-1">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider">Option Chain Matrix</h3>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-            dataSource?.includes("Dhan") 
-              ? "bg-emerald-950 text-emerald-400 border-emerald-700/60 shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse" 
-              : "bg-blue-950 text-blue-400 border-blue-700/60"
+          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+            dataSource?.includes("Error") || dataSource?.includes("Failed")
+              ? "bg-rose-950/90 text-rose-300 border-rose-600/70 shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+              : dataSource?.includes("Dhan HQ (Live Direct Stream)") 
+                ? "bg-emerald-950 text-emerald-400 border-emerald-700/60 shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse" 
+                : "bg-blue-950 text-blue-400 border-blue-700/60"
           }`}>
-            {dataSource ? `🟢 ${dataSource}` : "🟢 Live Market Stream"}
+            {dataSource ? (dataSource.includes("Error") || dataSource.includes("Failed") ? `⚠️ ${dataSource}` : `🟢 ${dataSource}`) : "🟢 Live Market Stream"}
           </span>
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-500 animate-fadeIn">

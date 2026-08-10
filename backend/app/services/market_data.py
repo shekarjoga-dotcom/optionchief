@@ -438,8 +438,18 @@ class MarketDataService:
                         if not oc_dict:
                             raise ValueError(f"Dhan returned empty option chain for {selected_expiry}")
                     else:
-                        print(f"[Dhan API Warning] Option chain call returned failure status: {chain_resp}")
-                        raise ValueError(f"Dhan API returned failure: {chain_resp.get('remarks') or chain_resp}")
+                        error_msg = "Authentication Failed - Invalid Client ID or Token"
+                        if isinstance(chain_resp, dict):
+                            data_err = chain_resp.get("data")
+                            if isinstance(data_err, dict) and data_err:
+                                error_msg = str(list(data_err.values())[0])
+                            elif chain_resp.get("remarks"):
+                                error_msg = str(chain_resp.get("remarks"))
+                                
+                        print(f"[Dhan API Warning] Option chain call returned failure status: {error_msg}")
+                        fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
+                        fallback_chain["data_source"] = f"Dhan API Error: {error_msg}"
+                        return fallback_chain
                         
                         underlying_data = {
                             "symbol": symbol.upper(),
@@ -496,6 +506,9 @@ class MarketDataService:
                         }
                 except Exception as e:
                     print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}")
+                    fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
+                    fallback_chain["data_source"] = f"Dhan API Exception: {str(e)}"
+                    return fallback_chain
 
         ticker_symbol = SYMBOL_MAPPING.get(symbol_clean, symbol_clean)
 
