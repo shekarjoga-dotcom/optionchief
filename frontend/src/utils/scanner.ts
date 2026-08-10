@@ -533,7 +533,7 @@ export function scanStrategies(
 
   // 17. 1:3:2 CALL RATIO FLY
   else if (typeUpper === "1:3:2 CALL RATIO FLY" || typeUpper === "1:3:2 RATIO BUTTERFLY" || typeUpper === "1:3:2 BUTTERFLY" || typeUpper === "1:3:2") {
-    for (let offset = minDist; offset <= maxDist; offset += step) {
+    for (let offset = -2; offset <= maxDist; offset += step) {
       const centerIdx = atmIdx + offset;
       const lowerIdx = centerIdx - 2 * wingWidth;
       const upperIdx = centerIdx + wingWidth;
@@ -560,7 +560,7 @@ export function scanStrategies(
 
   // 18. 1:3:2 PUT RATIO FLY
   if (typeUpper === "1:3:2 PUT RATIO FLY" || typeUpper === "1:3:2 RATIO BUTTERFLY" || typeUpper === "1:3:2 BUTTERFLY" || typeUpper === "1:3:2") {
-    for (let offset = minDist; offset <= maxDist; offset += step) {
+    for (let offset = -2; offset <= maxDist; offset += step) {
       const centerIdx = atmIdx - offset;
       const lowerIdx = centerIdx - wingWidth;
       const upperIdx = centerIdx + 2 * wingWidth;
