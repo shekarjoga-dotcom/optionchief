@@ -302,3 +302,34 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "dhan_client_id": current_user.dhan_client_id,
         "dhan_access_token": current_user.dhan_access_token
     }
+
+class DhanTestSchema(BaseModel):
+    dhan_client_id: str
+    dhan_access_token: str
+
+@router.post("/test-dhan")
+async def test_dhan_connection(data: DhanTestSchema):
+    client_id = data.dhan_client_id.strip()
+    token = data.dhan_access_token.strip()
+    if not client_id or not token:
+        raise HTTPException(status_code=400, detail="Client ID and Access Token cannot be blank")
+        
+    try:
+        from dhanhq import dhanhq, DhanContext
+        client = dhanhq(DhanContext(client_id, token))
+        resp = client.option_chain(under_security_id=13, under_exchange_segment="IDX_I", expiry="2026-08-11")
+        
+        if resp and resp.get("status") == "success":
+            return {"status": "success", "message": "🟢 Connection Successful! Dhan HQ live stream is active."}
+        else:
+            remarks = resp.get("remarks") if resp else "Authentication Failed"
+            err_detail = "Invalid or Expired Dhan Access Token (Generate fresh token on web.dhan.co)"
+            if isinstance(remarks, str) and remarks.strip():
+                err_detail = remarks
+            elif isinstance(remarks, dict):
+                err_detail = remarks.get("error_message") or remarks.get("message") or "Invalid or Expired Dhan Access Token (Generate fresh token on web.dhan.co)"
+            raise HTTPException(status_code=400, detail=f"{err_detail}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Dhan Connection Exception: {str(e)}")

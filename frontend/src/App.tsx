@@ -91,6 +91,8 @@ const App: React.FC = () => {
   const [dhanClientIdInput, setDhanClientIdInput] = useState(user?.dhan_client_id || '');
   const [dhanAccessTokenInput, setDhanAccessTokenInput] = useState(user?.dhan_access_token || '');
   const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
+  const [isTestingDhan, setIsTestingDhan] = useState(false);
+  const [dhanTestResult, setDhanTestResult] = useState<{ status: 'success' | 'error'; message: string } | null>(null);
 
   const seenAlertIdsRef = useRef<Set<string>>(new Set());
 
@@ -598,37 +600,77 @@ const App: React.FC = () => {
                     className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
                   />
                 </div>
-
-                {profileSaveSuccess && (
-                  <div className="bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-3 py-2 rounded text-xs">
-                    Profile settings saved successfully!
+                                {dhanTestResult && (
+                  <div className={`border px-3 py-2 rounded text-xs font-semibold ${
+                    dhanTestResult.status === 'success' 
+                      ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300' 
+                      : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+                  }`}>
+                    {dhanTestResult.message}
                   </div>
                 )}
 
-                <div className="flex justify-end space-x-2 pt-2">
+                {profileSaveSuccess && (
+                  <div className="bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-3 py-2 rounded text-xs font-semibold">
+                    Profile settings saved successfully! Option chain matrix refreshing...
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2">
                   <button
-                    onClick={() => setShowProfileModal(false)}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
+                    disabled={isTestingDhan}
                     onClick={async () => {
-                      const ok = await updateUserProfile(dhanClientIdInput, dhanAccessTokenInput);
-                      if (ok) {
-                        setProfileSaveSuccess(true);
-                        setTimeout(() => {
-                          setProfileSaveSuccess(false);
-                          setShowProfileModal(false);
-                        }, 1200);
-                      } else {
-                        alert("Failed to save profile settings");
+                      setIsTestingDhan(true);
+                      setDhanTestResult(null);
+                      try {
+                        const resp = await fetch(`${BACKEND_URL}/api/auth/test-dhan`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            dhan_client_id: dhanClientIdInput,
+                            dhan_access_token: dhanAccessTokenInput
+                          })
+                        });
+                        const data = await resp.json();
+                        if (resp.ok) {
+                          setDhanTestResult({ status: 'success', message: data.message });
+                        } else {
+                          setDhanTestResult({ status: 'error', message: `🔴 ${data.detail || 'Connection failed'}` });
+                        }
+                      } catch (err: any) {
+                        setDhanTestResult({ status: 'error', message: `🔴 Connection error: ${err.message}` });
+                      } finally {
+                        setIsTestingDhan(false);
                       }
                     }}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded font-bold"
+                    className="px-3 py-2 bg-blue-950 border border-blue-700/60 hover:bg-blue-900 text-blue-300 text-xs rounded font-bold transition-all flex items-center gap-1"
                   >
-                    Save Credentials
+                    {isTestingDhan ? "Testing..." : "Test Connection"}
                   </button>
+
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setShowProfileModal(false)}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const ok = await updateUserProfile(dhanClientIdInput, dhanAccessTokenInput);
+                        if (ok) {
+                          setProfileSaveSuccess(true);
+                          setTimeout(() => {
+                            setProfileSaveSuccess(false);
+                            setShowProfileModal(false);
+                          }, 1500);
+                        }
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded font-bold shadow-lg"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

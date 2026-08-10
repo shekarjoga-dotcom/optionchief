@@ -438,13 +438,20 @@ class MarketDataService:
                         if not oc_dict:
                             raise ValueError(f"Dhan returned empty option chain for {selected_expiry}")
                     else:
-                        error_msg = "Authentication Failed - Invalid Client ID or Token"
+                        error_msg = "Invalid or Expired Dhan Access Token (Generate fresh token on web.dhan.co)"
                         if isinstance(chain_resp, dict):
+                            remarks = chain_resp.get("remarks")
+                            if isinstance(remarks, str) and remarks.strip():
+                                error_msg = remarks
+                            elif isinstance(remarks, dict):
+                                msg = remarks.get("error_message") or remarks.get("message")
+                                if msg:
+                                    error_msg = str(msg)
                             data_err = chain_resp.get("data")
                             if isinstance(data_err, dict) and data_err:
-                                error_msg = str(list(data_err.values())[0])
-                            elif chain_resp.get("remarks"):
-                                error_msg = str(chain_resp.get("remarks"))
+                                first_val = list(data_err.values())[0]
+                                if first_val:
+                                    error_msg = str(first_val)
                                 
                         print(f"[Dhan API Warning] Option chain call returned failure status: {error_msg}")
                         fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
