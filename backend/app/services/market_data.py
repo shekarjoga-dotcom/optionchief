@@ -738,6 +738,10 @@ class MarketDataService:
         ask = float(leg.get("askPrice") or leg.get("sellPrice1") or 0)
         
         change = float(leg.get("change", 0))
+        pct_change = float(leg.get("pChange", 0))
+        volume = int(leg.get("totalTradedVolume", 0))
+        oi = int(leg.get("openInterest", 0))
+        oi_change = int(leg.get("changeinOpenInterest", 0))
         iv = float(leg.get("impliedVolatility", 0)) / 100.0 # NSE lists IV as percent
 
         # Fallback ltp if 0
