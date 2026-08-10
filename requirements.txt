@@ -19,3 +19,4 @@ asyncpg
 psycopg2-binary
 greenlet
 curl_cffi
+brotli

@@ -580,32 +580,76 @@ class MarketDataService:
         Handles session cookies and referers properly.
         Returns None if blocked or fails, triggering mock fallback.
         """
-        if not self._has_curl_cffi:
-            return None
+    def _fetch_nse_json(self, url: str) -> dict:
+        """
+        Robustly fetches JSON endpoints from NSE India.
+        Tries curl_cffi first with TLS impersonation, then falls back to httpx with gzip/deflate headers.
+        """
+        base_url = "https://www.nseindia.com"
         
+        # 1. Try curl_cffi
+        if self._has_curl_cffi and self._nse_session:
+            try:
+                if not self._nse_session.cookies:
+                    self._nse_session.get(f"{base_url}/option-chain", impersonate="chrome120")
+                resp = self._nse_session.get(url, impersonate="chrome120")
+                if resp.status_code == 200:
+                    return resp.json()
+                elif resp.status_code in [401, 403, 404]:
+                    self._nse_session.cookies.clear()
+                    self._nse_session.get(f"{base_url}/option-chain", impersonate="chrome120")
+                    resp = self._nse_session.get(url, impersonate="chrome120")
+                    if resp.status_code == 200:
+                        return resp.json()
+            except Exception as e:
+                print(f"[NSE Scraper] curl_cffi fetch error for {url}: {e}")
+
+        # 2. Try httpx fallback (gzip/deflate to avoid Brotli compression issues on cloud Linux)
+        try:
+            if not hasattr(self, "_httpx_session") or self._httpx_session is None:
+                import httpx
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Connection": "keep-alive",
+                    "Referer": f"{base_url}/option-chain"
+                }
+                self._httpx_session = httpx.Client(headers=headers, follow_redirects=True, timeout=10.0)
+                self._httpx_session.get(f"{base_url}/option-chain")
+
+            resp = self._httpx_session.get(url)
+            if resp.status_code == 200:
+                return resp.json()
+            elif resp.status_code in [401, 403, 404]:
+                self._httpx_session.cookies.clear()
+                self._httpx_session.get(f"{base_url}/option-chain")
+                resp = self._httpx_session.get(url)
+                if resp.status_code == 200:
+                    return resp.json()
+        except Exception as e:
+            print(f"[NSE Scraper] httpx fetch error for {url}: {e}")
+
+        return None
+
+    def _try_scrape_nse(self, symbol: str, expiry: str = None) -> dict:
+        """
+        Attempts to scrape Option Chain from NSE India website.
+        Handles session cookies and referers properly.
+        Returns None if blocked or fails, triggering mock fallback.
+        """
         base_url = "https://www.nseindia.com"
         is_index = symbol in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE"]
         
         try:
-            # 1. Fetch main page to initialize cookies if not already done
-            if not self._nse_session.cookies:
-                self._nse_session.get(f"{base_url}/option-chain", impersonate="chrome120")
-            
-            # 2. Get contract info (expiry dates and strikes)
+            # 1. Get contract info (expiry dates and strikes)
             contract_info_url = f"{base_url}/api/option-chain-contract-info?symbol={symbol}"
-            info_resp = self._nse_session.get(contract_info_url, impersonate="chrome120")
-            
-            # If 401/403/404, try to refresh cookies once
-            if info_resp.status_code in [401, 403, 404]:
-                self._nse_session.cookies.clear()
-                self._nse_session.get(f"{base_url}/option-chain", impersonate="chrome120")
-                info_resp = self._nse_session.get(contract_info_url, impersonate="chrome120")
-                
-            if info_resp.status_code != 200:
-                print(f"[NSE Scraper] Failed to fetch contract info for {symbol}: status {info_resp.status_code}")
+            info_data = self._fetch_nse_json(contract_info_url)
+            if not info_data:
+                print(f"[NSE Scraper] Failed to fetch contract info for {symbol}")
                 return None
                 
-            info_data = info_resp.json()
             expiry_dates = info_data.get("expiryDates", [])
             if not expiry_dates:
                 print(f"[NSE Scraper] No expiry dates found for {symbol}")
@@ -642,19 +686,18 @@ class MarketDataService:
                 selected_exp_nse = formatted_expiries[0][0]
                 selected_exp_fmt = formatted_expiries[0][1]
                 
-            # 3. Query the v3 option chain endpoint
+            # 2. Query the v3 option chain endpoint
             api_type = "Indices" if is_index else "Equity"
             api_url = f"{base_url}/api/option-chain-v3?type={api_type}&symbol={symbol}&expiry={selected_exp_nse}"
             
-            api_resp = self._nse_session.get(api_url, impersonate="chrome120")
-            if api_resp.status_code != 200:
-                print(f"[NSE Scraper] Failed to fetch option chain v3 for {symbol}: status {api_resp.status_code}")
+            data = self._fetch_nse_json(api_url)
+            if not data:
+                print(f"[NSE Scraper] Failed to fetch option chain v3 for {symbol}")
                 return None
-                
-            data = api_resp.json()
+
             filtered_records = data.get("filtered", {})
             records = data.get("records", {})
-            filtered_data = filtered_records.get("data", [])
+            filtered_data = filtered_records.get("data", []) or records.get("data", [])
             
             spot = float(records.get("underlyingValue", 0))
             if spot == 0 and filtered_data:
