@@ -249,9 +249,14 @@ const App: React.FC = () => {
           activeRules.forEach((r: any) => {
             if (r.symbol !== "ALL" && r.symbol.toUpperCase() !== scanSymbol) return;
             if (r.strategyType === "ALL") {
-              const allTypes = ["IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "HEDGED SHORT STRANGLE"];
+              const allTypes = [
+                "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "JADE LIZARD", "TWISTED JADE LIZARD", 
+                "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", 
+                "BULL CALL SPREAD", "BEAR PUT SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", 
+                "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE"
+              ];
               allTypes.forEach(t => strategyTypes.add(t));
-            } else if (r.strategyType === "1:3:2") {
+            } else if (r.strategyType.includes("1:3:2")) {
               strategyTypes.add("1:3:2 CALL RATIO FLY");
               strategyTypes.add("1:3:2 PUT RATIO FLY");
             } else {
@@ -300,7 +305,8 @@ const App: React.FC = () => {
               
               const typeMatch = rule.strategyType === 'ALL' || 
                 scan.name.toUpperCase().includes(rule.strategyType.toUpperCase()) ||
-                (rule.strategyType === '1:3:2' && scan.name.toUpperCase().includes('1:3:2'));
+                (rule.strategyType.toUpperCase().includes('1:3:2') && scan.name.toUpperCase().includes('1:3:2')) ||
+                (rule.strategyType.toUpperCase().includes('JADE') && scan.name.toUpperCase().includes('LIZARD'));
               
               if (!typeMatch) return;
               
@@ -325,7 +331,7 @@ const App: React.FC = () => {
                 lossMatch = Math.abs(scan.maxLoss) >= minLossVal && Math.abs(scan.maxLoss) <= rule.maxLoss;
               } else if (scan.maxLoss === 'Unlimited') {
                 lossMatch = rule.maxLoss >= 100000 || 
-                            ['SHORT STRADDLE', 'SHORT STRANGLE', 'LONG STRADDLE', 'LONG STRANGLE'].includes(rule.strategyType.toUpperCase());
+                            ['SHORT STRADDLE', 'SHORT STRANGLE', 'LONG STRADDLE', 'LONG STRANGLE', 'JADE LIZARD', 'TWISTED JADE LIZARD'].includes(rule.strategyType.toUpperCase());
               }
               
               // Match Expiry
