@@ -330,7 +330,8 @@ class MarketDataService:
                     
                     if chain_resp and chain_resp.get("status") == "success":
                         chain_data = chain_resp.get("data", {})
-                        spot = float(chain_data.get("last_price") or 0.0)
+                        live_underlying = self.get_underlying_data(symbol_clean)
+                        spot = float(live_underlying.get("spot") or chain_data.get("last_price") or 0.0)
                         oc_dict = chain_data.get("oc", {})
                         
                         if not oc_dict:
@@ -340,13 +341,13 @@ class MarketDataService:
                             "symbol": symbol.upper(),
                             "ticker": symbol_clean,
                             "spot": spot,
-                            "open": spot,
-                            "high": spot,
-                            "low": spot,
-                            "previous_close": spot,
-                            "change": 0.0,
-                            "pct_change": 0.0,
-                            "volume": 0
+                            "open": live_underlying.get("open", spot),
+                            "high": live_underlying.get("high", spot),
+                            "low": live_underlying.get("low", spot),
+                            "previous_close": live_underlying.get("previous_close", spot),
+                            "change": live_underlying.get("change", 0.0),
+                            "pct_change": live_underlying.get("pct_change", 0.0),
+                            "volume": live_underlying.get("volume", 0)
                         }
                         
                         options_list = []
