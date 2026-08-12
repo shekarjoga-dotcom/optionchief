@@ -1293,7 +1293,7 @@ class MarketDataService:
         if not hasattr(self, "_dhan_scrip_cache"):
             self._get_dhan_scrip_info(symbol_clean)
             
-        if hasattr(self, "_dhan_expiries_cache") and symbol_clean in self._dhan_expiries_cache:
+        if hasattr(self, "_dhan_expiries_cache") and symbol_clean in self._dhan_expiries_cache and symbol_clean not in ["NIFTY", "BANKNIFTY", "SENSEX"]:
             exp_set = self._dhan_expiries_cache[symbol_clean]
             today_str = datetime.today().strftime("%Y-%m-%d")
             valid_set = {e for e in exp_set if e >= today_str}
@@ -1305,12 +1305,14 @@ class MarketDataService:
         
         if symbol_clean in ["SPY", "AAPL", "MSFT", "TSLA"]:
             weekday_target = 4 # Friday
-        elif symbol_clean in ["FINNIFTY", "NIFTY", "BANKNIFTY"]:
-            weekday_target = 1 # Tuesday (Nifty weekly/monthly and Bank Nifty monthly expiries shifted to Tuesdays in late 2025/2026)
+        elif symbol_clean in ["NIFTY", "BANKNIFTY"]:
+            weekday_target = 3 # Thursday (NSE Nifty 50 and Bank Nifty weekly expiries on Thursdays)
+        elif symbol_clean == "FINNIFTY":
+            weekday_target = 1 # Tuesday (FinNifty weekly expiries on Tuesdays)
         elif symbol_clean == "MIDCPNIFTY":
-            weekday_target = 0 # Monday
+            weekday_target = 0 # Monday (Midcap Nifty weekly expiries on Mondays)
         elif symbol_clean == "SENSEX":
-            weekday_target = 3 # Thursday (BSE weekly Sensex expiries)
+            weekday_target = 4 # Friday (BSE Sensex weekly expiries on Fridays)
         else:
             weekday_target = 3 # Thursday (Stocks, Commodities default)
             
