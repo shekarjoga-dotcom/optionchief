@@ -251,6 +251,42 @@ class MarketDataService:
             except Exception as e:
                 print(f"[NSE Index Feed] Error querying allIndices: {e}")
 
+        # Real-time yfinance Index Ticker Fallback
+        yf_index_map = {
+            "NIFTY": "^NSEI",
+            "BANKNIFTY": "^NSEBANK",
+            "SENSEX": "^BSESN",
+            "FINNIFTY": "NIFTY_FIN_SERVICE.NS",
+            "MIDCPNIFTY": "NIFTY_MID_SELECT.NS"
+        }
+        if symbol_clean in yf_index_map:
+            try:
+                yf_sym = yf_index_map[symbol_clean]
+                t = yf.Ticker(yf_sym)
+                fast_info = t.fast_info
+                spot = float(fast_info.last_price or 0.0)
+                prev_close = float(fast_info.previous_close or spot)
+                if spot > 1000:
+                    open_p = float(getattr(fast_info, 'open', spot) or spot)
+                    high_p = float(getattr(fast_info, 'day_high', spot) or spot)
+                    low_p = float(getattr(fast_info, 'day_low', spot) or spot)
+                    change = spot - prev_close
+                    pct_change = (change / prev_close * 100.0) if prev_close else 0.0
+                    return {
+                        "symbol": symbol.upper(),
+                        "ticker": symbol_clean,
+                        "spot": round(spot, 2),
+                        "open": round(open_p, 2),
+                        "high": round(high_p, 2),
+                        "low": round(low_p, 2),
+                        "previous_close": round(prev_close, 2),
+                        "change": round(change, 2),
+                        "pct_change": round(pct_change, 2),
+                        "volume": 0
+                    }
+            except Exception as e:
+                print(f"[yfinance Index Feed] Error fetching {symbol_clean}: {e}")
+
         # Direct Scrape Fallback
         if symbol_clean in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"]:
             try:
