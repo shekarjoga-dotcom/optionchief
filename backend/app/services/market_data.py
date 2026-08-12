@@ -441,27 +441,7 @@ class MarketDataService:
                             calibrated_chain["underlying"]["spot"] = spot
                             calibrated_chain["data_source"] = "Dhan HQ (Live Direct Stream)"
                             return calibrated_chain
-                    else:
-                        error_msg = "Invalid or Expired Dhan Access Token (Generate fresh token on web.dhan.co)"
-                        if isinstance(chain_resp, dict):
-                            remarks = chain_resp.get("remarks")
-                            if isinstance(remarks, str) and remarks.strip():
-                                error_msg = remarks
-                            elif isinstance(remarks, dict):
-                                msg = remarks.get("error_message") or remarks.get("message")
-                                if msg:
-                                    error_msg = str(msg)
-                            data_err = chain_resp.get("data")
-                            if isinstance(data_err, dict) and data_err:
-                                first_val = list(data_err.values())[0]
-                                if first_val:
-                                    error_msg = str(first_val)
-                                
-                        print(f"[Dhan API Warning] Option chain call returned failure status: {error_msg}")
-                        fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
-                        fallback_chain["data_source"] = f"Dhan API Error: {error_msg}"
-                        return fallback_chain
-                        
+
                         underlying_data = {
                             "symbol": symbol.upper(),
                             "ticker": symbol_clean,
@@ -515,11 +495,24 @@ class MarketDataService:
                             "options": options_list,
                             "data_source": "Dhan HQ (Live Direct Stream)"
                         }
+                    else:
+                        error_msg = "Invalid or Expired Dhan Access Token"
+                        if isinstance(chain_resp, dict):
+                            remarks = chain_resp.get("remarks")
+                            if isinstance(remarks, str) and remarks.strip():
+                                error_msg = remarks
+                            elif isinstance(remarks, dict):
+                                msg = remarks.get("error_message") or remarks.get("message")
+                                if msg:
+                                    error_msg = str(msg)
+                                
+                        print(f"[Dhan API Warning] Dhan call returned failure status: {error_msg}. Falling back to NSE live stream.")
+                        self._cached_token = None
+                        self._dhan_client = None
                 except Exception as e:
-                    print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}")
-                    fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
-                    fallback_chain["data_source"] = f"Dhan API Exception: {str(e)}"
-                    return fallback_chain
+                    print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}. Falling back to NSE live stream.")
+                    self._cached_token = None
+                    self._dhan_client = None
 
         ticker_symbol = SYMBOL_MAPPING.get(symbol_clean, symbol_clean)
 
