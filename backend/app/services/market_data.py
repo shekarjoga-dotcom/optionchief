@@ -542,13 +542,39 @@ class MarketDataService:
                                 if msg:
                                     error_msg = str(msg)
                                 
-                        print(f"[Dhan API Warning] Dhan call returned failure status: {error_msg}. Falling back to NSE live stream.")
+                        print(f"[Dhan API Warning] Dhan call returned failure status: {error_msg}")
                         self._cached_token = None
                         self._dhan_client = None
+                        return {
+                            "underlying": self.get_underlying_data(symbol_clean),
+                            "expiry_dates": self._get_valid_expiries(symbol_clean)[:10],
+                            "selected_expiry": expiry or self._get_valid_expiries(symbol_clean)[0],
+                            "pcr": 0.0,
+                            "options": [],
+                            "data_source": f"⚠️ Dhan API Key Expired: Update Token in Profile & Keys for Live Direct Stream"
+                        }
                 except Exception as e:
-                    print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}. Falling back to NSE live stream.")
+                    print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}")
                     self._cached_token = None
                     self._dhan_client = None
+                    return {
+                        "underlying": self.get_underlying_data(symbol_clean),
+                        "expiry_dates": self._get_valid_expiries(symbol_clean)[:10],
+                        "selected_expiry": expiry or self._get_valid_expiries(symbol_clean)[0],
+                        "pcr": 0.0,
+                        "options": [],
+                        "data_source": f"⚠️ Dhan API Error: {str(e)}"
+                    }
+
+        # If no Dhan client is connected, instruct user to add token in Profile & Keys
+        return {
+            "underlying": self.get_underlying_data(symbol_clean),
+            "expiry_dates": self._get_valid_expiries(symbol_clean)[:10],
+            "selected_expiry": expiry or self._get_valid_expiries(symbol_clean)[0],
+            "pcr": 0.0,
+            "options": [],
+            "data_source": "⚠️ Dhan HQ API Required: Enter Client ID & Token in Profile & Keys"
+        }
 
         ticker_symbol = SYMBOL_MAPPING.get(symbol_clean, symbol_clean)
 
