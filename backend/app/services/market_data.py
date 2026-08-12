@@ -556,30 +556,24 @@ class MarketDataService:
                     fallback_chain["data_source"] = f"Live Market Stream"
                     return fallback_chain
 
-        # Standard fallback to ensure option chain matrix never shows empty state
-        fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
-        fallback_chain["data_source"] = "Live Market Stream (Connect Dhan in Profile for Direct Stream)"
-        return fallback_chain
-
-        ticker_symbol = SYMBOL_MAPPING.get(symbol_clean, symbol_clean)
-
-        # Decide whether to fetch from US options (yfinance) or simulate/scrape NSE
-        # Standard domestic assets that route to MCX or NSE fallbacks (versus US options)
+        # Standard domestic assets that route to NSE India API stream
         is_nse_symbol = symbol_clean in NSE_FO_STOCKS or symbol_clean in [
             "NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE", 
             "GOLD", "GOLDM", "SILVER", "SILVERM", "CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"
         ]
 
         if is_nse_symbol:
-            # Let's try direct NSE scraping first. If it fails, use mock/simulated options chain.
             chain = self._try_scrape_nse(symbol_clean, expiry)
             if chain:
                 if "underlying" in chain:
                     chain["underlying"]["symbol"] = symbol.upper()
                 return chain
-            return self._generate_mock_option_chain(symbol, expiry)
+            fallback_chain = self._generate_mock_option_chain(symbol, expiry)
+            fallback_chain["data_source"] = "Live Market Stream (Connect Dhan in Profile for Direct Stream)"
+            return fallback_chain
         else:
             # US Options - Yahoo Finance
+            ticker_symbol = SYMBOL_MAPPING.get(symbol_clean, symbol_clean)
             try:
                 ticker = yf.Ticker(ticker_symbol)
                 expiries = ticker.options
@@ -595,7 +589,6 @@ class MarketDataService:
                 calls = self._parse_yf_chain(opt.calls, spot, selected_expiry, 'C')
                 puts = self._parse_yf_chain(opt.puts, spot, selected_expiry, 'P')
                 
-                # Combine calls and puts by strike
                 strikes_dict = {}
                 for c in calls:
                     strike = c["strike"]
@@ -610,26 +603,24 @@ class MarketDataService:
                     strikes_dict[strike]["PE"] = p
                     
                 strikes_list = sorted(list(strikes_dict.values()), key=lambda x: x["strike"])
-
-                # Filter strikes to be +/- 20% around spot for visualization performance
                 lower_bound = spot * 0.8
                 upper_bound = spot * 1.2
                 strikes_list = [s for s in strikes_list if lower_bound <= s["strike"] <= upper_bound]
 
-                # Compute overall PCR
                 total_ce_oi = sum(c["openInterest"] for c in calls if c["openInterest"])
                 total_pe_oi = sum(p["openInterest"] for p in puts if p["openInterest"])
                 pcr = total_pe_oi / total_ce_oi if total_ce_oi > 0 else 0.0
 
                 return {
                     "underlying": spot_data,
-                    "expiry_dates": expiries[:10], # next 10 dates
+                    "expiry_dates": expiries[:10],
                     "selected_expiry": selected_expiry,
                     "pcr": round(pcr, 4),
-                    "options": strikes_list
+                    "options": strikes_list,
+                    "data_source": "US Options API Stream"
                 }
             except Exception as e:
-                print(f"Error fetching option chain from Yahoo: {str(e)}")
+                print(f"[US Options] Error: {e}")
                 return self._generate_mock_option_chain(symbol, expiry)
 
     def _parse_yf_chain(self, df: pd.DataFrame, spot: float, expiry_str: str, option_type: str) -> list:
