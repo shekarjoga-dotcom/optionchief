@@ -41,12 +41,13 @@ import logoImg from './assets/logo.png';
 
 const App: React.FC = () => {
   const { 
-    symbol,
-    alertRules,
-    isAutoScanning,
-    autoScanInterval,
+    symbol, 
+    setSymbol, 
+    selectedExpiry, 
+    setSelectedExpiry, 
     fetchMarketData, 
-    fetchPortfolios, 
+    fetchPortfolios,
+    alertRules, 
     error, 
     clearError,
     token, 
@@ -56,19 +57,60 @@ const App: React.FC = () => {
     logout,
     updateUserProfile,
     triggeredAlerts,
-    fetchTriggeredAlerts
+    fetchTriggeredAlerts,
+    clearLegs,
+    addLeg,
+    isAutoScanning,
+    autoScanInterval
   } = useStore();
   
   const symbolRef = useRef(symbol);
   const alertRulesRef = useRef(alertRules);
 
   const getInitialTab = (): 'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin' => {
+    const path = window.location.pathname;
+    if (path.startsWith('/s/')) {
+      return 'builder';
+    }
     const hash = window.location.hash.replace('#', '');
     const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin'];
     return validTabs.includes(hash) ? (hash as any) : 'chain';
   };
 
   const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>(getInitialTab);
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith('/s/')) {
+      const shortCode = path.replace('/s/', '').trim();
+      if (shortCode) {
+        fetch(`${BACKEND_URL}/api/strategy/share/${shortCode}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.legs) {
+              setSymbol(data.symbol);
+              if (data.expiry) setSelectedExpiry(data.expiry);
+              clearLegs();
+              const lotSize = getLotSizeForSymbol(data.symbol);
+              data.legs.forEach((l: any) => {
+                addLeg({
+                  strike: l.strike,
+                  optionType: l.optionType,
+                  expiry: data.expiry || selectedExpiry,
+                  action: l.action,
+                  quantity: (l.lots || 1) * lotSize,
+                  entryPrice: l.entryPrice || 10.0,
+                  currentPrice: l.entryPrice || 10.0,
+                  iv: 0.16
+                });
+              });
+              setActiveTab('builder');
+            }
+          })
+          .catch(err => console.error("Error loading shared strategy:", err));
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const handleHashChange = () => {
