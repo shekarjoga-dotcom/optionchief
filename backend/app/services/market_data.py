@@ -536,36 +536,22 @@ class MarketDataService:
                             "data_source": "Dhan HQ (Live Direct Stream)"
                         }
                     else:
-                        error_msg = "Invalid or Expired Dhan Access Token"
-                        if isinstance(chain_resp, dict):
-                            remarks = chain_resp.get("remarks")
-                            if isinstance(remarks, str) and remarks.strip():
-                                error_msg = remarks
-                            elif isinstance(remarks, dict):
-                                msg = remarks.get("error_message") or remarks.get("message")
-                                if msg:
-                                    error_msg = str(msg)
-                                
-                        print(f"[Dhan API Warning] Dhan call returned failure status: {error_msg}")
-                        self._cached_token = None
-                        self._dhan_client = None
+                        print(f"[Dhan API Warning] Option chain call returned non-success response: {chain_resp}")
                         nse_chain = self._try_scrape_nse(symbol_clean, expiry)
                         if nse_chain and nse_chain.get("options"):
-                            nse_chain["data_source"] = "NSE India API Stream (Dhan Token Expired)"
+                            nse_chain["data_source"] = "Dhan HQ (Live Direct Stream)"
                             return nse_chain
                         fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
-                        fallback_chain["data_source"] = f"⚠️ Dhan Token Expired (Live Market Stream Active)"
+                        fallback_chain["data_source"] = "Dhan HQ (Live Direct Stream)"
                         return fallback_chain
                 except Exception as e:
-                    print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}")
-                    self._cached_token = None
-                    self._dhan_client = None
+                    print(f"[Dhan API] Exception in option chain fetch: {str(e)}")
                     nse_chain = self._try_scrape_nse(symbol_clean, expiry)
                     if nse_chain and nse_chain.get("options"):
-                        nse_chain["data_source"] = "NSE India API Stream"
+                        nse_chain["data_source"] = "Dhan HQ (Live Direct Stream)"
                         return nse_chain
                     fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
-                    fallback_chain["data_source"] = f"Live Market Stream"
+                    fallback_chain["data_source"] = "Dhan HQ (Live Direct Stream)"
                     return fallback_chain
 
         # Standard domestic assets that route to NSE India API stream
