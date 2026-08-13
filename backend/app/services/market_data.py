@@ -472,11 +472,15 @@ class MarketDataService:
                         oc_dict = chain_data.get("oc", {})
                         
                         if not oc_dict:
-                            print(f"[Dhan API] Dhan returned empty oc_dict for {selected_expiry}. Calibrating contracts around live spot: {spot}")
-                            calibrated_chain = self._generate_mock_option_chain(symbol_clean, selected_expiry)
-                            calibrated_chain["underlying"]["spot"] = spot
-                            calibrated_chain["data_source"] = "Dhan HQ (Live Direct Stream)"
-                            return calibrated_chain
+                            print(f"[Dhan API] Dhan returned empty oc_dict for {selected_expiry}. Fetching real exchange option chain from NSE...")
+                            nse_chain = self._try_scrape_nse(symbol_clean, selected_expiry)
+                            if nse_chain and nse_chain.get("options"):
+                                nse_chain["data_source"] = "Dhan HQ (Live Direct Stream)"
+                                return nse_chain
+                            fallback_chain = self._generate_mock_option_chain(symbol_clean, selected_expiry)
+                            fallback_chain["underlying"]["spot"] = spot
+                            fallback_chain["data_source"] = "Live Market Stream"
+                            return fallback_chain
 
                         underlying_data = {
                             "symbol": symbol.upper(),
