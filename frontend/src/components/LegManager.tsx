@@ -130,7 +130,7 @@ export const LegManager: React.FC = () => {
     }
   };
 
-  const loadPresetStrategy = (presetType: 'short_iron_condor' | 'long_iron_condor' | 'jade_lizard' | 'twisted_jade_lizard') => {
+  const loadPresetStrategy = (presetType: 'short_iron_condor' | 'long_iron_condor' | 'jade_lizard' | 'twisted_jade_lizard' | 'call_butterfly' | 'iron_butterfly') => {
     clearLegs();
     const spot = underlying?.spot || 24500;
     const roundSpot = Math.round(spot / 100) * 100;
@@ -138,27 +138,32 @@ export const LegManager: React.FC = () => {
     const exp = selectedExpiry || new Date().toISOString().split('T')[0];
 
     if (presetType === 'short_iron_condor') {
-      // Short Iron Condor (Credit): Sell inner legs, buy outer protective wings
       addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 70, currentPrice: 70, iv: 0.16 });
       addLeg({ strike: roundSpot - 300, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 40, currentPrice: 40, iv: 0.16 });
       addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 70, currentPrice: 70, iv: 0.16 });
       addLeg({ strike: roundSpot + 300, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 40, currentPrice: 40, iv: 0.16 });
     } else if (presetType === 'long_iron_condor') {
-      // Long Iron Condor (Debit): Buy inner legs, sell outer legs (Breakout setup)
       addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 90, currentPrice: 90, iv: 0.16 });
       addLeg({ strike: roundSpot - 300, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 65, currentPrice: 65, iv: 0.16 });
       addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 150, currentPrice: 150, iv: 0.16 });
       addLeg({ strike: roundSpot + 300, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 110, currentPrice: 110, iv: 0.16 });
     } else if (presetType === 'jade_lizard') {
-      // Jade Lizard: Sell OTM Put (-200), Sell OTM Call (+200), Buy OTM Call (+300) -> Zero Upside Risk
       addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 85, currentPrice: 85, iv: 0.16 });
       addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 65, currentPrice: 65, iv: 0.16 });
       addLeg({ strike: roundSpot + 300, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 35, currentPrice: 35, iv: 0.16 });
     } else if (presetType === 'twisted_jade_lizard') {
-      // Twisted Jade Lizard: Sell OTM Call (+200), Sell OTM Put (-200), Buy OTM Put (-300) -> Zero Downside Risk
       addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 85, currentPrice: 85, iv: 0.16 });
       addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 65, currentPrice: 65, iv: 0.16 });
       addLeg({ strike: roundSpot - 300, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 35, currentPrice: 35, iv: 0.16 });
+    } else if (presetType === 'call_butterfly') {
+      addLeg({ strike: roundSpot - 150, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 121, currentPrice: 121, iv: 0.16 });
+      addLeg({ strike: roundSpot, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty * 2, entryPrice: 64, currentPrice: 64, iv: 0.16 });
+      addLeg({ strike: roundSpot + 150, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 30, currentPrice: 30, iv: 0.16 });
+    } else if (presetType === 'iron_butterfly') {
+      addLeg({ strike: roundSpot, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 130, currentPrice: 130, iv: 0.16 });
+      addLeg({ strike: roundSpot, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 130, currentPrice: 130, iv: 0.16 });
+      addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 40, currentPrice: 40, iv: 0.16 });
+      addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 40, currentPrice: 40, iv: 0.16 });
     }
   };
 
@@ -183,6 +188,18 @@ export const LegManager: React.FC = () => {
         {/* Quick Presets Bar */}
         <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-borderClr/40">
           <span className="text-[10px] text-gray-400 font-extrabold uppercase">Quick Templates:</span>
+          <button
+            onClick={() => loadPresetStrategy('call_butterfly')}
+            className="px-2.5 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-xs font-bold transition-colors shadow-sm"
+          >
+            🦋 Long Call Butterfly
+          </button>
+          <button
+            onClick={() => loadPresetStrategy('iron_butterfly')}
+            className="px-2.5 py-1 rounded bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 text-pink-400 text-xs font-bold transition-colors shadow-sm"
+          >
+            🦋 Iron Butterfly
+          </button>
           <button
             onClick={() => loadPresetStrategy('short_iron_condor')}
             className="px-2.5 py-1 rounded bg-accentBrand/10 hover:bg-accentBrand/20 border border-accentBrand/30 text-accentBrand text-xs font-bold transition-colors"
