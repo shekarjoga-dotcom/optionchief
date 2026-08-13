@@ -455,8 +455,15 @@ class MarketDataService:
                         
                     selected_expiry = expiry if expiry in expiries else expiries[0]
                     
-                    # For MCX segment, convert M to MCX_COMM in Dhan API call
-                    api_seg = "MCX_COMM" if segment == "M" else segment
+                    # Set correct exchange segment for option chain (NSE_FNO for NSE indices & stocks, BSE_FNO for BSE, MCX_COMM for MCX)
+                    if symbol_clean in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE"] or symbol_clean in NSE_FO_STOCKS:
+                        api_seg = "NSE_FNO"
+                    elif symbol_clean == "SENSEX":
+                        api_seg = "BSE_FNO"
+                    elif segment == "M":
+                        api_seg = "MCX_COMM"
+                    else:
+                        api_seg = "NSE_FNO"
                     
                     print(f"[Dhan API] Fetching live option chain for {symbol_clean} / Expiry: {selected_expiry} (Seg: {api_seg})...")
                     
@@ -467,7 +474,7 @@ class MarketDataService:
                             expiry=selected_expiry
                         )
                     except Exception as err1:
-                        alt_seg = "NSE_FNO" if api_seg == "IDX_I" else "IDX_I"
+                        alt_seg = "IDX_I" if api_seg == "NSE_FNO" else "NSE_FNO"
                         print(f"[Dhan API] Retry option chain with alt_seg: {alt_seg} due to: {err1}")
                         chain_resp = dhan_client.option_chain(
                             under_security_id=sec_id,
@@ -1216,13 +1223,13 @@ class MarketDataService:
         """
         symbol_clean = self._clean_symbol(symbol)
         
-        # Hardcoded quick lookup for standard indexes and stocks
+        # Hardcoded quick lookup for standard indexes and stocks (using option chain segment NSE_FNO / BSE_FNO)
         quick_map = {
-            "NIFTY": {"security_id": "13", "segment": "IDX_I", "name": "Nifty 50"},
-            "BANKNIFTY": {"security_id": "25", "segment": "IDX_I", "name": "Nifty Bank"},
-            "SENSEX": {"security_id": "51", "segment": "BSE_IDX", "name": "BSE SENSEX"},
-            "FINNIFTY": {"security_id": "27", "segment": "IDX_I", "name": "Nifty Financial Services"},
-            "MIDCPNIFTY": {"security_id": "50", "segment": "IDX_I", "name": "Nifty Midcap Select"},
+            "NIFTY": {"security_id": "13", "segment": "NSE_FNO", "name": "Nifty 50"},
+            "BANKNIFTY": {"security_id": "25", "segment": "NSE_FNO", "name": "Nifty Bank"},
+            "SENSEX": {"security_id": "51", "segment": "BSE_FNO", "name": "BSE SENSEX"},
+            "FINNIFTY": {"security_id": "27", "segment": "NSE_FNO", "name": "Nifty Financial Services"},
+            "MIDCPNIFTY": {"security_id": "50", "segment": "NSE_FNO", "name": "Nifty Midcap Select"},
             "SBIN": {"security_id": "3045", "segment": "NSE_EQ", "name": "State Bank of India"},
             "ITC": {"security_id": "1660", "segment": "NSE_EQ", "name": "ITC Limited"},
             "RELIANCE": {"security_id": "2885", "segment": "NSE_EQ", "name": "Reliance Industries"},
