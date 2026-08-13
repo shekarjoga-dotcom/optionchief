@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import { useStore } from '../hooks/useStore';
-import { Trash2, Coins } from 'lucide-react';
+import { Trash2, Coins, Link as LinkIcon } from 'lucide-react';
 import { getLotSizeForSymbol, getCurrencySymbol } from '../utils/optionsMath';
+import { BACKEND_URL } from '../config';
 
 export const LegManager: React.FC = () => {
   const { legs, removeLeg, updateLeg, clearLegs, underlying, selectedExpiry, symbol, saveCurrentPortfolio, fetchPortfolios, user } = useStore();
   const [saveName, setSaveName] = useState("");
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareData, setShareData] = useState<any>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleQtyChange = (id: string, qtyStr: string) => {
     const qty = parseInt(qtyStr) || 0;
@@ -70,6 +75,59 @@ export const LegManager: React.FC = () => {
     await fetchPortfolios();
     setSaveName("");
     alert(`Executed Paper Trade for "${tradeName}"! Added to Paper Trading Book.`);
+  };
+
+  const handleGenerateShareLink = async () => {
+    if (legs.length === 0) {
+      alert("Please add at least 1 leg to generate an entry link.");
+      return;
+    }
+    setIsSharing(true);
+    setCopied(false);
+    try {
+      const lotSize = getLotSizeForSymbol(symbol || "");
+      const formattedLegs = legs.map(l => ({
+        strike: l.strike,
+        optionType: l.optionType,
+        action: l.action,
+        lots: Math.max(1, Math.round(l.quantity / lotSize)),
+        entryPrice: l.entryPrice
+      }));
+
+      const response = await fetch(`${BACKEND_URL}/api/strategy/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: symbol || underlying?.symbol || "NIFTY",
+          expiry: selectedExpiry || "",
+          strategyName: saveName.trim() || `${symbol || "NIFTY"} Strategy`,
+          legs: formattedLegs,
+          maxPayoff: 0.0,
+          maxRisk: 0.0,
+          margin: 0.0
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to generate entry link");
+      }
+
+      setShareData(data);
+      setShareModalOpen(true);
+    } catch (err: any) {
+      alert(`Error generating entry link: ${err.message}`);
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (shareData?.shareUrl) {
+      navigator.clipboard.writeText(shareData.shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    }
   };
 
   const loadPresetStrategy = (presetType: 'short_iron_condor' | 'long_iron_condor' | 'jade_lizard' | 'twisted_jade_lizard') => {
@@ -287,14 +345,23 @@ export const LegManager: React.FC = () => {
                   />
                   <button
                     onClick={handleSave}
-                    className="px-3 py-1.5 rounded bg-accentBrand hover:bg-accentBrand/90 text-white font-bold"
+                    className="px-3 py-1.5 rounded bg-accentBrand hover:bg-accentBrand/90 text-white font-bold text-xs"
                     title="Save Strategy Template"
                   >
                     Save Strategy
                   </button>
                   <button
+                    onClick={handleGenerateShareLink}
+                    disabled={isSharing}
+                    className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(147,51,234,0.3)]"
+                    title="Generate 1-Click Broker Entry Links (Dhan, Kite, Kotak)"
+                  >
+                    <LinkIcon className="w-3.5 h-3.5 text-purple-200" />
+                    <span>{isSharing ? "Generating..." : "Entry Link"}</span>
+                  </button>
+                  <button
                     onClick={handleExecutePaperTrade}
-                    className="px-3 py-1.5 rounded bg-greenBrand hover:bg-greenBrand/90 text-black font-extrabold flex items-center gap-1 transition-all"
+                    className="px-3 py-1.5 rounded bg-greenBrand hover:bg-greenBrand/90 text-black font-extrabold flex items-center gap-1 transition-all text-xs"
                     title="Execute Paper Trade"
                   >
                     <Coins className="w-3.5 h-3.5" />
@@ -306,6 +373,111 @@ export const LegManager: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* 1-Click Broker Entry Link & Share Strategy Modal */}
+      {shareModalOpen && shareData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-gray-900 border border-gray-700/80 rounded-xl p-6 max-w-lg w-full shadow-2xl relative">
+            <button
+              onClick={() => setShareModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-lg font-bold"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-2 mb-4">
+              <LinkIcon className="w-5 h-5 text-purple-400" />
+              <h3 className="text-base font-bold text-white uppercase tracking-wider">Strategy Entry Link & Broker Basket</h3>
+            </div>
+
+            {/* Payoff & Risk Summary */}
+            <div className="bg-gray-950 border border-gray-800 rounded-lg p-3 mb-4 text-xs space-y-1.5">
+              <div className="text-gray-300 font-bold mb-1">
+                {symbol || underlying?.symbol || "NIFTY"} Strategy Summary:
+              </div>
+              {legs.map((l, i) => (
+                <div key={i} className="flex items-center gap-2 font-mono text-[11px]">
+                  <span className={`w-2 h-2 rounded-full ${l.action === 'BUY' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <span className="font-bold text-white">{l.action} {l.quantity / getLotSizeForSymbol(symbol || "")} LOT</span>
+                  <span className="text-gray-400">{l.strike} {l.optionType === 'F' ? 'FUT' : l.optionType === 'C' ? 'CE' : 'PE'} @ {getCurrencySymbol(symbol)}{l.entryPrice}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Short Strategy Entry Link */}
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-purple-300 mb-1">Strategy Share Link:</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareData.shareUrl}
+                  className="bg-gray-950 border border-purple-800/60 rounded px-3 py-1.5 text-xs text-white w-full font-mono select-all focus:outline-none"
+                />
+                <button
+                  onClick={handleCopyLink}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                    copied ? "bg-emerald-600 text-white" : "bg-purple-600 hover:bg-purple-500 text-white"
+                  }`}
+                >
+                  {copied ? "Copied! ✓" : "Copy Link"}
+                </button>
+              </div>
+            </div>
+
+            {/* 1-Click Broker Execution Deep Links */}
+            <div className="space-y-2.5">
+              <div className="text-xs font-bold text-gray-300 uppercase tracking-wider">1-Click Broker Entry Links:</div>
+              
+              {/* Dhan 1-Click Link */}
+              <a
+                href={shareData.brokerLinks.dhanUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-700/60 text-emerald-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Execute on Dhan HQ (1-Tap Basket)</span>
+                </div>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </a>
+
+              {/* Zerodha Kite 1-Click Link */}
+              <a
+                href={shareData.brokerLinks.kiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between bg-cyan-950/80 hover:bg-cyan-900/90 border border-cyan-700/60 text-cyan-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+                  <span>Execute on Zerodha Kite (Kite Basket)</span>
+                </div>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </a>
+
+              {/* Kotak Neo 1-Click Link */}
+              <a
+                href={shareData.brokerLinks.kotakUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between bg-red-950/80 hover:bg-red-900/90 border border-red-700/60 text-red-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                  <span>Execute on Kotak Neo (Neo Basket)</span>
+                </div>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </a>
+            </div>
+
+            <div className="mt-5 text-[10px] text-gray-500 text-center">
+              Educational Disclaimer: Review position risks and broker margin requirements before execution.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
