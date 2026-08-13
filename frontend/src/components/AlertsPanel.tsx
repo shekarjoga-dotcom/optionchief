@@ -527,6 +527,9 @@ export const AlertsPanel: React.FC = () => {
                 className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-amber-400 outline-none"
               >
                 <option value="ALL">All Strategies</option>
+                <option value="CALL BUTTERFLY">Long Call Butterfly (1:2:1)</option>
+                <option value="PUT BUTTERFLY">Long Put Butterfly (1:2:1)</option>
+                <option value="IRON BUTTERFLY">Iron Butterfly</option>
                 <option value="1:3:2 RATIO BUTTERFLY">1:3:2 Ratio Butterfly (All)</option>
                 <option value="1:3:2 CALL RATIO FLY">1:3:2 Call Ratio Fly</option>
                 <option value="1:3:2 PUT RATIO FLY">1:3:2 Put Ratio Fly</option>
