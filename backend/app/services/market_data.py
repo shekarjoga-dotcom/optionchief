@@ -1079,8 +1079,8 @@ class MarketDataService:
             default_base_iv = 0.16
             vix_key = "^VIX"
         else:
-            default_base_iv = 0.125 if days_to_expiry <= 2 else 0.115
-            vix_key = None # Calibrated to current NSE India VIX (11.5%)
+            default_base_iv = 0.115 if days_to_expiry <= 2 else 0.108
+            vix_key = None # Calibrated to current live exchange IV (10.8%)
             
         if not hasattr(self, "_vix_cache"):
             self._vix_cache = {}
