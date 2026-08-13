@@ -549,6 +549,10 @@ class MarketDataService:
                         print(f"[Dhan API Warning] Dhan call returned failure status: {error_msg}")
                         self._cached_token = None
                         self._dhan_client = None
+                        nse_chain = self._try_scrape_nse(symbol_clean, expiry)
+                        if nse_chain and nse_chain.get("options"):
+                            nse_chain["data_source"] = "NSE India API Stream (Dhan Token Expired)"
+                            return nse_chain
                         fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
                         fallback_chain["data_source"] = f"⚠️ Dhan Token Expired (Live Market Stream Active)"
                         return fallback_chain
@@ -556,6 +560,10 @@ class MarketDataService:
                     print(f"[Dhan API] Error loading live option chain from Dhan: {str(e)}")
                     self._cached_token = None
                     self._dhan_client = None
+                    nse_chain = self._try_scrape_nse(symbol_clean, expiry)
+                    if nse_chain and nse_chain.get("options"):
+                        nse_chain["data_source"] = "NSE India API Stream"
+                        return nse_chain
                     fallback_chain = self._generate_mock_option_chain(symbol_clean, expiry)
                     fallback_chain["data_source"] = f"Live Market Stream"
                     return fallback_chain
