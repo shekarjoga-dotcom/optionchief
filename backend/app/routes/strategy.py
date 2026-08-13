@@ -1,3 +1,4 @@
+import os
 import secrets
 import json
 import base64
@@ -9,7 +10,12 @@ import sqlite3
 
 router = APIRouter(prefix="/api/strategy", tags=["strategy"])
 
-DB_PATH = "backend/data/options_oracle.db"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "options_oracle.db")
+
+MEMORY_STRATEGIES = {}
 
 def init_strategy_db():
     try:
@@ -30,7 +36,7 @@ def init_strategy_db():
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"[Strategy DB Init Error]: {e}")
+        print(f"[Strategy DB Init Warning]: {e}")
 
 init_strategy_db()
 
@@ -61,28 +67,38 @@ def create_shared_strategy(payload: ShareStrategySchema):
             "margin": payload.margin
         }
         
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            """
-            INSERT INTO shared_strategies (short_code, symbol, expiry, strategy_name, legs_json, metrics_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                short_code,
-                payload.symbol.upper(),
-                payload.expiry,
-                payload.strategyName,
-                json.dumps(legs_data),
-                json.dumps(metrics_data)
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute(
+                """
+                INSERT INTO shared_strategies (short_code, symbol, expiry, strategy_name, legs_json, metrics_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    short_code,
+                    payload.symbol.upper(),
+                    payload.expiry,
+                    payload.strategyName,
+                    json.dumps(legs_data),
+                    json.dumps(metrics_data)
+                )
             )
-        )
-        conn.commit()
-        conn.close()
+            conn.commit()
+            conn.close()
+        except Exception as db_err:
+            print(f"[SQLite Write Warning]: {db_err}")
+            
+        MEMORY_STRATEGIES[short_code] = {
+            "shortCode": short_code,
+            "symbol": payload.symbol.upper(),
+            "expiry": payload.expiry,
+            "strategyName": payload.strategyName,
+            "legs": legs_data,
+            "metrics": metrics_data
+        }
         
         share_url = f"https://optionchief.in/s/{short_code}"
-        
-        # Build 1-click broker entry links
         broker_links = build_broker_links(payload.symbol.upper(), payload.expiry, legs_data)
         
         return {
@@ -97,6 +113,14 @@ def create_shared_strategy(payload: ShareStrategySchema):
 @router.get("/share/{short_code}")
 def get_shared_strategy(short_code: str):
     try:
+        if short_code in MEMORY_STRATEGIES:
+            mem = MEMORY_STRATEGIES[short_code]
+            broker_links = build_broker_links(mem["symbol"], mem["expiry"], mem["legs"])
+            return {
+                **mem,
+                "brokerLinks": broker_links
+            }
+
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute(
