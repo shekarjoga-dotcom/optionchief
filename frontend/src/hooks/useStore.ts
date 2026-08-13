@@ -21,6 +21,8 @@ interface AppState {
   isLoading: boolean;
   error: string | null;
   dataSource: string | null;
+  dataSourceMode: string;
+  setDataSourceMode: (mode: string) => void;
 
   // Authentication state
   token: string | null;
@@ -54,7 +56,7 @@ interface AppState {
   logout: () => void;
   checkAuthSession: () => Promise<void>;
 
-  // Auto-scanning state
+  // Scanner state & actions
   isAutoScanning: boolean;
   autoScanInterval: number;
   setAutoScanning: (active: boolean, intervalSeconds?: number) => void;
@@ -94,6 +96,7 @@ export const useStore = create<AppState>((set, get) => ({
   isLoading: false,
   error: null,
   dataSource: null,
+  dataSourceMode: localStorage.getItem("options_oracle_data_source_mode") || "auto",
   clearError: () => set({ error: null }),
 
   alertRules: [],
@@ -120,13 +123,22 @@ export const useStore = create<AppState>((set, get) => ({
     get().fetchMarketData();
   },
 
+  setDataSourceMode: (mode: string) => {
+    localStorage.setItem("options_oracle_data_source_mode", mode);
+    set({ dataSourceMode: mode });
+    get().fetchMarketData();
+  },
+
   fetchMarketData: async () => {
-    const { symbol, selectedExpiry } = get();
+    const { symbol, selectedExpiry, dataSourceMode } = get();
     set({ isLoading: true, error: null });
     try {
       let url = `${BACKEND_URL}/api/market/option-chain?symbol=${symbol}`;
       if (selectedExpiry) {
         url += `&expiry=${selectedExpiry}`;
+      }
+      if (dataSourceMode && dataSourceMode !== "auto") {
+        url += `&mode=${dataSourceMode}`;
       }
 
       const headers: Record<string, string> = {};

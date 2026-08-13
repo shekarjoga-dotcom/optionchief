@@ -407,20 +407,31 @@ class MarketDataService:
             print(f"Error fetching historical prices: {str(e)}")
             return [100.0 * (1.0 + 0.01 * math.sin(i / 10.0)) for i in range(250)]
 
-    def get_option_chain(self, symbol: str, expiry: str = None, dhan_client_id: str = None, dhan_access_token: str = None) -> dict:
+    def get_option_chain(self, symbol: str, expiry: str = None, mode: str = None, dhan_client_id: str = None, dhan_access_token: str = None) -> dict:
         """
         Fetches the option chain for a given symbol and expiry.
-        If expiry is None, returns the first available expiry data.
+        Supports manual data source selection mode: dhan, nse, fallback.
         """
         symbol_clean = self._clean_symbol(symbol)
         if symbol_clean == "ALL_NSE":
-            chain = self.get_option_chain("NIFTY", expiry, dhan_client_id, dhan_access_token)
+            chain = self.get_option_chain("NIFTY", expiry, mode=mode, dhan_client_id=dhan_client_id, dhan_access_token=dhan_access_token)
             if chain and "underlying" in chain:
                 chain["underlying"]["symbol"] = "ALL_NSE"
                 chain["underlying"]["ticker"] = "ALL_NSE"
             return chain
-        
-        # Instantiate dynamic Dhan client if headers are provided
+
+        # Direct Manual Mode Overrides
+        if mode == "nse":
+            nse_chain = self._try_scrape_nse(symbol_clean, expiry)
+            if nse_chain:
+                nse_chain["data_source"] = "NSE India API Stream (Manual Exchange Select)"
+                return nse_chain
+        elif mode == "fallback":
+            mock_chain = self._generate_mock_option_chain(symbol_clean, expiry)
+            mock_chain["data_source"] = "Calibrated Market Stream (Manual Backup Select)"
+            return mock_chain
+
+        # Default / Auto / Dhan Mode
         dhan_client = None
         if dhan_client_id and dhan_access_token:
             try:

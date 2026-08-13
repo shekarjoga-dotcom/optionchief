@@ -17,6 +17,7 @@ def get_underlying(symbol: str = Query(..., description="Underlying symbol (e.g.
 def get_option_chain(
     symbol: str = Query(..., description="Underlying symbol (e.g. NIFTY, AAPL, SPY)"),
     expiry: str = Query(None, description="Expiry date in YYYY-MM-DD format"),
+    mode: Optional[str] = Query(None, description="Data source mode: auto, dhan, nse, or fallback"),
     x_dhan_client_id: Optional[str] = Header(None, alias="X-Dhan-Client-Id"),
     x_dhan_access_token: Optional[str] = Header(None, alias="X-Dhan-Access-Token")
 ):
@@ -24,6 +25,7 @@ def get_option_chain(
         data = market_service.get_option_chain(
             symbol, 
             expiry, 
+            mode=mode,
             dhan_client_id=x_dhan_client_id, 
             dhan_access_token=x_dhan_access_token
         )

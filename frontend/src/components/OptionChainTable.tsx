@@ -4,7 +4,7 @@ import { getLotSizeForSymbol, getCurrencySymbol } from '../utils/optionsMath';
 import { RefreshCw } from 'lucide-react';
 
 export const OptionChainTable: React.FC = () => {
-  const { options, underlying, addLeg, selectedExpiry, fetchMarketData, dataSource } = useStore();
+  const { options, underlying, addLeg, selectedExpiry, fetchMarketData, dataSource, dataSourceMode, setDataSourceMode } = useStore();
 
   const [refreshRate, setRefreshRate] = useState<number>(() => {
     const saved = localStorage.getItem("options_oracle_chain_refresh_rate");
@@ -93,15 +93,31 @@ export const OptionChainTable: React.FC = () => {
       <div className="flex justify-between items-center px-1">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider">Option Chain Matrix</h3>
-          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-            dataSource?.includes("Error") || dataSource?.includes("Failed")
-              ? "bg-rose-950/90 text-rose-300 border-rose-600/70 shadow-[0_0_10px_rgba(244,63,94,0.3)]"
-              : dataSource?.includes("Dhan HQ (Live Direct Stream)") 
-                ? "bg-emerald-950 text-emerald-400 border-emerald-700/60 shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse" 
-                : "bg-blue-950 text-blue-400 border-blue-700/60"
-          }`}>
-            {dataSource ? (dataSource.includes("Error") || dataSource.includes("Failed") ? `⚠️ ${dataSource}` : `🟢 ${dataSource}`) : "🟢 Live Market Stream"}
-          </span>
+          
+          {/* Manual Data Source Selector Switch */}
+          <div className="flex items-center gap-2">
+            <select
+              value={dataSourceMode || "auto"}
+              onChange={(e) => setDataSourceMode(e.target.value)}
+              className="bg-gray-900/90 border border-gray-700/80 text-white text-[11px] font-semibold rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-accentCyan focus:outline-none cursor-pointer hover:border-accentCyan/60 transition-all shadow-sm"
+              title="Manual Data Source Selector Switch"
+            >
+              <option value="auto" className="bg-gray-950 text-gray-200">⚡ Data Source: Auto-Detect</option>
+              <option value="dhan" className="bg-gray-950 text-emerald-400">🟢 Dhan HQ API Stream (Direct Broker)</option>
+              <option value="nse" className="bg-gray-950 text-cyan-400">🔵 NSE India API Stream (Exchange Direct)</option>
+              <option value="fallback" className="bg-gray-950 text-amber-400">🟠 Calibrated Market Stream (Offline Backup)</option>
+            </select>
+
+            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+              dataSource?.includes("Error") || dataSource?.includes("Failed")
+                ? "bg-rose-950/90 text-rose-300 border-rose-600/70 shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+                : dataSource?.includes("Dhan HQ (Live Direct Stream)") 
+                  ? "bg-emerald-950 text-emerald-400 border-emerald-700/60 shadow-[0_0_10px_rgba(16,185,129,0.3)]" 
+                  : "bg-blue-950 text-blue-400 border-blue-700/60"
+            }`}>
+              {dataSource ? (dataSource.includes("Error") || dataSource.includes("Failed") ? `⚠️ ${dataSource}` : `🟢 ${dataSource}`) : "🟢 Live Market Stream"}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-500 animate-fadeIn">
           <div className="flex items-center gap-2 bg-gray-900/80 border border-borderClr/40 px-2.5 py-1 rounded-lg">
