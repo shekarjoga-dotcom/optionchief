@@ -197,11 +197,9 @@ def build_broker_links(symbol: str, expiry: str, legs: list) -> dict:
             "product_type": "MARGIN",
             "order_type": "MARKET"
         })
-    dhan_b64 = base64.b64encode(json.dumps(dhan_basket).encode()).decode()
-    dhan_url = f"https://options.dhan.co/basket?data={dhan_b64}"
-    
-    # 3. Kotak Neo Basket Link
-    kotak_url = f"https://neo.kotaksecurities.com/basket?data={urllib.parse.quote(json.dumps(dhan_basket))}"
+    dhan_url = "https://web.dhan.co/"
+    kite_url = f"https://kite.zerodha.com/connect/basket?api_key=kitefront&data={urllib.parse.quote(kite_json)}"
+    kotak_url = "https://neo.kotaksecurities.com/"
     
     return {
         "dhanUrl": dhan_url,

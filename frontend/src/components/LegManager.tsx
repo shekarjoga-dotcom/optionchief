@@ -429,7 +429,7 @@ export const LegManager: React.FC = () => {
             <div className="space-y-2.5">
               <div className="text-xs font-bold text-gray-300 uppercase tracking-wider">1-Click Broker Entry Links:</div>
               
-              {/* Dhan 1-Click Link */}
+              {/* Dhan Web 1-Click Link */}
               <a
                 href={shareData.brokerLinks.dhanUrl}
                 target="_blank"
@@ -438,7 +438,7 @@ export const LegManager: React.FC = () => {
               >
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Execute on Dhan HQ (1-Tap Basket)</span>
+                  <span>Execute on Dhan HQ Web App (web.dhan.co)</span>
                 </div>
                 <span className="group-hover:translate-x-1 transition-transform">→</span>
               </a>
@@ -452,7 +452,7 @@ export const LegManager: React.FC = () => {
               >
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
-                  <span>Execute on Zerodha Kite (Kite Basket)</span>
+                  <span>Execute on Zerodha Kite (1-Click Basket)</span>
                 </div>
                 <span className="group-hover:translate-x-1 transition-transform">→</span>
               </a>
@@ -466,7 +466,7 @@ export const LegManager: React.FC = () => {
               >
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                  <span>Execute on Kotak Neo (Neo Basket)</span>
+                  <span>Execute on Kotak Neo Web App (neo.kotaksecurities.com)</span>
                 </div>
                 <span className="group-hover:translate-x-1 transition-transform">→</span>
               </a>
