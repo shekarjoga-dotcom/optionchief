@@ -439,7 +439,17 @@ class MarketDataService:
                     sec_id = int(scrip_info["security_id"])
                     segment = scrip_info["segment"]
                     
-                    expiries = self._get_valid_expiries(symbol_clean)
+                    # Try fetching valid expiry list directly from Dhan HQ API if available
+                    try:
+                        exp_resp = dhan_client.expiry_list(under_security_id=sec_id, under_exchange_segment=api_seg)
+                        if isinstance(exp_resp, dict) and exp_resp.get("status") == "success":
+                            dhan_expiries = exp_resp.get("data", [])
+                            if dhan_expiries:
+                                expiries = dhan_expiries
+                    except Exception as e_exp:
+                        print(f"[Dhan API] expiry_list note: {e_exp}")
+                        
+                    expiries = expiries or self._get_valid_expiries(symbol_clean)
                     if not expiries:
                         expiries = [ (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7) ]
                         
@@ -1062,8 +1072,8 @@ class MarketDataService:
             default_base_iv = 0.16
             vix_key = "^VIX"
         else:
-            default_base_iv = 0.168 if days_to_expiry <= 2 else 0.155
-            vix_key = None # Bypass frozen Yahoo ^INDIAVIX (12.24%) for Indian indices
+            default_base_iv = 0.125 if days_to_expiry <= 2 else 0.115
+            vix_key = None # Calibrated to current NSE India VIX (11.5%)
             
         if not hasattr(self, "_vix_cache"):
             self._vix_cache = {}
