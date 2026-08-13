@@ -1034,12 +1034,11 @@ class MarketDataService:
             days_to_expiry = 1.0
         T = days_to_expiry / 365.0
         
-        # Calibrate risk-free rate (6.5% for Indian markets, 5.0% for US)
-        is_india = symbol_clean in NSE_FO_STOCKS or symbol_clean in [
-            "NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE", 
-            "GOLD", "GOLDM", "SILVER", "SILVERM", "CRUDEOIL", "CRUDEOILM", "NATURALGAS", "NATGASMINI"
-        ]
-        r = 0.065 if is_india else 0.05
+        # Calibrate risk-free rate (r = 0.0 for short-dated weekly options to match exchange Put-Call parity)
+        if days_to_expiry <= 10:
+            r = 0.0
+        else:
+            r = 0.065 if is_india else 0.05
         
         # Set strike step depending on index, stock, or commodity
         if symbol_clean in ["GOLD", "GOLDM"]:
@@ -1124,7 +1123,7 @@ class MarketDataService:
         for s in strikes:
             # Implied Volatility skew (smile) - calibrated continuous model to match real index option pricing
             dist_pct = (s - spot) / spot
-            iv = base_iv - 0.65 * dist_pct + 0.40 * (dist_pct ** 2)
+            iv = base_iv - 0.05 * dist_pct + 0.15 * (dist_pct ** 2)
             iv = max(0.01, iv)
 
             # Theoretical prices via Black-Scholes
