@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
-import { Briefcase, Play, Trash2, XCircle, Clock, Coins, TrendingUp } from 'lucide-react';
+import { Briefcase, Play, Trash2, XCircle, Clock, Coins, TrendingUp, Link as LinkIcon } from 'lucide-react';
 import type { SavedPortfolio, StrategyLeg, TriggeredAlert } from '../types';
 import { projectStrategy, projectLegPnL, getLotSizeForSymbol, normalizeLegQuantities, getCurrencySymbol } from '../utils/optionsMath';
 import { PayoffChart } from './PayoffChart';
@@ -21,6 +21,10 @@ export const PortfolioManager: React.FC = () => {
       return {};
     }
   });
+
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareData, setShareData] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
 
   // Sorting states
   const [openSortKey, setOpenSortKey] = useState<string>("date");
@@ -178,6 +182,52 @@ export const PortfolioManager: React.FC = () => {
   const handleClearAllAlerts = () => {
     if (confirm("Are you sure you want to clear all triggered alerts?")) {
       clearTriggeredAlerts();
+    }
+  };
+
+  const handleGenerateAlertShareLink = async (trig: TriggeredAlert) => {
+    setCopied(false);
+    try {
+      const lotSize = getLotSizeForSymbol(trig.symbol);
+      const formattedLegs = trig.legs.map(l => ({
+        strike: l.strike,
+        optionType: l.optionType,
+        action: l.action,
+        lots: Math.max(1, Math.round(l.quantity / lotSize)),
+        entryPrice: l.entryPrice
+      }));
+
+      const response = await fetch(`${BACKEND_URL}/api/strategy/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: trig.symbol,
+          expiry: trig.expiry || "",
+          strategyName: trig.strategyName,
+          legs: formattedLegs,
+          maxPayoff: typeof trig.maxProfit === 'number' ? trig.maxProfit : 0.0,
+          maxRisk: typeof trig.maxLoss === 'number' ? trig.maxLoss : 0.0,
+          margin: 0.0
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to generate entry link");
+      }
+
+      setShareData(data);
+      setShareModalOpen(true);
+    } catch (err: any) {
+      alert(`Error generating entry link: ${err.message}`);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (shareData?.shareUrl) {
+      navigator.clipboard.writeText(shareData.shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
     }
   };
 
@@ -915,6 +965,13 @@ export const PortfolioManager: React.FC = () => {
                             >
                               <TrendingUp className="w-3.5 h-3.5" />
                             </button>
+                            <button
+                              onClick={() => handleGenerateAlertShareLink(trig)}
+                              className="p-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 rounded-lg border border-purple-500/20 transition-all"
+                              title="1-Click Broker Entry Links (Dhan, Kite, Kotak)"
+                            >
+                              <LinkIcon className="w-3.5 h-3.5" />
+                            </button>
                             {user?.role !== 'viewer' && (
                               <button
                                 onClick={() => {
@@ -1166,6 +1223,93 @@ export const PortfolioManager: React.FC = () => {
               >
                 {isExecutingTrade ? "Executing..." : "Confirm Order"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1-Click Broker Entry Link & Share Strategy Modal */}
+      {shareModalOpen && shareData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-gray-900 border border-gray-700/80 rounded-xl p-6 max-w-lg w-full shadow-2xl relative">
+            <button
+              onClick={() => setShareModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-lg font-bold"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-2 mb-4">
+              <LinkIcon className="w-5 h-5 text-purple-400" />
+              <h3 className="text-base font-bold text-white uppercase tracking-wider">Strategy Entry Link & Broker Basket</h3>
+            </div>
+
+            {/* Short Strategy Entry Link */}
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-purple-300 mb-1">Strategy Share Link:</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareData.shareUrl}
+                  className="bg-gray-950 border border-purple-800/60 rounded px-3 py-1.5 text-xs text-white w-full font-mono select-all focus:outline-none"
+                />
+                <button
+                  onClick={handleCopyLink}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                    copied ? "bg-emerald-600 text-white" : "bg-purple-600 hover:bg-purple-500 text-white"
+                  }`}
+                >
+                  {copied ? "Copied! ✓" : "Copy Link"}
+                </button>
+              </div>
+            </div>
+
+            {/* 1-Click Broker Execution Deep Links */}
+            <div className="space-y-2.5">
+              <div className="text-xs font-bold text-gray-300 uppercase tracking-wider">1-Click Broker Entry Links:</div>
+              
+              {/* Dhan Web 1-Click Link */}
+              <a
+                href={shareData.brokerLinks.dhanUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-700/60 text-emerald-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Execute on Dhan HQ Web App (web.dhan.co)</span>
+                </div>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </a>
+
+              {/* Zerodha Kite 1-Click Link */}
+              <a
+                href={shareData.brokerLinks.kiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between bg-cyan-950/80 hover:bg-cyan-900/90 border border-cyan-700/60 text-cyan-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+                  <span>Execute on Zerodha Kite (1-Click Basket)</span>
+                </div>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </a>
+
+              {/* Kotak Neo 1-Click Link */}
+              <a
+                href={shareData.brokerLinks.kotakUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between bg-red-950/80 hover:bg-red-900/90 border border-red-700/60 text-red-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                  <span>Execute on Kotak Neo Web App (neo.kotaksecurities.com)</span>
+                </div>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </a>
             </div>
           </div>
         </div>
