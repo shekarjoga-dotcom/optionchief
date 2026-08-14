@@ -110,5 +110,7 @@ export interface TriggeredAlert {
   delta?: number;
   gamma?: number;
   theta?: number;
+  peakProfit?: number;
+  maxDrawdown?: number;
 }
 

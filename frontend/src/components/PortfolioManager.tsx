@@ -13,6 +13,14 @@ export const PortfolioManager: React.FC = () => {
   const [tempTakeProfit, setTempTakeProfit] = useState<Record<string, number>>({});
   const [tempStopLoss, setTempStopLoss] = useState<Record<string, number>>({});
   const [alertSpotPrices, setAlertSpotPrices] = useState<Record<string, number>>({});
+  const [alertPeakMetrics, setAlertPeakMetrics] = useState<Record<string, { maxProfit: number; maxLoss: number }>>(() => {
+    try {
+      const saved = localStorage.getItem("options_oracle_alert_peak_metrics");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
 
   // Sorting states
   const [openSortKey, setOpenSortKey] = useState<string>("date");
@@ -139,6 +147,33 @@ export const PortfolioManager: React.FC = () => {
     }
     return Math.round(totalPnL * 100) / 100;
   };
+
+  useEffect(() => {
+    if (!triggeredAlerts.length) return;
+    setAlertPeakMetrics(prev => {
+      const updated = { ...prev };
+      let changed = false;
+      triggeredAlerts.forEach(trig => {
+        const pnl = getAlertCurrentPnL(trig);
+        const existing = updated[trig.id] || { 
+          maxProfit: trig.peakProfit !== undefined ? trig.peakProfit : Math.max(0, pnl), 
+          maxLoss: trig.maxDrawdown !== undefined ? trig.maxDrawdown : Math.min(0, pnl) 
+        };
+        const newMaxProfit = Math.max(existing.maxProfit, pnl);
+        const newMaxLoss = Math.min(existing.maxLoss, pnl);
+        if (newMaxProfit !== existing.maxProfit || newMaxLoss !== existing.maxLoss || !(trig.id in updated)) {
+          updated[trig.id] = { maxProfit: newMaxProfit, maxLoss: newMaxLoss };
+          changed = true;
+        }
+      });
+      if (changed) {
+        try {
+          localStorage.setItem("options_oracle_alert_peak_metrics", JSON.stringify(updated));
+        } catch (e) {}
+      }
+      return changed ? updated : prev;
+    });
+  }, [triggeredAlerts, alertSpotPrices]);
 
   const handleClearAllAlerts = () => {
     if (confirm("Are you sure you want to clear all triggered alerts?")) {
@@ -291,6 +326,12 @@ export const PortfolioManager: React.FC = () => {
       } else if (alertSortKey === "pnl") {
         valA = getAlertCurrentPnL(a);
         valB = getAlertCurrentPnL(b);
+      } else if (alertSortKey === "peakProfit") {
+        valA = alertPeakMetrics[a.id]?.maxProfit ?? a.peakProfit ?? getAlertCurrentPnL(a);
+        valB = alertPeakMetrics[b.id]?.maxProfit ?? b.peakProfit ?? getAlertCurrentPnL(b);
+      } else if (alertSortKey === "maxDrawdown") {
+        valA = alertPeakMetrics[a.id]?.maxLoss ?? a.maxDrawdown ?? getAlertCurrentPnL(a);
+        valB = alertPeakMetrics[b.id]?.maxLoss ?? b.maxDrawdown ?? getAlertCurrentPnL(b);
       } else if (alertSortKey === "maxLoss") {
         const parseVal = (v: string | number) => {
           const str = String(v);
@@ -791,6 +832,8 @@ export const PortfolioManager: React.FC = () => {
                     <th className="py-3 px-3">Contract Legs</th>
                     <th className="py-3 px-3">Stats</th>
                     {renderSortHeader("Max Loss", "maxLoss", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                    {renderSortHeader("Peak Profit", "peakProfit", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                    {renderSortHeader("Max Drawdown", "maxDrawdown", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
                     {renderSortHeader("Live P&L", "pnl", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
                     <th className="py-3 px-4 text-center">Action</th>
                   </tr>
@@ -801,6 +844,8 @@ export const PortfolioManager: React.FC = () => {
                     const pnl = getAlertCurrentPnL(trig);
                     const activeSpot = alertSpotPrices[trig.symbol.toUpperCase()] || trig.spotPrice || (trig.legs[0]?.strike || 100);
                     const cur = getCurrencySymbol(trig.symbol);
+                    const peak = alertPeakMetrics[trig.id]?.maxProfit ?? trig.peakProfit ?? Math.max(0, pnl);
+                    const maxLossSuffered = alertPeakMetrics[trig.id]?.maxLoss ?? trig.maxDrawdown ?? Math.min(0, pnl);
 
                     return (
                       <tr key={trig.id} className="border-b border-borderClr/10 hover:bg-gray-800/10 transition-all">
@@ -831,6 +876,16 @@ export const PortfolioManager: React.FC = () => {
                         </td>
                         <td className="py-3.5 px-3 text-redBrand font-semibold">
                           {cur}{typeof trig.maxLoss === 'number' ? trig.maxLoss.toLocaleString() : String(trig.maxLoss)}
+                        </td>
+                        <td className="py-3.5 px-3 font-extrabold">
+                          <span className="px-2 py-1 rounded bg-emerald-950/60 border border-emerald-700/50 text-emerald-400 text-xs font-mono shadow-sm">
+                            +{cur}{peak.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3 font-extrabold">
+                          <span className="px-2 py-1 rounded bg-rose-950/60 border border-rose-700/50 text-rose-400 text-xs font-mono shadow-sm">
+                            {maxLossSuffered <= 0 ? "" : "-"}{cur}{Math.abs(maxLossSuffered).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                          </span>
                         </td>
                         <td className="py-3.5 px-3 font-extrabold">
                           <span className={`px-2.5 py-1 rounded border text-xs ${

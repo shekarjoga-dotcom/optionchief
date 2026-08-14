@@ -24,6 +24,8 @@ class TriggeredAlertResponse(BaseModel):
     spot_price: Optional[float]
     legs: List[dict]
     rule_id: Optional[str]
+    peak_profit: Optional[float] = 0.0
+    max_drawdown: Optional[float] = 0.0
     created_at: Optional[datetime]
 
     class Config:

@@ -90,6 +90,8 @@ class TriggeredAlert(Base):
     spot_price = Column(Float, nullable=True)
     legs = Column(JSON, nullable=False)
     rule_id = Column(String, nullable=True)
+    peak_profit = Column(Float, default=0.0)
+    max_drawdown = Column(Float, default=0.0)
     created_at = Column(DateTime, default=func.now())
 
     user = relationship("User")
