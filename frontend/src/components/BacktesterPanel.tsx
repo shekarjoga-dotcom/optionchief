@@ -425,6 +425,7 @@ export const BacktesterPanel: React.FC = () => {
   // Percentage-based Portfolio Portfolio SL/TP Sliders
   const [takeProfitPct, setTakeProfitPct] = useState<number>(20);
   const [stopLossPct, setStopLossPct] = useState<number>(0);
+  const [stopLossType, setStopLossType] = useState<'pct_max_loss' | 'pct_max_profit'>('pct_max_loss');
 
   // Results Sub-Tab
   const [resultsSubTab, setResultsSubTab] = useState<'backtest' | 'optimizer'>('backtest');
@@ -620,19 +621,22 @@ export const BacktesterPanel: React.FC = () => {
       const maxLossNum = typeof metrics.maxLoss === 'number' ? metrics.maxLoss : 0;
 
       const tpValRupees = Math.round(maxProfitNum * (takeProfitPct / 100));
-      const slValRupees = Math.round(-maxLossNum * (stopLossPct / 100));
+      const slValRupees = stopLossType === 'pct_max_profit'
+        ? Math.round(maxProfitNum * (stopLossPct / 100))
+        : Math.round(-maxLossNum * (stopLossPct / 100));
 
       return {
         maxProfit: metrics.maxProfit,
         maxLoss: metrics.maxLoss,
+        maxProfitVal: maxProfitNum,
         tpValRupees,
         slValRupees
       };
     } catch (e) {
       console.error("Error calculating estimated strategy limits", e);
-      return { maxProfit: 0, maxLoss: 0, tpValRupees: 0, slValRupees: 0 };
+      return { maxProfit: 0, maxLoss: 0, maxProfitVal: 0, tpValRupees: 0, slValRupees: 0 };
     }
-  }, [legs, backtestSymbol, underlying, takeProfitPct, stopLossPct]);
+  }, [legs, backtestSymbol, underlying, takeProfitPct, stopLossPct, stopLossType]);
 
   // Results State
   const [isLoading, setIsLoading] = useState(false);
@@ -769,6 +773,7 @@ export const BacktesterPanel: React.FC = () => {
           portfolioTakeProfit: portfolioTakeProfit !== "" ? parseFloat(portfolioTakeProfit) : null,
           takeProfitPct: takeProfitPct > 0 ? takeProfitPct : null,
           stopLossPct: stopLossPct > 0 ? stopLossPct : null,
+          stopLossType,
           trailingSL,
           trailingSLTrigger: trailingSLTrigger !== "" ? parseFloat(trailingSLTrigger) : null,
           trailingSLStep: trailingSLStep !== "" ? parseFloat(trailingSLStep) : null,
@@ -1124,11 +1129,40 @@ export const BacktesterPanel: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-1.5 text-[10px]">
-                <div className="flex justify-between items-center font-bold">
-                  <span className="text-gray-400 uppercase tracking-wider">Stop Loss: <strong className="text-redBrand">{stopLossPct}%</strong></span>
+                <div className="flex justify-between items-center font-bold gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-400 uppercase tracking-wider">Stop Loss: <strong className="text-redBrand">{stopLossPct}%</strong></span>
+                    <div className="flex bg-gray-900 rounded p-0.5 border border-borderClr/40 text-[9px]">
+                      <button
+                        type="button"
+                        onClick={() => setStopLossType('pct_max_loss')}
+                        className={`px-1.5 py-0.5 rounded font-bold transition-all ${
+                          stopLossType === 'pct_max_loss' ? 'bg-redBrand text-white' : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Stop loss as a percentage of Max Loss / Capital"
+                      >
+                        % Max Loss
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStopLossType('pct_max_profit')}
+                        className={`px-1.5 py-0.5 rounded font-bold transition-all ${
+                          stopLossType === 'pct_max_profit' ? 'bg-redBrand text-white' : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Stop loss as a percentage of Max Profit"
+                      >
+                        % Max Profit
+                      </button>
+                    </div>
+                  </div>
                   <span className="text-gray-400 font-semibold">Trigger at: <strong className="text-white">
                     {(() => {
                       const cur = getCurrencySymbol(backtestSymbol);
+                      if (stopLossType === 'pct_max_profit') {
+                        return estimatedTriggers.maxProfit === 'Unlimited' 
+                          ? 'N/A' 
+                          : `-${cur}${estimatedTriggers.slValRupees.toLocaleString()}`;
+                      }
                       return estimatedTriggers.maxLoss === 'Unlimited' ? 'Unlimited' : `${cur}${estimatedTriggers.slValRupees.toLocaleString()}`;
                     })()}
                   </strong></span>

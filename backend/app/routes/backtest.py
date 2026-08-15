@@ -105,6 +105,7 @@ class BacktestRequest(BaseModel):
     portfolioTakeProfit: Optional[float] = None
     takeProfitPct: Optional[float] = None
     stopLossPct: Optional[float] = None
+    stopLossType: Optional[str] = "pct_max_loss"
     trailingSL: Optional[bool] = False
     trailingSLTrigger: Optional[float] = None
     trailingSLStep: Optional[float] = None
@@ -320,7 +321,8 @@ def run_in_memory_eod_backtest(
     lot_size: int,
     strike_round: int,
     expiry_type: str = "weekly",
-    symbol: str = "NIFTY"
+    symbol: str = "NIFTY",
+    stop_loss_type: str = "pct_max_loss"
 ) -> dict:
     capital = initial_capital
     r = 0.065
@@ -411,8 +413,11 @@ def run_in_memory_eod_backtest(
 
                 if take_profit_pct is not None and max_profit != float('inf'):
                     active_portfolio_tp = max_profit * (take_profit_pct / 100.0)
-                if stop_loss_pct is not None and max_loss != float('inf'):
-                    active_portfolio_sl = max_loss * (stop_loss_pct / 100.0)
+                if stop_loss_pct is not None:
+                    if stop_loss_type == "pct_max_profit" and max_profit != float('inf'):
+                        active_portfolio_sl = max_profit * (stop_loss_pct / 100.0)
+                    elif max_loss != float('inf'):
+                        active_portfolio_sl = max_loss * (stop_loss_pct / 100.0)
 
                 current_position = {
                     "expiryDate": expiry_dt,
@@ -472,7 +477,8 @@ def run_in_memory_intraday_backtest(
     lot_size: int,
     strike_round: int,
     expiry_type: str = "weekly",
-    symbol: str = "NIFTY"
+    symbol: str = "NIFTY",
+    stop_loss_type: str = "pct_max_loss"
 ) -> dict:
     capital = initial_capital
     r = 0.065
@@ -542,8 +548,11 @@ def run_in_memory_intraday_backtest(
 
         if take_profit_pct is not None and max_profit != float('inf'):
             active_portfolio_tp = max_profit * (take_profit_pct / 100.0)
-        if stop_loss_pct is not None and max_loss != float('inf'):
-            active_portfolio_sl = max_loss * (stop_loss_pct / 100.0)
+        if stop_loss_pct is not None:
+            if stop_loss_type == "pct_max_profit" and max_profit != float('inf'):
+                active_portfolio_sl = max_profit * (stop_loss_pct / 100.0)
+            elif max_loss != float('inf'):
+                active_portfolio_sl = max_loss * (stop_loss_pct / 100.0)
 
         trade_exited = False
         final_trade_pnl = 0.0
@@ -812,9 +821,14 @@ async def run_intraday_backtest(req: BacktestRequest):
             if active_portfolio_tp is None or pct_tp < active_portfolio_tp:
                 active_portfolio_tp = pct_tp
         
-        if req.stopLossPct is not None and max_loss != float('inf'):
-            pct_sl = max_loss * (req.stopLossPct / 100.0)
-            if active_portfolio_sl is None or pct_sl < active_portfolio_sl:
+        if req.stopLossPct is not None:
+            if req.stopLossType == "pct_max_profit" and max_profit != float('inf'):
+                pct_sl = max_profit * (req.stopLossPct / 100.0)
+            elif max_loss != float('inf'):
+                pct_sl = max_loss * (req.stopLossPct / 100.0)
+            else:
+                pct_sl = None
+            if pct_sl is not None and (active_portfolio_sl is None or pct_sl < active_portfolio_sl):
                 active_portfolio_sl = pct_sl
 
         trade_exited = False
@@ -1277,9 +1291,14 @@ async def run_backtest(req: BacktestRequest):
                     if active_portfolio_tp is None or pct_tp < active_portfolio_tp:
                         active_portfolio_tp = pct_tp
                 
-                if req.stopLossPct is not None and max_loss != float('inf'):
-                    pct_sl = max_loss * (req.stopLossPct / 100.0)
-                    if active_portfolio_sl is None or pct_sl < active_portfolio_sl:
+                if req.stopLossPct is not None:
+                    if req.stopLossType == "pct_max_profit" and max_profit != float('inf'):
+                        pct_sl = max_profit * (req.stopLossPct / 100.0)
+                    elif max_loss != float('inf'):
+                        pct_sl = max_loss * (req.stopLossPct / 100.0)
+                    else:
+                        pct_sl = None
+                    if pct_sl is not None and (active_portfolio_sl is None or pct_sl < active_portfolio_sl):
                         active_portfolio_sl = pct_sl
 
                 current_position = {
