@@ -217,6 +217,59 @@ async def delete_triggered_alert(
     return {"status": "success", "message": "Triggered alert deleted"}
 
 
+class TriggeredAlertSyncItem(BaseModel):
+    id: str
+    symbol: str
+    strategy_name: str
+    expiry: str
+    pop: float
+    max_profit: str
+    max_loss: str
+    rr_ratio: float
+    timestamp: str
+    current_pnl: Optional[str] = "₹0.00"
+    spot_price: Optional[float] = None
+    legs: List[dict] = []
+    rule_id: Optional[str] = None
+    peak_profit: Optional[float] = 0.0
+    max_drawdown: Optional[float] = 0.0
+
+
+@router.post("/triggered/sync")
+async def sync_triggered_alerts(
+    items: List[TriggeredAlertSyncItem],
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    synced_count = 0
+    for item in items:
+        existing = await db.get(TriggeredAlert, item.id)
+        if not existing:
+            new_alert = TriggeredAlert(
+                id=item.id,
+                user_id=current_user.id,
+                symbol=item.symbol,
+                strategy_name=item.strategy_name,
+                expiry=item.expiry,
+                pop=item.pop,
+                max_profit=item.max_profit,
+                max_loss=item.max_loss,
+                rr_ratio=item.rr_ratio,
+                timestamp=item.timestamp,
+                current_pnl=item.current_pnl or "₹0.00",
+                spot_price=item.spot_price,
+                legs=item.legs,
+                rule_id=item.rule_id,
+                peak_profit=item.peak_profit or 0.0,
+                max_drawdown=item.max_drawdown or 0.0
+            )
+            db.add(new_alert)
+            synced_count += 1
+    if synced_count > 0:
+        await db.commit()
+    return {"status": "success", "synced": synced_count}
+
+
 @router.put("/toggle-scanner")
 async def toggle_scanner(
     active: bool,
@@ -226,3 +279,4 @@ async def toggle_scanner(
     current_user.is_auto_scanning = active
     await db.commit()
     return {"status": "success", "is_auto_scanning": current_user.is_auto_scanning}
+

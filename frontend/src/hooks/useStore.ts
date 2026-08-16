@@ -100,7 +100,14 @@ export const useStore = create<AppState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   alertRules: [],
-  triggeredAlerts: [],
+  triggeredAlerts: (() => {
+    try {
+      const saved = localStorage.getItem("options_oracle_historical_alerts_v1");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  })(),
   executionConfig: null,
 
   // Auth initial state
@@ -704,7 +711,7 @@ export const useStore = create<AppState>((set, get) => ({
       });
       if (response.ok) {
         const data = await response.json();
-        const alerts = data.map((a: any) => ({
+        const serverAlerts = data.map((a: any) => ({
           id: a.id,
           symbol: a.symbol,
           strategyName: a.strategy_name,
@@ -717,9 +724,60 @@ export const useStore = create<AppState>((set, get) => ({
           currentPnL: a.current_pnl,
           spotPrice: a.spot_price,
           legs: a.legs,
-          ruleId: a.rule_id
+          ruleId: a.rule_id,
+          peakProfit: a.peak_profit,
+          maxDrawdown: a.max_drawdown
         }));
-        set({ triggeredAlerts: alerts });
+
+        set((state) => {
+          const alertMap = new Map<string, any>();
+          // Put existing state / local alerts first
+          state.triggeredAlerts.forEach((a) => alertMap.set(a.id, a));
+          // Put/update with server alerts
+          serverAlerts.forEach((a: any) => alertMap.set(a.id, a));
+
+          const merged = Array.from(alertMap.values());
+          // Save to persistent storage
+          try {
+            localStorage.setItem("options_oracle_historical_alerts_v1", JSON.stringify(merged));
+          } catch (e) {
+            console.warn("Storage error saving historical alerts", e);
+          }
+
+          // If local history has alerts missing from server, sync them back
+          if (merged.length > serverAlerts.length) {
+            const missing = merged.filter((m) => !serverAlerts.some((s: any) => s.id === m.id));
+            if (missing.length > 0) {
+              const syncItems = missing.map((m) => ({
+                id: m.id,
+                symbol: m.symbol,
+                strategy_name: m.strategyName,
+                expiry: m.expiry,
+                pop: m.pop,
+                max_profit: String(m.maxProfit),
+                max_loss: String(m.maxLoss),
+                rr_ratio: m.rrRatio,
+                timestamp: m.timestamp,
+                current_pnl: m.currentPnL || "₹0.00",
+                spot_price: m.spotPrice,
+                legs: m.legs,
+                rule_id: m.ruleId,
+                peak_profit: m.peakProfit || 0.0,
+                max_drawdown: m.maxDrawdown || 0.0
+              }));
+              fetch(`${BACKEND_URL}/api/alerts/triggered/sync`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify(syncItems)
+              }).catch((err) => console.warn("Background alert sync error", err));
+            }
+          }
+
+          return { triggeredAlerts: merged };
+        });
       }
     } catch (err) {
       console.error("Failed to fetch triggered alerts", err);
@@ -737,6 +795,8 @@ export const useStore = create<AppState>((set, get) => ({
         }
       });
       if (response.ok) {
+        localStorage.removeItem("options_oracle_historical_alerts_v1");
+        localStorage.removeItem("options_oracle_alert_peak_metrics");
         set({ triggeredAlerts: [] });
       } else {
         const data = await response.json();
@@ -759,9 +819,13 @@ export const useStore = create<AppState>((set, get) => ({
         }
       });
       if (response.ok) {
-        set((state) => ({
-          triggeredAlerts: state.triggeredAlerts.filter((a) => a.id !== id)
-        }));
+        set((state) => {
+          const updated = state.triggeredAlerts.filter((a) => a.id !== id);
+          try {
+            localStorage.setItem("options_oracle_historical_alerts_v1", JSON.stringify(updated));
+          } catch (e) {}
+          return { triggeredAlerts: updated };
+        });
       } else {
         const data = await response.json();
         throw new Error(data.detail || "Failed to delete triggered alert");

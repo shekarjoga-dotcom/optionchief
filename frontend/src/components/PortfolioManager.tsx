@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
-import { Briefcase, Play, Trash2, XCircle, Clock, Coins, TrendingUp, Link as LinkIcon } from 'lucide-react';
+import { Briefcase, Play, Trash2, XCircle, Clock, Coins, TrendingUp, Link as LinkIcon, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { SavedPortfolio, StrategyLeg, TriggeredAlert } from '../types';
 import { projectStrategy, projectLegPnL, getLotSizeForSymbol, normalizeLegQuantities, getCurrencySymbol } from '../utils/optionsMath';
 import { PayoffChart } from './PayoffChart';
@@ -25,6 +25,13 @@ export const PortfolioManager: React.FC = () => {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareData, setShareData] = useState<any>(null);
   const [copied, setCopied] = useState(false);
+
+  // Auto-Scanner Alerts Filtering & Pagination states
+  const [alertSearchQuery, setAlertSearchQuery] = useState("");
+  const [alertFilterSymbol, setAlertFilterSymbol] = useState("ALL");
+  const [alertFilterStrategy, setAlertFilterStrategy] = useState("ALL");
+  const [alertPage, setAlertPage] = useState(1);
+  const [alertPageSize, setAlertPageSize] = useState<number | 'ALL'>(50);
 
   // Sorting states
   const [openSortKey, setOpenSortKey] = useState<string>("date");
@@ -398,6 +405,113 @@ export const PortfolioManager: React.FC = () => {
     });
     return copy;
   }, [triggeredAlerts, alertSortKey, alertSortOrder]);
+
+  const availableAlertSymbols = useMemo(() => {
+    const syms = new Set<string>();
+    triggeredAlerts.forEach(a => {
+      if (a.symbol) syms.add(a.symbol.toUpperCase());
+    });
+    return Array.from(syms).sort();
+  }, [triggeredAlerts]);
+
+  const availableAlertStrategies = useMemo(() => {
+    const strats = new Set<string>();
+    triggeredAlerts.forEach(a => {
+      const base = a.strategyName ? a.strategyName.split(" (")[0].trim() : "";
+      if (base) strats.add(base);
+    });
+    return Array.from(strats).sort();
+  }, [triggeredAlerts]);
+
+  const filteredTriggeredAlerts = useMemo(() => {
+    return sortedTriggeredAlerts.filter((trig) => {
+      if (alertFilterSymbol !== "ALL" && trig.symbol.toUpperCase() !== alertFilterSymbol.toUpperCase()) {
+        return false;
+      }
+      if (alertFilterStrategy !== "ALL" && !trig.strategyName.toUpperCase().includes(alertFilterStrategy.toUpperCase())) {
+        return false;
+      }
+      if (alertSearchQuery.trim()) {
+        const q = alertSearchQuery.toLowerCase();
+        const sym = (trig.symbol || "").toLowerCase();
+        const name = (trig.strategyName || "").toLowerCase();
+        const exp = (trig.expiry || "").toLowerCase();
+        const legs = (trig.legs || []).map((l: any) => `${l.strike}${l.optionType}`).join(" ").toLowerCase();
+        if (!sym.includes(q) && !name.includes(q) && !exp.includes(q) && !legs.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [sortedTriggeredAlerts, alertFilterSymbol, alertFilterStrategy, alertSearchQuery]);
+
+  const totalAlertPages = useMemo(() => {
+    if (alertPageSize === 'ALL') return 1;
+    return Math.max(1, Math.ceil(filteredTriggeredAlerts.length / alertPageSize));
+  }, [filteredTriggeredAlerts.length, alertPageSize]);
+
+  const paginatedAlerts = useMemo(() => {
+    if (alertPageSize === 'ALL') return filteredTriggeredAlerts;
+    const start = (alertPage - 1) * alertPageSize;
+    return filteredTriggeredAlerts.slice(start, start + alertPageSize);
+  }, [filteredTriggeredAlerts, alertPage, alertPageSize]);
+
+  const handleExportAlertsCSV = () => {
+    if (filteredTriggeredAlerts.length === 0) {
+      alert("No alerts to export.");
+      return;
+    }
+    const headers = [
+      "Alert ID",
+      "Symbol",
+      "Strategy Name",
+      "Expiry",
+      "Trigger Timestamp",
+      "Entry Spot",
+      "Live LTP",
+      "Contract Legs",
+      "POP (%)",
+      "Risk:Reward",
+      "Max Loss (₹)",
+      "Peak Profit Achieved (₹)",
+      "Max Drawdown (₹)",
+      "Current Live P&L (₹)"
+    ];
+
+    const rows = filteredTriggeredAlerts.map((trig) => {
+      const pnl = getAlertCurrentPnL(trig);
+      const activeSpot = alertSpotPrices[trig.symbol.toUpperCase()] || trig.spotPrice || (trig.legs[0]?.strike || 0);
+      const peak = alertPeakMetrics[trig.id]?.maxProfit ?? trig.peakProfit ?? Math.max(0, pnl);
+      const maxLossSuffered = alertPeakMetrics[trig.id]?.maxLoss ?? trig.maxDrawdown ?? Math.min(0, pnl);
+      const compactLegs = formatLegsCompact(trig.legs, trig.symbol);
+
+      return [
+        `"${trig.id}"`,
+        `"${trig.symbol}"`,
+        `"${(trig.strategyName || '').replace(/"/g, '""')}"`,
+        `"${trig.expiry || ''}"`,
+        `"${trig.timestamp || ''}"`,
+        trig.spotPrice || "",
+        activeSpot || "",
+        `"${compactLegs.replace(/"/g, '""')}"`,
+        trig.pop || 0,
+        `"1:${(trig.rrRatio || 0).toFixed(1)}"`,
+        typeof trig.maxLoss === 'number' ? trig.maxLoss : `"${trig.maxLoss}"`,
+        peak,
+        maxLossSuffered,
+        pnl
+      ].join(",");
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `OptionChief_Auto_Scanner_Alerts_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const renderSortHeader = (
     label: string, 
@@ -871,147 +985,288 @@ export const PortfolioManager: React.FC = () => {
               <span>No triggered alerts from the auto-scanner. Alerts will appear here when rules are matched.</span>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-borderClr/30 bg-gray-950/40">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-borderClr bg-gray-900 text-gray-400 font-bold uppercase tracking-wider text-[10px]">
-                    {renderSortHeader("Symbol / Expiry", "symbol", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
-                    {renderSortHeader("Strategy Name", "name", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
-                    {renderSortHeader("Triggered Time", "time", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
-                    <th className="py-3 px-3">Spot Price</th>
-                    <th className="py-3 px-3">Contract Legs</th>
-                    <th className="py-3 px-3">Stats</th>
-                    {renderSortHeader("Max Loss", "maxLoss", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
-                    {renderSortHeader("Peak Profit", "peakProfit", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
-                    {renderSortHeader("Max Drawdown", "maxDrawdown", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
-                    {renderSortHeader("Live P&L", "pnl", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
-                    <th className="py-3 px-4 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedTriggeredAlerts.slice(0, 30).map((trig: TriggeredAlert) => {
-                    const compactLegs = formatLegsCompact(trig.legs, trig.symbol);
-                    const pnl = getAlertCurrentPnL(trig);
-                    const activeSpot = alertSpotPrices[trig.symbol.toUpperCase()] || trig.spotPrice || (trig.legs[0]?.strike || 100);
-                    const cur = getCurrencySymbol(trig.symbol);
-                    const peak = alertPeakMetrics[trig.id]?.maxProfit ?? trig.peakProfit ?? Math.max(0, pnl);
-                    const maxLossSuffered = alertPeakMetrics[trig.id]?.maxLoss ?? trig.maxDrawdown ?? Math.min(0, pnl);
+            <div className="flex flex-col gap-3">
+              {/* Filter and Search Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 bg-gray-950/60 p-2.5 rounded-xl border border-borderClr/30 text-xs">
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+                  {/* Search bar */}
+                  <div className="relative flex-1 min-w-[180px] max-w-sm">
+                    <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search symbol, strategy, legs..."
+                      value={alertSearchQuery}
+                      onChange={(e) => {
+                        setAlertSearchQuery(e.target.value);
+                        setAlertPage(1);
+                      }}
+                      className="w-full bg-gray-900 border border-borderClr/50 rounded-lg pl-8 pr-3 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-accentBrand text-xs"
+                    />
+                    {alertSearchQuery && (
+                      <button
+                        onClick={() => {
+                          setAlertSearchQuery("");
+                          setAlertPage(1);
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
 
-                    return (
-                      <tr key={trig.id} className="border-b border-borderClr/10 hover:bg-gray-800/10 transition-all">
-                        <td className="py-3.5 px-4 font-extrabold text-white">
-                          <span className="px-2 py-0.5 rounded bg-gray-900 border border-borderClr/40 mr-1.5">
-                            {trig.symbol}
-                          </span>
-                          <span className="text-[10px] text-accentCyan font-bold uppercase">{trig.expiry}</span>
-                        </td>
-                        <td className="py-3.5 px-3 font-bold text-white">
-                          {trig.strategyName.split(" (")[0]}
-                        </td>
-                        <td className="py-3.5 px-3 text-gray-400">
-                          {trig.timestamp}
-                        </td>
-                        <td className="py-3.5 px-3 text-gray-300 text-[11px]">
-                          <div>Entry: <span className="font-bold">{cur}{trig.spotPrice?.toLocaleString(undefined, {minimumFractionDigits: 1}) || "N/A"}</span></div>
-                          <div className="text-gray-400 mt-0.5">LTP: <span className="font-bold text-white">{cur}{activeSpot.toLocaleString(undefined, {minimumFractionDigits: 1})}</span></div>
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <span className="py-1 px-2 rounded bg-gray-950/60 border border-borderClr/20 text-[10px] font-bold text-gray-400 font-mono">
-                            {compactLegs}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 text-gray-300 text-[11px]">
-                          <div>POP: <span className="text-greenBrand font-bold">{trig.pop}%</span></div>
-                          <div className="text-gray-400 mt-0.5">R:R: 1:{trig.rrRatio.toFixed(1)}</div>
-                        </td>
-                        <td className="py-3.5 px-3 text-redBrand font-semibold">
-                          {cur}{typeof trig.maxLoss === 'number' ? trig.maxLoss.toLocaleString() : String(trig.maxLoss)}
-                        </td>
-                        <td className="py-3.5 px-3 font-extrabold">
-                          <span className="px-2 py-1 rounded bg-emerald-950/60 border border-emerald-700/50 text-emerald-400 text-xs font-mono shadow-sm">
-                            +{cur}{peak.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 font-extrabold">
-                          <span className="px-2 py-1 rounded bg-rose-950/60 border border-rose-700/50 text-rose-400 text-xs font-mono shadow-sm">
-                            {maxLossSuffered <= 0 ? "" : "-"}{cur}{Math.abs(maxLossSuffered).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 font-extrabold">
-                          <span className={`px-2.5 py-1 rounded border text-xs ${
-                            pnl >= 0 
-                              ? "bg-greenBrand/10 border-greenBrand/25 text-greenBrand" 
-                              : "bg-redBrand/10 border-redBrand/25 text-redBrand"
-                          }`}>
-                            {pnl >= 0 ? "+" : ""}{cur}{pnl.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => {
-                                const normalizedLegs = normalizeLegQuantities(trig.legs, trig.symbol);
-                                setPayoffModalData({
-                                  legs: normalizedLegs,
-                                  spot: activeSpot,
-                                  expiry: trig.expiry,
-                                  symbol: trig.symbol,
-                                  name: trig.strategyName
-                                });
-                                setPayoffModalOpen(true);
-                              }}
-                              className="p-1.5 bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan rounded-lg transition-all"
-                              title="View Payoff Curve"
-                            >
-                              <TrendingUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleGenerateAlertShareLink(trig)}
-                              className="p-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 rounded-lg border border-purple-500/20 transition-all"
-                              title="1-Click Broker Entry Links (Dhan, Kite, Kotak)"
-                            >
-                              <LinkIcon className="w-3.5 h-3.5" />
-                            </button>
-                            {user?.role !== 'viewer' && (
-                              <button
-                                onClick={() => {
-                                  const normalizedLegs = normalizeLegQuantities(trig.legs, trig.symbol);
-                                  setExecuteModalData({
-                                    legs: normalizedLegs,
-                                    symbol: trig.symbol,
-                                    strategyName: trig.strategyName,
-                                    description: `Executed from auto-scanner alert at spot ${cur}${trig.spotPrice}`
-                                  });
-                                  setSelectedBroker('paper');
-                                  setExecuteModalOpen(true);
-                                }}
-                                className="p-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 rounded-lg transition-all"
-                                title="Execute Trade"
-                              >
-                                <Coins className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleLoadAlert(trig)}
-                              className="p-1.5 bg-accentBrand/10 hover:bg-accentBrand/20 text-accentBrand rounded-lg transition-all"
-                              title="Load Strategy to Builder"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-accentBrand" />
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteAlert(trig.id, e)}
-                              className="p-1.5 bg-redBrand/10 hover:bg-redBrand/20 text-redBrand rounded-lg border border-redBrand/10 transition-all"
-                              title="Delete Alert Record"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                  {/* Symbol Filter */}
+                  {availableAlertSymbols.length > 0 && (
+                    <select
+                      value={alertFilterSymbol}
+                      onChange={(e) => {
+                        setAlertFilterSymbol(e.target.value);
+                        setAlertPage(1);
+                      }}
+                      className="bg-gray-900 border border-borderClr/50 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-accentBrand"
+                    >
+                      <option value="ALL">All Symbols ({triggeredAlerts.length})</option>
+                      {availableAlertSymbols.map((s) => (
+                        <option key={s} value={s}>
+                          {s} ({triggeredAlerts.filter(a => a.symbol?.toUpperCase() === s).length})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Strategy Filter */}
+                  {availableAlertStrategies.length > 0 && (
+                    <select
+                      value={alertFilterStrategy}
+                      onChange={(e) => {
+                        setAlertFilterStrategy(e.target.value);
+                        setAlertPage(1);
+                      }}
+                      className="bg-gray-900 border border-borderClr/50 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-accentBrand max-w-[180px]"
+                    >
+                      <option value="ALL">All Strategies</option>
+                      {availableAlertStrategies.map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Right controls: Page Size & CSV Export */}
+                <div className="flex items-center gap-2 ml-auto">
+                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                    <span>Show:</span>
+                    <select
+                      value={alertPageSize}
+                      onChange={(e) => {
+                        const val = e.target.value === 'ALL' ? 'ALL' : parseInt(e.target.value);
+                        setAlertPageSize(val);
+                        setAlertPage(1);
+                      }}
+                      className="bg-gray-900 border border-borderClr/50 rounded px-2 py-1 text-white text-[11px] focus:outline-none"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={250}>250</option>
+                      <option value="ALL">All ({filteredTriggeredAlerts.length})</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={handleExportAlertsCSV}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-700/50 text-emerald-300 font-bold text-xs transition-all shadow-sm cursor-pointer"
+                    title="Export all historical alerts to CSV spreadsheet"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Alerts Table */}
+              <div className="overflow-x-auto rounded-xl border border-borderClr/30 bg-gray-950/40">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-borderClr bg-gray-900 text-gray-400 font-bold uppercase tracking-wider text-[10px]">
+                      {renderSortHeader("Symbol / Expiry", "symbol", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                      {renderSortHeader("Strategy Name", "name", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                      {renderSortHeader("Triggered Time", "time", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                      <th className="py-3 px-3">Spot Price</th>
+                      <th className="py-3 px-3">Contract Legs</th>
+                      <th className="py-3 px-3">Stats</th>
+                      {renderSortHeader("Max Loss", "maxLoss", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                      {renderSortHeader("Peak Profit", "peakProfit", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                      {renderSortHeader("Max Drawdown", "maxDrawdown", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                      {renderSortHeader("Live P&L", "pnl", alertSortKey, alertSortOrder, setAlertSortKey, setAlertSortOrder)}
+                      <th className="py-3 px-4 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedAlerts.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="py-8 text-center text-gray-500 text-xs">
+                          No alerts match the selected search/filter criteria.
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ) : (
+                      paginatedAlerts.map((trig: TriggeredAlert) => {
+                        const compactLegs = formatLegsCompact(trig.legs, trig.symbol);
+                        const pnl = getAlertCurrentPnL(trig);
+                        const activeSpot = alertSpotPrices[trig.symbol.toUpperCase()] || trig.spotPrice || (trig.legs[0]?.strike || 100);
+                        const cur = getCurrencySymbol(trig.symbol);
+                        const peak = alertPeakMetrics[trig.id]?.maxProfit ?? trig.peakProfit ?? Math.max(0, pnl);
+                        const maxLossSuffered = alertPeakMetrics[trig.id]?.maxLoss ?? trig.maxDrawdown ?? Math.min(0, pnl);
+
+                        return (
+                          <tr key={trig.id} className="border-b border-borderClr/10 hover:bg-gray-800/10 transition-all">
+                            <td className="py-3.5 px-4 font-extrabold text-white">
+                              <span className="px-2 py-0.5 rounded bg-gray-900 border border-borderClr/40 mr-1.5">
+                                {trig.symbol}
+                              </span>
+                              <span className="text-[10px] text-accentCyan font-bold uppercase">{trig.expiry}</span>
+                            </td>
+                            <td className="py-3.5 px-3 font-bold text-white">
+                              {trig.strategyName.split(" (")[0]}
+                            </td>
+                            <td className="py-3.5 px-3 text-gray-400">
+                              {trig.timestamp}
+                            </td>
+                            <td className="py-3.5 px-3 text-gray-300 text-[11px]">
+                              <div>Entry: <span className="font-bold">{cur}{trig.spotPrice?.toLocaleString(undefined, {minimumFractionDigits: 1}) || "N/A"}</span></div>
+                              <div className="text-gray-400 mt-0.5">LTP: <span className="font-bold text-white">{cur}{activeSpot.toLocaleString(undefined, {minimumFractionDigits: 1})}</span></div>
+                            </td>
+                            <td className="py-3.5 px-3">
+                              <span className="py-1 px-2 rounded bg-gray-950/60 border border-borderClr/20 text-[10px] font-bold text-gray-400 font-mono">
+                                {compactLegs}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-3 text-gray-300 text-[11px]">
+                              <div>POP: <span className="text-greenBrand font-bold">{trig.pop}%</span></div>
+                              <div className="text-gray-400 mt-0.5">R:R: 1:{trig.rrRatio.toFixed(1)}</div>
+                            </td>
+                            <td className="py-3.5 px-3 text-redBrand font-semibold">
+                              {cur}{typeof trig.maxLoss === 'number' ? trig.maxLoss.toLocaleString() : String(trig.maxLoss)}
+                            </td>
+                            {/* Peak Profit Achieved */}
+                            <td className="py-3.5 px-3 font-extrabold">
+                              <span className="px-2 py-1 rounded bg-emerald-950/60 border border-emerald-700/50 text-emerald-400 text-xs font-mono shadow-sm">
+                                +{cur}{peak.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                              </span>
+                            </td>
+                            {/* Max Drawdown / Loss Suffered */}
+                            <td className="py-3.5 px-3 font-extrabold">
+                              <span className="px-2 py-1 rounded bg-rose-950/60 border border-rose-700/50 text-rose-400 text-xs font-mono shadow-sm">
+                                {maxLossSuffered <= 0 ? "" : "-"}{cur}{Math.abs(maxLossSuffered).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-3 font-extrabold">
+                              <span className={`px-2.5 py-1 rounded border text-xs ${
+                                pnl >= 0 
+                                  ? "bg-greenBrand/10 border-greenBrand/25 text-greenBrand" 
+                                  : "bg-redBrand/10 border-redBrand/25 text-redBrand"
+                              }`}>
+                                {pnl >= 0 ? "+" : ""}{cur}{pnl.toLocaleString()}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    const normalizedLegs = normalizeLegQuantities(trig.legs, trig.symbol);
+                                    setPayoffModalData({
+                                      legs: normalizedLegs,
+                                      spot: activeSpot,
+                                      expiry: trig.expiry,
+                                      symbol: trig.symbol,
+                                      name: trig.strategyName
+                                    });
+                                    setPayoffModalOpen(true);
+                                  }}
+                                  className="p-1.5 bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan rounded-lg transition-all"
+                                  title="View Payoff Curve"
+                                >
+                                  <TrendingUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleGenerateAlertShareLink(trig)}
+                                  className="p-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 rounded-lg border border-purple-500/20 transition-all"
+                                  title="1-Click Broker Entry Links (Dhan, Kite, Kotak)"
+                                >
+                                  <LinkIcon className="w-3.5 h-3.5" />
+                                </button>
+                                {user?.role !== 'viewer' && (
+                                  <button
+                                    onClick={() => {
+                                      const normalizedLegs = normalizeLegQuantities(trig.legs, trig.symbol);
+                                      setExecuteModalData({
+                                        legs: normalizedLegs,
+                                        symbol: trig.symbol,
+                                        strategyName: trig.strategyName,
+                                        description: `Executed from auto-scanner alert at spot ${cur}${trig.spotPrice}`
+                                      });
+                                      setSelectedBroker('paper');
+                                      setExecuteModalOpen(true);
+                                    }}
+                                    className="p-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 rounded-lg transition-all"
+                                    title="Execute Trade"
+                                  >
+                                    <Coins className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleLoadAlert(trig)}
+                                  className="p-1.5 bg-accentBrand/10 hover:bg-accentBrand/20 text-accentBrand rounded-lg transition-all"
+                                  title="Load Strategy to Builder"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-accentBrand" />
+                                </button>
+                                <button
+                                  onClick={(e) => handleDeleteAlert(trig.id, e)}
+                                  className="p-1.5 bg-redBrand/10 hover:bg-redBrand/20 text-redBrand rounded-lg border border-redBrand/10 transition-all"
+                                  title="Delete Alert Record"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {alertPageSize !== 'ALL' && totalAlertPages > 1 && (
+                <div className="flex items-center justify-between gap-3 px-2 py-1 text-xs text-gray-400">
+                  <div>
+                    Showing <span className="font-bold text-white">{(alertPage - 1) * alertPageSize + 1}</span> to <span className="font-bold text-white">{Math.min(alertPage * alertPageSize, filteredTriggeredAlerts.length)}</span> of <span className="font-bold text-white">{filteredTriggeredAlerts.length}</span> historical alerts
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setAlertPage(p => Math.max(1, p - 1))}
+                      disabled={alertPage === 1}
+                      className="px-2.5 py-1 rounded bg-gray-900 hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed border border-borderClr/40 flex items-center gap-1 text-white font-bold"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                    </button>
+                    <span className="px-2 py-1 font-bold text-white">
+                      Page {alertPage} of {totalAlertPages}
+                    </span>
+                    <button
+                      onClick={() => setAlertPage(p => Math.min(totalAlertPages, p + 1))}
+                      disabled={alertPage === totalAlertPages}
+                      className="px-2.5 py-1 rounded bg-gray-900 hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed border border-borderClr/40 flex items-center gap-1 text-white font-bold"
+                    >
+                      Next <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )
         )}
