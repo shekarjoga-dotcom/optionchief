@@ -951,7 +951,7 @@ export const AlertsPanel: React.FC = () => {
                     <span>No alerts triggered yet. Active scans will print here.</span>
                   </div>
                 ) : (
-                  triggeredAlerts.slice(0, 30).map(trig => {
+                  triggeredAlerts.map(trig => {
                     const isSelected = selectedAlert?.id === trig.id;
                     const pnl = getAlertCurrentPnL(trig);
                     return (
