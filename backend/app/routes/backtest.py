@@ -129,6 +129,7 @@ class OptimizationRequest(BaseModel):
     exitTimeRange: Optional[List[str]] = None
     entryDaysRange: Optional[List[List[int]]] = None
     strikeWidthRange: Optional[List[float]] = None
+    directionOffsetRange: Optional[List[float]] = None
     
     # Goal parameter: "netPnL", "winRate", "maxDrawdown", "sharpeRatio", "profitFactor"
     objective: str = "netPnL"
@@ -1651,25 +1652,37 @@ async def optimize_backtest(req: OptimizationRequest):
     
     import itertools
     
-    width_range = req.strikeWidthRange if req.strikeWidthRange is not None else [None]
+    width_range = req.strikeWidthRange if req.strikeWidthRange is not None and len(req.strikeWidthRange) > 0 else [None]
+    direction_range = req.directionOffsetRange if req.directionOffsetRange is not None and len(req.directionOffsetRange) > 0 else [0.0]
     
     # Calculate base spacing of original legs to scale distance/spreads
     non_zero_offsets = [abs(leg.strikeOffset) for leg in req.legs if leg.strikeOffset != 0]
     base_spacing = min(non_zero_offsets) if non_zero_offsets else None
     
-    def get_scaled_legs(strike_width: Optional[float]) -> list:
+    def get_transformed_legs(strike_width: Optional[float], direction_offset: Optional[float] = 0.0) -> list:
+        offset = direction_offset or 0.0
         if base_spacing is None or strike_width is None or base_spacing == 0:
-            return req.legs
+            if offset == 0.0:
+                return req.legs
+            return [
+                OptionLegSchema(
+                    action=leg.action,
+                    optionType=leg.optionType,
+                    strikeOffset=round(leg.strikeOffset + offset, 2),
+                    quantity=leg.quantity
+                )
+                for leg in req.legs
+            ]
         factor = strike_width / base_spacing
-        scaled = []
+        transformed = []
         for leg in req.legs:
-            scaled.append(OptionLegSchema(
+            transformed.append(OptionLegSchema(
                 action=leg.action,
                 optionType=leg.optionType,
-                strikeOffset=round(leg.strikeOffset * factor, 2),
+                strikeOffset=round(leg.strikeOffset * factor + offset, 2),
                 quantity=leg.quantity
             ))
-        return scaled
+        return transformed
     
     if req.backtestType.upper() == "INTRADAY":
         param_grid = itertools.product(
@@ -1678,20 +1691,21 @@ async def optimize_backtest(req: OptimizationRequest):
             entry_days_combos,
             entry_time_range,
             exit_time_range,
-            width_range
+            width_range,
+            direction_range
         )
         
-        for tp, sl, entry_days, entry_time, exit_time, strike_width in param_grid:
+        for tp, sl, entry_days, entry_time, exit_time, strike_width, direction_offset in param_grid:
             entry_h, entry_m = map(int, entry_time.split(":"))
             exit_h, exit_m = map(int, exit_time.split(":"))
             
-            scaled_legs = get_scaled_legs(strike_width)
+            transformed_legs = get_transformed_legs(strike_width, direction_offset)
             
             metrics = run_in_memory_intraday_backtest(
                 sorted_days=sorted_days,
                 day_candles=day_candles,
                 vix_series=vix_series,
-                legs=scaled_legs,
+                legs=transformed_legs,
                 entry_days=entry_days,
                 entry_h=entry_h, entry_m=entry_m,
                 exit_h=exit_h, exit_m=exit_m,
@@ -1712,7 +1726,8 @@ async def optimize_backtest(req: OptimizationRequest):
                     "entryDays": entry_days,
                     "entryTime": entry_time,
                     "exitTime": exit_time,
-                    "strikeWidth": strike_width
+                    "strikeWidth": strike_width,
+                    "directionOffset": direction_offset
                 },
                 "metrics": metrics
             })
@@ -1721,17 +1736,18 @@ async def optimize_backtest(req: OptimizationRequest):
             tp_range,
             sl_range,
             entry_days_combos,
-            width_range
+            width_range,
+            direction_range
         )
         
-        for tp, sl, entry_days, strike_width in param_grid:
-            scaled_legs = get_scaled_legs(strike_width)
+        for tp, sl, entry_days, strike_width, direction_offset in param_grid:
+            transformed_legs = get_transformed_legs(strike_width, direction_offset)
             
             metrics = run_in_memory_eod_backtest(
                 dates_list=dates_list,
                 spot_series=spot_series,
                 vix_series=vix_series,
-                legs=scaled_legs,
+                legs=transformed_legs,
                 entry_days=entry_days,
                 slippage=req.slippagePerLeg,
                 initial_capital=req.initialCapital,
@@ -1750,7 +1766,8 @@ async def optimize_backtest(req: OptimizationRequest):
                     "entryDays": entry_days,
                     "entryTime": None,
                     "exitTime": None,
-                    "strikeWidth": strike_width
+                    "strikeWidth": strike_width,
+                    "directionOffset": direction_offset
                 },
                 "metrics": metrics
             })

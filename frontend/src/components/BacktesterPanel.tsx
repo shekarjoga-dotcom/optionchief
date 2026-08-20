@@ -313,6 +313,47 @@ const DEFAULT_STRIKE_WIDTHS: Record<string, number[]> = {
   "TSLA": [1, 2, 3, 5, 10]
 };
 
+const DEFAULT_DIRECTION_OFFSETS: Record<string, { label: string; offset: number }[]> = {
+  "NIFTY": [
+    { label: "-300 P-OTM", offset: -300 },
+    { label: "-200 P-OTM", offset: -200 },
+    { label: "-100 P-OTM", offset: -100 },
+    { label: "-50 P-OTM", offset: -50 },
+    { label: "ATM (0)", offset: 0 },
+    { label: "+50 C-OTM", offset: 50 },
+    { label: "+100 C-OTM", offset: 100 },
+    { label: "+200 C-OTM", offset: 200 },
+    { label: "+300 C-OTM", offset: 300 }
+  ],
+  "BANKNIFTY": [
+    { label: "-600 P-OTM", offset: -600 },
+    { label: "-400 P-OTM", offset: -400 },
+    { label: "-200 P-OTM", offset: -200 },
+    { label: "-100 P-OTM", offset: -100 },
+    { label: "ATM (0)", offset: 0 },
+    { label: "+100 C-OTM", offset: 100 },
+    { label: "+200 C-OTM", offset: 200 },
+    { label: "+400 C-OTM", offset: 400 },
+    { label: "+600 C-OTM", offset: 600 }
+  ],
+  "SENSEX": [
+    { label: "-500 P-OTM", offset: -500 },
+    { label: "-300 P-OTM", offset: -300 },
+    { label: "-100 P-OTM", offset: -100 },
+    { label: "ATM (0)", offset: 0 },
+    { label: "+100 C-OTM", offset: 100 },
+    { label: "+300 C-OTM", offset: 300 },
+    { label: "+500 C-OTM", offset: 500 }
+  ],
+  "FINNIFTY": [
+    { label: "-200 P-OTM", offset: -200 },
+    { label: "-100 P-OTM", offset: -100 },
+    { label: "ATM (0)", offset: 0 },
+    { label: "+100 C-OTM", offset: 100 },
+    { label: "+200 C-OTM", offset: 200 }
+  ]
+};
+
 const getOffsetOptionsForSymbol = (symbol: string, currentOffset: number) => {
   const interval = STRIKE_ROUND_INTERVALS[symbol.toUpperCase()] || 50;
   const list: number[] = [];
@@ -444,6 +485,8 @@ export const BacktesterPanel: React.FC = () => {
 
   // Optimizer Sweeps Strike Spacing State
   const [optStrikeWidthRange, setOptStrikeWidthRange] = useState<number[]>([]);
+  // Optimizer Sweeps Direction / OTM Placement State
+  const [optDirectionOffsetRange, setOptDirectionOffsetRange] = useState<number[]>([0]);
 
   // Sorting states
   const [optSortField, setOptSortField] = useState<string>("rank");
@@ -497,6 +540,9 @@ export const BacktesterPanel: React.FC = () => {
       } else if (optSortField === 'strikeWidth') {
         valA = a.parameters.strikeWidth ?? -1;
         valB = b.parameters.strikeWidth ?? -1;
+      } else if (optSortField === 'directionOffset') {
+        valA = a.parameters.directionOffset ?? 0;
+        valB = b.parameters.directionOffset ?? 0;
       } else if (optSortField === 'avgTimeToTarget') {
         valA = a.metrics.avgTimeToTargetVal;
         valB = b.metrics.avgTimeToTargetVal;
@@ -833,6 +879,7 @@ export const BacktesterPanel: React.FC = () => {
         entryTimeRange: backtestType === 'INTRADAY' ? optEntryTimeRange : null,
         entryDaysRange: entryDaysRange.length > 0 ? entryDaysRange : null,
         strikeWidthRange: optStrikeWidthRange.length > 0 ? optStrikeWidthRange : null,
+        directionOffsetRange: optDirectionOffsetRange.length > 0 ? optDirectionOffsetRange : [0],
         objective: optObjective,
         expiryType
       };
@@ -889,19 +936,31 @@ export const BacktesterPanel: React.FC = () => {
     }
     
     // Scale legs if strikeWidth is returned and not null
+    let updatedLegs = [...legs];
     if (p.strikeWidth !== null && p.strikeWidth !== undefined && legs.length > 0) {
       const nonZeroOffsets = legs.map(l => Math.abs(l.strikeOffset)).filter(o => o !== 0);
       if (nonZeroOffsets.length > 0) {
         const baseSpacing = Math.min(...nonZeroOffsets);
         if (baseSpacing > 0) {
           const factor = p.strikeWidth / baseSpacing;
-          const scaledLegs = legs.map(l => ({
+          updatedLegs = updatedLegs.map(l => ({
             ...l,
             strikeOffset: Math.round(l.strikeOffset * factor)
           }));
-          setLegs(scaledLegs);
         }
       }
+    }
+
+    // Shift legs if directionOffset is returned and non-zero
+    if (p.directionOffset !== undefined && p.directionOffset !== 0 && legs.length > 0) {
+      updatedLegs = updatedLegs.map(l => ({
+        ...l,
+        strikeOffset: l.strikeOffset + p.directionOffset
+      }));
+    }
+
+    if (legs.length > 0) {
+      setLegs(updatedLegs);
     }
     
     setResultsSubTab('backtest');
@@ -1841,10 +1900,45 @@ export const BacktesterPanel: React.FC = () => {
                           );
                         }}
                         className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
-                          isChecked ? "bg-amber-500/15 border-amber-500/40 text-amber-400" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                          isChecked ? "bg-amber-500/15 border-amber-500/40 text-amber-400" : "bg-gray-900 border-borderClr/60 text-gray-500 hover:text-gray-300"
                         }`}
                       >
                         {width}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Direction & OTM Placement Sweep */}
+              <div className="flex flex-col gap-1.5 mt-1 border-t border-borderClr/15 pt-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">Direction & OTM Placement Sweeps (Points from ATM)</span>
+                  <span className="text-[9px] text-amber-400 font-medium">Test Bullish / Bearish / OTM Ratio Wings</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(DEFAULT_DIRECTION_OFFSETS[backtestSymbol.toUpperCase()] || [
+                    { label: "-200 P-OTM", offset: -200 },
+                    { label: "-100 P-OTM", offset: -100 },
+                    { label: "ATM (0)", offset: 0 },
+                    { label: "+100 C-OTM", offset: 100 },
+                    { label: "+200 C-OTM", offset: 200 }
+                  ]).map((item) => {
+                    const isChecked = optDirectionOffsetRange.includes(item.offset);
+                    return (
+                      <button
+                        key={item.offset}
+                        type="button"
+                        onClick={() => {
+                          setOptDirectionOffsetRange(prev =>
+                            prev.includes(item.offset) ? prev.filter(o => o !== item.offset) : [...prev, item.offset].sort((a,b)=>a-b)
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
+                          isChecked ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-sm" : "bg-gray-900 border-borderClr/60 text-gray-500 hover:text-gray-300"
+                        }`}
+                      >
+                        {item.label}
                       </button>
                     );
                   })}
@@ -1882,6 +1976,9 @@ export const BacktesterPanel: React.FC = () => {
                       <tr className="border-b border-borderClr/20 text-gray-500 select-none">
                         <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('rank')}>
                           Rank {renderSortIndicator('rank')}
+                        </th>
+                        <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('directionOffset')}>
+                          OTM / Direction {renderSortIndicator('directionOffset')}
                         </th>
                         <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('stopLoss')}>
                           Stop Loss {renderSortIndicator('stopLoss')}
@@ -1926,6 +2023,15 @@ export const BacktesterPanel: React.FC = () => {
                             <td className="py-2.5 font-bold text-white flex items-center gap-1">
                               {isBest && <span className="text-amber-500 text-[10px]">★</span>}
                               #{originalRank}
+                            </td>
+                            <td className="py-2.5 font-semibold">
+                              {p.directionOffset !== null && p.directionOffset !== undefined && p.directionOffset !== 0 ? (
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${p.directionOffset > 0 ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' : 'bg-pink-500/10 text-pink-400 border-pink-500/30'}`}>
+                                  {p.directionOffset > 0 ? `+${p.directionOffset} C-OTM` : `${p.directionOffset} P-OTM`}
+                                </span>
+                              ) : (
+                                <span className="text-gray-500 font-mono text-[10px]">ATM (0)</span>
+                              )}
                             </td>
                             <td className="py-2.5">
                               {p.stopLossPct !== null ? (
