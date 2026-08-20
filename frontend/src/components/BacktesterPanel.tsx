@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../hooks/useStore';
 import { 
   Play, Plus, Trash2, TrendingUp, Calendar, 
-  Activity, AlertCircle
+  Activity, AlertCircle, Download
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -366,6 +366,19 @@ const getOffsetOptionsForSymbol = (symbol: string, currentOffset: number) => {
   return list.sort((a, b) => a - b);
 };
 
+const parseDurationValue = (durStr: string | undefined): number => {
+  if (!durStr || durStr === "-") return -1;
+  const dayMatch = durStr.match(/(\d+(?:\.\d+)?)\s*D/i);
+  if (dayMatch) return parseFloat(dayMatch[1]) * 24 * 60;
+  
+  let totalMins = 0;
+  const hourMatch = durStr.match(/(\d+)\s*h/i);
+  const minMatch = durStr.match(/(\d+)\s*m/i);
+  if (hourMatch) totalMins += parseInt(hourMatch[1]) * 60;
+  if (minMatch) totalMins += parseInt(minMatch[1]);
+  return totalMins > 0 ? totalMins : parseFloat(durStr) || 0;
+};
+
 export const BacktesterPanel: React.FC = () => {
   const { symbol, token, underlying, saveAlertRule } = useStore();
 
@@ -696,6 +709,147 @@ export const BacktesterPanel: React.FC = () => {
   const [equityCurve, setEquityCurve] = useState<any[]>([]);
   const [monthlyGrid, setMonthlyGrid] = useState<any[]>([]);
   const [tradesLog, setTradesLog] = useState<any[]>([]);
+
+  // Trades log sorting states
+  const [tradeSortField, setTradeSortField] = useState<string>("entryDate");
+  const [tradeSortAsc, setTradeSortAsc] = useState<boolean>(true);
+
+  const handleTradeSort = (field: string) => {
+    if (tradeSortField === field) {
+      setTradeSortAsc(prev => !prev);
+    } else {
+      setTradeSortField(field);
+      setTradeSortAsc(field === 'entryDate' || field === 'exitDate');
+    }
+  };
+
+  const renderTradeSortIndicator = (field: string) => {
+    if (tradeSortField !== field) return <span className="text-gray-600 ml-1 select-none font-normal">↕</span>;
+    return <span className="text-cyan-400 ml-1 select-none font-bold">{tradeSortAsc ? "▲" : "▼"}</span>;
+  };
+
+  const sortedTradesLog = useMemo(() => {
+    if (!tradesLog || tradesLog.length === 0) return [];
+    const sorted = [...tradesLog];
+    sorted.sort((a, b) => {
+      let valA: any = a[tradeSortField];
+      let valB: any = b[tradeSortField];
+
+      if (tradeSortField === 'duration') {
+        valA = parseDurationValue(a.duration);
+        valB = parseDurationValue(b.duration);
+      } else if (tradeSortField === 'entrySpot' || tradeSortField === 'exitSpot' || tradeSortField === 'netPnL') {
+        valA = Number(valA) || 0;
+        valB = Number(valB) || 0;
+      } else if (typeof valA === 'string' && typeof valB === 'string') {
+        return tradeSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+
+      if (valA === null || valA === undefined) return tradeSortAsc ? -1 : 1;
+      if (valB === null || valB === undefined) return tradeSortAsc ? 1 : -1;
+      return tradeSortAsc ? valA - valB : valB - valA;
+    });
+    return sorted;
+  }, [tradesLog, tradeSortField, tradeSortAsc]);
+
+  // Export Trades Log to CSV
+  const handleExportTradesCSV = () => {
+    if (!tradesLog || tradesLog.length === 0) {
+      alert("No trade records to export.");
+      return;
+    }
+    const cur = getCurrencySymbol(backtestSymbol);
+    const headers = [
+      "Trade #",
+      "Entry Date/Time",
+      "Entry Spot",
+      "Exit Date/Time",
+      "Exit Spot",
+      "Duration",
+      "Exit Reason",
+      `Net PnL (${cur})`
+    ];
+
+    const rows = sortedTradesLog.map((tr, index) => [
+      index + 1,
+      `"${tr.entryDate || ''}"`,
+      tr.entrySpot ?? '',
+      `"${tr.exitDate || ''}"`,
+      tr.exitSpot ?? '',
+      `"${tr.duration || '-'}"`,
+      `"${tr.exitReason || 'Market Close'}"`,
+      tr.netPnL ?? 0
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${backtestSymbol}_Backtest_Trades_${startDate}_to_${endDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Export Optimizer Ranked Permutations to CSV
+  const handleExportOptimizerCSV = () => {
+    if (!optimizationResults || optimizationResults.length === 0) {
+      alert("No optimization results to export.");
+      return;
+    }
+    const cur = getCurrencySymbol(backtestSymbol);
+    const daysMap = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+    const headers = [
+      "Rank",
+      "OTM / Direction",
+      "Stop Loss (%)",
+      "Take Profit (%)",
+      "Spread Width",
+      "Days / Time",
+      `Net Return (${cur})`,
+      "Net Return (%)",
+      "Win Rate (%)",
+      "Max Drawdown (%)",
+      "Profit Factor",
+      "Avg Target Time"
+    ];
+
+    const rows = sortedOptimizationResults.map((row, index) => {
+      const p = row.parameters;
+      const m = row.metrics;
+      const otmStr = p.directionOffset ? (p.directionOffset > 0 ? `+${p.directionOffset} C-OTM` : `${p.directionOffset} P-OTM`) : "ATM (0)";
+      const daysStr = p.entryDays ? p.entryDays.map((d: number) => daysMap[d] || d).join(" ") : "";
+      const timeStr = p.entryTime ? ` ${p.entryTime}` : "";
+
+      return [
+        index + 1,
+        `"${otmStr}"`,
+        p.stopLossPct !== null ? `${p.stopLossPct}%` : "None",
+        p.takeProfitPct !== null ? `${p.takeProfitPct}%` : "None",
+        p.strikeWidth !== null && p.strikeWidth !== undefined ? p.strikeWidth : "Original",
+        `"${daysStr}${timeStr}"`,
+        m.netPnL ?? 0,
+        `${m.netReturnPct ?? 0}%`,
+        `${m.winRate ?? 0}%`,
+        `${m.maxDrawdown ?? 0}%`,
+        m.profitFactor ?? '',
+        `"${m.avgTimeToTarget || '-'}"`
+      ];
+    });
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${backtestSymbol}_Optimizer_Permutations_${startDate}_to_${endDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const parseAndApplyPrompt = (promptText: string) => {
     setOptimizationPrompt(promptText);
@@ -1678,37 +1832,75 @@ export const BacktesterPanel: React.FC = () => {
 
             {/* Trades logs */}
             <div className="glass-panel rounded-xl p-5 border border-borderClr/30 flex flex-col gap-3 bg-gray-950/40 text-left">
-              <span className="text-xs font-bold text-white uppercase tracking-wider">Trades Log (Total: {metrics.totalTrades})</span>
-              <div className="max-h-56 overflow-y-auto pr-1">
-                <table className="w-full text-[11px]">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-borderClr/20 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    Trades Log (Total: {metrics.totalTrades})
+                  </span>
+                  <span className="text-[10px] text-gray-500 font-mono">
+                    (Click headers to sort)
+                  </span>
+                </div>
+                <button
+                  onClick={handleExportTradesCSV}
+                  className="px-2.5 py-1 bg-cyan-500/10 hover:bg-cyan-500 hover:text-black border border-cyan-500/30 text-cyan-400 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                  title="Download Trades Log as CSV Spreadsheet"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export Trades CSV
+                </button>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto pr-1">
+                <table className="w-full text-[11px] border-collapse">
                   <thead>
-                    <tr className="border-b border-borderClr/20 text-gray-500 text-left">
-                      <th className="py-2">Entry Date/Time</th>
-                      <th className="py-2">Entry Spot</th>
-                      <th className="py-2">Exit Date/Time</th>
-                      <th className="py-2">Exit Spot</th>
-                      <th className="py-2">Duration</th>
-                      <th className="py-2">Exit Reason</th>
-                      <th className="py-2 text-right">Net P&L</th>
+                    <tr className="border-b border-borderClr/20 text-gray-500 text-left select-none">
+                      <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleTradeSort('entryDate')}>
+                        Entry Date/Time {renderTradeSortIndicator('entryDate')}
+                      </th>
+                      <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleTradeSort('entrySpot')}>
+                        Entry Spot {renderTradeSortIndicator('entrySpot')}
+                      </th>
+                      <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleTradeSort('exitDate')}>
+                        Exit Date/Time {renderTradeSortIndicator('exitDate')}
+                      </th>
+                      <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleTradeSort('exitSpot')}>
+                        Exit Spot {renderTradeSortIndicator('exitSpot')}
+                      </th>
+                      <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleTradeSort('duration')}>
+                        Duration {renderTradeSortIndicator('duration')}
+                      </th>
+                      <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleTradeSort('exitReason')}>
+                        Exit Reason {renderTradeSortIndicator('exitReason')}
+                      </th>
+                      <th className="py-2 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleTradeSort('netPnL')}>
+                        Net P&L {renderTradeSortIndicator('netPnL')}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {tradesLog.map((tr, index) => {
+                    {sortedTradesLog.map((tr, index) => {
                       const cur = getCurrencySymbol(backtestSymbol);
                       return (
-                        <tr key={index} className="border-b border-borderClr/10 text-gray-300">
-                          <td className="py-2">{tr.entryDate}</td>
-                          <td className="py-2">{cur}{tr.entrySpot.toLocaleString()}</td>
-                          <td className="py-2">{tr.exitDate}</td>
-                          <td className="py-2">{cur}{tr.exitSpot.toLocaleString()}</td>
-                          <td className="py-2 text-cyan-400 font-mono font-medium">{tr.duration || "-"}</td>
+                        <tr key={index} className="border-b border-borderClr/10 text-gray-300 hover:bg-gray-900/40">
+                          <td className="py-2 font-mono text-[10.5px]">{tr.entryDate}</td>
+                          <td className="py-2 font-mono">{cur}{tr.entrySpot.toLocaleString()}</td>
+                          <td className="py-2 font-mono text-[10.5px]">{tr.exitDate}</td>
+                          <td className="py-2 font-mono">{cur}{tr.exitSpot.toLocaleString()}</td>
+                          <td className="py-2 text-cyan-400 font-mono font-semibold">{tr.duration || "-"}</td>
                           <td className="py-2">
-                            <span className="px-1.5 py-0.5 rounded bg-gray-900 border border-borderClr/30 text-[9px] text-gray-400 font-bold uppercase tracking-wide">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide border ${
+                              tr.exitReason?.includes('TP') || tr.exitReason?.includes('Target')
+                                ? 'bg-greenBrand/10 text-greenBrand border-greenBrand/30'
+                                : tr.exitReason?.includes('SL') || tr.exitReason?.includes('Stop')
+                                ? 'bg-redBrand/10 text-redBrand border-redBrand/30'
+                                : 'bg-gray-900 text-gray-400 border-borderClr/30'
+                            }`}>
                               {tr.exitReason || "Market Close"}
                             </span>
                           </td>
                           <td 
-                            className={`py-2 text-right font-bold ${
+                            className={`py-2 text-right font-bold font-mono ${
                               tr.netPnL > 0 ? "text-greenBrand" : "text-redBrand"
                             }`}
                           >
@@ -1963,11 +2155,21 @@ export const BacktesterPanel: React.FC = () => {
             {/* Optimization Results Table */}
             {optimizationResults.length > 0 && (
               <div className="glass-panel rounded-xl p-5 border border-borderClr/30 flex flex-col gap-3 bg-gray-950/40 overflow-x-auto">
-                <div className="flex justify-between items-center border-b border-borderClr/20 pb-2">
-                  <span className="text-xs font-bold text-white uppercase tracking-wider">
-                    Ranked Parameter Permutations ({optimizationResults.length})
-                  </span>
-                  <span className="text-[10px] text-amber-400 font-extrabold uppercase">Sorted by: {optObjective}</span>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-borderClr/20 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Ranked Parameter Permutations ({optimizationResults.length})
+                    </span>
+                    <span className="text-[10px] text-amber-400 font-extrabold uppercase">Sorted by: {optObjective}</span>
+                  </div>
+                  <button
+                    onClick={handleExportOptimizerCSV}
+                    className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/30 text-amber-400 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                    title="Download Permutations as CSV Spreadsheet"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Export Permutations CSV
+                  </button>
                 </div>
 
                 <div className="max-h-[350px] overflow-y-auto pr-1">
