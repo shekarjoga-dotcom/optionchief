@@ -348,6 +348,7 @@ export const AlertsPanel: React.FC = () => {
   const getStrategyLabel = (type: string) => {
     if (type === "ALL") return "All Strategies";
     if (type === "1:3:2") return "1:3:2 Ratio Butterfly";
+    if (type === "1:3:2 REGIME RATIO FLY") return "🎯 1:3:2 Dynamic Regime Ratio Fly";
     if (type === "PROTECTIVE PUT") return "Protective Put (Married Put)";
     if (type === "ZERO COST COLLAR") return "Zero-Cost Collar";
     if (type === "PUT SPREAD COLLAR") return "Put Spread Collar";
@@ -527,6 +528,7 @@ export const AlertsPanel: React.FC = () => {
                 className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-amber-400 outline-none"
               >
                 <option value="ALL">All Strategies</option>
+                <option value="1:3:2 REGIME RATIO FLY">🎯 1:3:2 Dynamic Regime Ratio Fly (EMA + RSI + IVP)</option>
                 <option value="CALL BUTTERFLY">Long Call Butterfly (1:2:1)</option>
                 <option value="PUT BUTTERFLY">Long Put Butterfly (1:2:1)</option>
                 <option value="IRON BUTTERFLY">Iron Butterfly</option>

@@ -532,7 +532,7 @@ export function scanStrategies(
   }
 
   // 17. 1:3:2 CALL RATIO FLY
-  else if (typeUpper === "1:3:2 CALL RATIO FLY" || typeUpper === "1:3:2 RATIO BUTTERFLY" || typeUpper === "1:3:2 BUTTERFLY" || typeUpper === "1:3:2") {
+  else if (typeUpper === "1:3:2 CALL RATIO FLY" || typeUpper === "1:3:2 REGIME RATIO FLY" || typeUpper === "REGIME_RATIO_FLY" || typeUpper === "1:3:2 RATIO BUTTERFLY" || typeUpper === "1:3:2 BUTTERFLY" || typeUpper === "1:3:2") {
     for (let offset = -2; offset <= maxDist; offset += step) {
       const centerIdx = atmIdx + offset;
       const lowerIdx = centerIdx - 2 * wingWidth;
@@ -559,7 +559,7 @@ export function scanStrategies(
   }
 
   // 18. 1:3:2 PUT RATIO FLY
-  if (typeUpper === "1:3:2 PUT RATIO FLY" || typeUpper === "1:3:2 RATIO BUTTERFLY" || typeUpper === "1:3:2 BUTTERFLY" || typeUpper === "1:3:2") {
+  if (typeUpper === "1:3:2 PUT RATIO FLY" || typeUpper === "1:3:2 REGIME RATIO FLY" || typeUpper === "REGIME_RATIO_FLY" || typeUpper === "1:3:2 RATIO BUTTERFLY" || typeUpper === "1:3:2 BUTTERFLY" || typeUpper === "1:3:2") {
     for (let offset = -2; offset <= maxDist; offset += step) {
       const centerIdx = atmIdx - offset;
       const lowerIdx = centerIdx - wingWidth;

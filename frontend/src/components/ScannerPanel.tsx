@@ -55,6 +55,7 @@ const CATEGORIES = [
 const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   all: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (EMA+RSI+IVP)", icon: Sparkles },
     { id: "1:3:2 RATIO BUTTERFLY", label: "1:3:2 Ratio Butterfly (All)", icon: Sparkles },
     { id: "1:3:2 CALL RATIO FLY", label: "1:3:2 Call Ratio Fly", icon: Scale },
     { id: "1:3:2 PUT RATIO FLY", label: "1:3:2 Put Ratio Fly", icon: Scale },
@@ -98,6 +99,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   bullish: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bullish Drift)", icon: Sparkles },
     { id: "BULL CALL SPREAD", label: "Bull Call Spread", icon: LineChart },
     { id: "BULL PUT SPREAD", label: "Bull Put Spread", icon: ShieldCheck },
     { id: "1:2 PUT RATIO SPREAD", label: "1:2 Put Ratio Spread", icon: Scale },
@@ -115,6 +117,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   bearish: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bearish Corrective)", icon: Sparkles },
     { id: "BEAR CALL SPREAD", label: "Bear Call Spread", icon: ShieldAlert },
     { id: "BEAR PUT SPREAD", label: "Bear Put Spread", icon: LineChart },
     { id: "1:2 CALL RATIO SPREAD", label: "1:2 Call Ratio Spread", icon: Scale },
@@ -132,6 +135,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   neutral: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Neutral Range)", icon: Sparkles },
     { id: "SHORT IRON CONDOR", label: "Short Iron Condor (Credit)", icon: Compass },
     { id: "LONG IRON CONDOR", label: "Long Iron Condor (Breakout)", icon: Activity },
     { id: "IRON CONDOR", label: "Iron Condor", icon: Compass },
@@ -150,6 +154,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   safe_hedged: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Dynamic Wings)", icon: Sparkles },
     { id: "IRON CONDOR", label: "Iron Condor", icon: Compass },
     { id: "WIDE WING IRON CONDOR", label: "Wide Wing Iron Condor", icon: Compass },
     { id: "RATIO IRON CONDOR (1:2)", label: "Ratio Iron Condor (1:2)", icon: Compass },

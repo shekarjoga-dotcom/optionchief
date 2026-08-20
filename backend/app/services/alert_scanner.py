@@ -3,6 +3,7 @@ import os
 import math
 import random
 import numpy as np
+import pandas as pd
 import httpx
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -315,8 +316,111 @@ def project_strategy_py(legs: list, spot_price: float, r: float = 0.05, symbol: 
         "theta": agg_theta
     }
 
+_regime_cache = {}
+
+def get_symbol_technical_regime(symbol: str, spot: float, current_iv: float = 0.15) -> dict:
+    sym_upper = symbol.upper()
+    now_ts = time.time()
+    
+    # Check cache (valid for 300 seconds)
+    if sym_upper in _regime_cache:
+        cached_ts, cached_data = _regime_cache[sym_upper]
+        if now_ts - cached_ts < 300:
+            return cached_data
+
+    from app.services.market_data import SYMBOL_MAPPING
+    ticker = SYMBOL_MAPPING.get(sym_upper, sym_upper)
+    if not ticker.startswith("^") and not ticker.endswith(".NS") and not ticker.endswith(".BO") and sym_upper in ["RELIANCE", "SBIN", "ITC", "TCS", "INFY"]:
+        ticker = f"{sym_upper}.NS"
+
+    try:
+        import yfinance as yf
+        df = yf.download(ticker, period="6mo", interval="1d", progress=False)
+        if df.empty or len(df) < 30:
+            raise ValueError(f"Insufficient historical bars for {ticker}")
+        
+        close_series = df["Close"]
+        if isinstance(close_series, pd.DataFrame):
+            close_series = close_series.iloc[:, 0]
+        close_series = close_series.dropna()
+        
+        ema20 = float(close_series.ewm(span=20, adjust=False).mean().iloc[-1])
+        ema50 = float(close_series.ewm(span=50, adjust=False).mean().iloc[-1])
+        
+        # RSI 14
+        delta = close_series.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi_series = 100 - (100 / (1 + rs))
+        rsi_clean = rsi_series.dropna()
+        rsi14 = float(rsi_clean.iloc[-1]) if not rsi_clean.empty else 50.0
+        
+        # IV Percentile estimation
+        vix_ticker = "^INDIAVIX" if sym_upper in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"] else "^VIX"
+        try:
+            vix_df = yf.download(vix_ticker, period="1y", interval="1d", progress=False)
+            if not vix_df.empty:
+                vix_close = vix_df["Close"]
+                if isinstance(vix_close, pd.DataFrame):
+                    vix_close = vix_close.iloc[:, 0]
+                vix_close = vix_close.dropna()
+                current_vix = float(vix_close.iloc[-1])
+                ivp = float((vix_close < current_vix).mean() * 100.0)
+            else:
+                ivp = 45.0
+        except Exception:
+            ivp = 45.0
+
+        current_spot = spot if spot > 0 else float(close_series.iloc[-1])
+        dist_from_ema20_pct = (current_spot - ema20) / ema20 * 100.0
+        abs_dist = abs(dist_from_ema20_pct)
+        
+        # 3-Tier Classification
+        if abs_dist > 2.5 or rsi14 > 70.0 or rsi14 < 30.0:
+            regime = "EXHAUSTION_BLOCKED"
+            reason = f"Overextended (>2.5% from 20 EMA or RSI {rsi14:.1f} extreme)"
+        elif current_spot > ema20 and ema20 > ema50 and (55.0 <= rsi14 <= 68.0) and ivp >= 35.0:
+            regime = "BULLISH_DRIFT"
+            reason = "Spot > 20 EMA > 50 EMA, RSI 55-68, IVP elevated"
+        elif abs_dist <= 0.75 and (45.0 <= rsi14 <= 55.0) and ivp <= 42.0:
+            regime = "NEUTRAL_RANGE"
+            reason = "Spot near 20 EMA (±0.75%), RSI 45-55, Mean IV"
+        elif current_spot < ema20 and ema20 < ema50 and (32.0 <= rsi14 <= 45.0) and ivp >= 40.0:
+            regime = "BEARISH_CORRECTIVE"
+            reason = "Spot < 20 EMA < 50 EMA, RSI 32-45, Skew expansion"
+        else:
+            regime = "UNALIGNED"
+            reason = f"Mixed signals (RSI {rsi14:.1f}, Dist {dist_from_ema20_pct:+.2f}%)"
+            
+        result = {
+            "regime": regime,
+            "reason": reason,
+            "spot": current_spot,
+            "ema20": round(ema20, 2),
+            "ema50": round(ema50, 2),
+            "rsi14": round(rsi14, 1),
+            "ivp": round(ivp, 1),
+            "distFromEma20Pct": round(dist_from_ema20_pct, 2)
+        }
+        _regime_cache[sym_upper] = (now_ts, result)
+        return result
+    except Exception as e:
+        print(f"[Regime Scanner] Error classifying {sym_upper}: {e}")
+        fallback = {
+            "regime": "NEUTRAL_RANGE",
+            "reason": "Default fallback",
+            "spot": spot,
+            "ema20": spot,
+            "ema50": spot,
+            "rsi14": 50.0,
+            "ivp": 40.0,
+            "distFromEma20Pct": 0.0
+        }
+        return fallback
+
 # Strategies scanner helper
-def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: str) -> list:
+def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: str, symbol: str = "NIFTY") -> list:
     if len(options) < 5:
         return []
         
@@ -592,6 +696,126 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                     results.append({
                         "name": f"1:3:2 Put Ratio Fly ({strikes[lp_idx1]}/{strikes[sp_idx]}/{strikes[lp_idx2]})",
                         "symbol": "",
+                        "expiry": expiry,
+                        "legs": legs,
+                        "pop": metrics["pop"],
+                        "maxProfit": metrics["maxProfit"],
+                        "maxLoss": metrics["maxLoss"],
+                        "rr_ratio": rr,
+                        "delta": metrics["delta"],
+                        "gamma": metrics["gamma"],
+                        "theta": metrics["theta"]
+                    })
+
+    # 1:3:2 Dynamic Regime-Driven Ratio Fly (EMA + RSI + IVP)
+    if type_upper in ["REGIME_RATIO_FLY", "1:3:2 REGIME RATIO FLY", "DYNAMIC 1:3:2 RATIO FLY", "ALL"]:
+        regime_info = get_symbol_technical_regime(symbol, spot)
+        regime = regime_info.get("regime")
+        
+        # Scaling spread width by underlying
+        sym_up = symbol.upper()
+        if sym_up == "BANKNIFTY":
+            d_shift = 2  # 200 pts OTM
+            wing = 8     # 800 pts spread
+        elif sym_up == "SENSEX":
+            d_shift = 3  # 300 pts OTM
+            wing = 10    # 1000 pts spread
+        else:
+            d_shift = 2  # 100 pts OTM for Nifty (2 strikes x 50)
+            wing = 8     # 400 pts spread for Nifty (8 strikes x 50)
+        
+        if regime == "BULLISH_DRIFT":
+            # Target +100 C-OTM
+            sc_idx = min(len(strikes) - 1 - wing, atm_idx + d_shift)
+            lc_idx1 = max(0, sc_idx - wing)
+            lc_idx2 = min(len(strikes) - 1, sc_idx + wing)
+            
+            if lc_idx1 >= 0 and lc_idx2 < len(strikes):
+                l_call1 = get_leg(strikes[lc_idx1], 'C', 'BUY')
+                s_call = get_leg(strikes[sc_idx], 'C', 'SELL')
+                l_call2 = get_leg(strikes[lc_idx2], 'C', 'BUY')
+                
+                if l_call1 and s_call and l_call2:
+                    l_call1["quantity"] = 1.0
+                    s_call["quantity"] = 3.0
+                    l_call2["quantity"] = 2.0
+                    legs = [l_call1, s_call, l_call2]
+                    metrics = project_strategy_py(legs, spot)
+                    rr = 0.0
+                    if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0:
+                        rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxProfit"], (int, float)) else 999.0
+                    
+                    results.append({
+                        "name": f"1:3:2 Call Ratio Fly [+100 C-OTM • Bullish Drift] ({strikes[lc_idx1]}/{strikes[sc_idx]}/{strikes[lc_idx2]})",
+                        "symbol": symbol,
+                        "expiry": expiry,
+                        "legs": legs,
+                        "pop": metrics["pop"],
+                        "maxProfit": metrics["maxProfit"],
+                        "maxLoss": metrics["maxLoss"],
+                        "rr_ratio": rr,
+                        "delta": metrics["delta"],
+                        "gamma": metrics["gamma"],
+                        "theta": metrics["theta"]
+                    })
+        elif regime == "NEUTRAL_RANGE":
+            # Target ATM 0
+            sc_idx = atm_idx
+            lc_idx1 = max(0, sc_idx - wing)
+            lc_idx2 = min(len(strikes) - 1, sc_idx + wing)
+            
+            if lc_idx1 >= 0 and lc_idx2 < len(strikes):
+                l_call1 = get_leg(strikes[lc_idx1], 'C', 'BUY')
+                s_call = get_leg(strikes[sc_idx], 'C', 'SELL')
+                l_call2 = get_leg(strikes[lc_idx2], 'C', 'BUY')
+                
+                if l_call1 and s_call and l_call2:
+                    l_call1["quantity"] = 1.0
+                    s_call["quantity"] = 3.0
+                    l_call2["quantity"] = 2.0
+                    legs = [l_call1, s_call, l_call2]
+                    metrics = project_strategy_py(legs, spot)
+                    rr = 0.0
+                    if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0:
+                        rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxProfit"], (int, float)) else 999.0
+                    
+                    results.append({
+                        "name": f"1:3:2 Ratio Fly [ATM 0 • Neutral Range] ({strikes[lc_idx1]}/{strikes[sc_idx]}/{strikes[lc_idx2]})",
+                        "symbol": symbol,
+                        "expiry": expiry,
+                        "legs": legs,
+                        "pop": metrics["pop"],
+                        "maxProfit": metrics["maxProfit"],
+                        "maxLoss": metrics["maxLoss"],
+                        "rr_ratio": rr,
+                        "delta": metrics["delta"],
+                        "gamma": metrics["gamma"],
+                        "theta": metrics["theta"]
+                    })
+        elif regime == "BEARISH_CORRECTIVE":
+            # Target -100 P-OTM
+            sp_idx = max(wing, atm_idx - d_shift)
+            lp_idx1 = max(0, sp_idx - wing)
+            lp_idx2 = min(len(strikes) - 1, sp_idx + wing)
+            
+            if lp_idx1 >= 0 and lp_idx2 < len(strikes):
+                l_put1 = get_leg(strikes[lp_idx1], 'P', 'BUY')
+                s_put = get_leg(strikes[sp_idx], 'P', 'SELL')
+                l_put2 = get_leg(strikes[lp_idx2], 'P', 'BUY')
+                
+                if l_put1 and s_put and l_put2:
+                    l_put1["quantity"] = 2.0
+                    s_put["quantity"] = 3.0
+                    l_put2["quantity"] = 1.0
+                    legs = [l_put2, s_put, l_put1]
+                    metrics = project_strategy_py(legs, spot)
+                    rr = 0.0
+                    if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0:
+                        rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxProfit"], (int, float)) else 999.0
+                    
+                    results.append({
+                        "name": f"1:3:2 Put Ratio Fly [-100 P-OTM • Bearish Corrective] ({strikes[lp_idx1]}/{strikes[sp_idx]}/{strikes[lp_idx2]})",
+                        "symbol": symbol,
                         "expiry": expiry,
                         "legs": legs,
                         "pop": metrics["pop"],
@@ -989,7 +1213,7 @@ async def active_alerts_scanner_loop():
                         if not rule_options or rule_spot == 0.0:
                             continue
 
-                        scans = scan_strategies_py(rule.strategy_type, rule_options, rule_spot, rule_selected_expiry)
+                        scans = scan_strategies_py(rule.strategy_type, rule_options, rule_spot, rule_selected_expiry, symbol=sym)
                         
                         for scan in scans:
                             # Evaluate match criteria
