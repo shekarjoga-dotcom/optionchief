@@ -497,6 +497,11 @@ export const BacktesterPanel: React.FC = () => {
       } else if (optSortField === 'strikeWidth') {
         valA = a.parameters.strikeWidth ?? -1;
         valB = b.parameters.strikeWidth ?? -1;
+      } else if (optSortField === 'avgTimeToTarget') {
+        valA = a.metrics.avgTimeToTargetVal;
+        valB = b.metrics.avgTimeToTargetVal;
+        if (valA === null || valA === undefined) valA = optSortAsc ? Infinity : -Infinity;
+        if (valB === null || valB === undefined) valB = optSortAsc ? Infinity : -Infinity;
       }
       
       if (valA === null || valA === undefined) return optSortAsc ? -1 : 1;
@@ -1505,7 +1510,7 @@ export const BacktesterPanel: React.FC = () => {
             </div>
 
             {/* Scorecard stats grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-left border-t border-borderClr/10 pt-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-left border-t border-borderClr/10 pt-4">
               <div className="bg-gray-950/40 p-3 rounded-lg border border-borderClr/20 flex flex-col justify-between h-16">
                 <span className="text-[9px] text-gray-500 font-bold uppercase">Net Profit/Loss</span>
                 <span className={`text-sm font-extrabold mt-0.5 ${metrics.netPnL >= 0 ? "text-greenBrand" : "text-redBrand"}`}>
@@ -1517,7 +1522,7 @@ export const BacktesterPanel: React.FC = () => {
               </div>
               <div className="bg-gray-950/40 p-3 rounded-lg border border-borderClr/20 flex flex-col justify-between h-16">
                 <span className="text-[9px] text-gray-500 font-bold uppercase">Win Rate (Trades)</span>
-                <span className="text-sm font-extrabold text-greenBrand mt-0.5">{metrics.winRate}%</span>
+                <span className="text-sm font-extrabold text-greenBrand mt-0.5">{metrics.winRate}% <span className="text-xs text-gray-400 font-normal">({metrics.totalTrades})</span></span>
               </div>
               <div className="bg-gray-950/40 p-3 rounded-lg border border-borderClr/20 flex flex-col justify-between h-16">
                 <span className="text-[9px] text-gray-500 font-bold uppercase">Max Drawdown</span>
@@ -1527,6 +1532,15 @@ export const BacktesterPanel: React.FC = () => {
                 <span className="text-[9px] text-gray-500 font-bold uppercase">Sharpe / Profit Factor</span>
                 <span className="text-sm font-extrabold text-white mt-0.5">
                   {metrics.sharpeRatio} / {metrics.profitFactor}
+                </span>
+              </div>
+              <div className="bg-gray-950/40 p-3 rounded-lg border border-borderClr/20 flex flex-col justify-between h-16">
+                <span className="text-[9px] text-cyan-400 font-bold uppercase">Avg Time to Target</span>
+                <span className="text-sm font-extrabold text-cyan-300 mt-0.5 flex items-center gap-1">
+                  {metrics.avgTimeToTarget || "-"} 
+                  {metrics.targetHitRate !== undefined && metrics.targetHitRate > 0 && (
+                    <span className="text-[10px] text-gray-400 font-normal">({metrics.targetHitRate}% hits)</span>
+                  )}
                 </span>
               </div>
             </div>
@@ -1614,6 +1628,7 @@ export const BacktesterPanel: React.FC = () => {
                       <th className="py-2">Entry Spot</th>
                       <th className="py-2">Exit Date/Time</th>
                       <th className="py-2">Exit Spot</th>
+                      <th className="py-2">Duration</th>
                       <th className="py-2">Exit Reason</th>
                       <th className="py-2 text-right">Net P&L</th>
                     </tr>
@@ -1627,6 +1642,7 @@ export const BacktesterPanel: React.FC = () => {
                           <td className="py-2">{cur}{tr.entrySpot.toLocaleString()}</td>
                           <td className="py-2">{tr.exitDate}</td>
                           <td className="py-2">{cur}{tr.exitSpot.toLocaleString()}</td>
+                          <td className="py-2 text-cyan-400 font-mono font-medium">{tr.duration || "-"}</td>
                           <td className="py-2">
                             <span className="px-1.5 py-0.5 rounded bg-gray-900 border border-borderClr/30 text-[9px] text-gray-400 font-bold uppercase tracking-wide">
                               {tr.exitReason || "Market Close"}
@@ -1889,6 +1905,9 @@ export const BacktesterPanel: React.FC = () => {
                         <th className="py-2 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('profitFactor')}>
                           Prof Factor {renderSortIndicator('profitFactor')}
                         </th>
+                        <th className="py-2 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('avgTimeToTarget')}>
+                          Avg Target Time {renderSortIndicator('avgTimeToTarget')}
+                        </th>
                         <th className="py-2 text-center">Action</th>
                       </tr>
                     </thead>
@@ -1942,6 +1961,9 @@ export const BacktesterPanel: React.FC = () => {
                             <td className="py-2.5 text-right text-greenBrand font-semibold">{m.winRate}%</td>
                             <td className="py-2.5 text-right text-redBrand font-semibold">{m.maxDrawdown}%</td>
                             <td className="py-2.5 text-right text-white font-semibold">{m.profitFactor}</td>
+                            <td className="py-2.5 text-right font-bold text-cyan-300 font-mono">
+                              {m.avgTimeToTarget || "-"}
+                            </td>
                             <td className="py-2.5 text-center">
                               <button
                                 onClick={() => handleApplyOptimalConfig(row)}

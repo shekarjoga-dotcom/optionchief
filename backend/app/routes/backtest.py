@@ -308,6 +308,17 @@ def compute_strategy_max_profit_loss(legs: list, entry_spot: float, lot_size: in
     
     return max_profit, max_loss
 
+def format_intraday_duration(minutes: Optional[float]) -> str:
+    if minutes is None:
+        return "-"
+    m = int(round(minutes))
+    if m < 60:
+        return f"{m}m"
+    hours = m // 60
+    mins = m % 60
+    return f"{hours}h {mins}m" if mins > 0 else f"{hours}h"
+
+
 def run_in_memory_eod_backtest(
     dates_list: list,
     spot_series: pd.Series,
@@ -328,6 +339,8 @@ def run_in_memory_eod_backtest(
     r = 0.065
     current_position = None
     trades_log = []
+    target_days_list = []
+    holding_days_list = []
     
     for i, dt in enumerate(dates_list):
         date_str = dt.strftime("%Y-%m-%d")
@@ -365,20 +378,28 @@ def run_in_memory_eod_backtest(
                 legs_pnl += leg_return * qty * lot_size
                 
             exit_needed = False
+            exit_reason = None
             if is_expiry_day:
                 exit_needed = True
+                exit_reason = "Expiry"
             else:
                 sl_val = current_position.get("activePortfolioSL")
                 tp_val = current_position.get("activePortfolioTP")
                 if sl_val is not None and legs_pnl <= -sl_val:
                     exit_needed = True
+                    exit_reason = "Stop Loss"
                 elif tp_val is not None and legs_pnl >= tp_val:
                     exit_needed = True
+                    exit_reason = "Take Profit Target"
  
             exit_slippage = sum(leg["quantity"] * slippage for leg in current_position["legs"]) if exit_needed else 0.0
             net_pnl = legs_pnl - exit_slippage
  
             if exit_needed:
+                dur_days = max(1, (dt - current_position["entryDate"]).days)
+                holding_days_list.append(dur_days)
+                if exit_reason == "Take Profit Target":
+                    target_days_list.append(dur_days)
                 capital += net_pnl
                 trades_log.append(net_pnl)
                 current_position = None
@@ -420,6 +441,7 @@ def run_in_memory_eod_backtest(
                         active_portfolio_sl = max_loss * (stop_loss_pct / 100.0)
 
                 current_position = {
+                    "entryDate": dt,
                     "expiryDate": expiry_dt,
                     "legs": legs_data,
                     "activePortfolioSL": active_portfolio_sl,
@@ -453,13 +475,23 @@ def run_in_memory_eod_backtest(
         max_dd = 0.0
         profit_factor = 0.0
         
+    avg_target_days = round(sum(target_days_list) / len(target_days_list), 1) if target_days_list else None
+    avg_holding_days = round(sum(holding_days_list) / len(holding_days_list), 1) if holding_days_list else 0.0
+    avg_target_str = f"{avg_target_days}D" if avg_target_days is not None else "-"
+    avg_holding_str = f"{avg_holding_days}D" if holding_days_list else "-"
+
     return {
         "netPnL": round(net_return, 2),
         "netReturnPct": round(net_return_pct, 2),
         "winRate": round(win_rate, 2),
         "maxDrawdown": round(max_dd, 2),
         "profitFactor": round(profit_factor, 2) if profit_factor != float("inf") else "Unlimited",
-        "totalTrades": total_trades
+        "totalTrades": total_trades,
+        "avgTimeToTarget": avg_target_str,
+        "avgTimeToTargetVal": avg_target_days,
+        "avgHoldingTime": avg_holding_str,
+        "targetHits": len(target_days_list),
+        "targetHitRate": round((len(target_days_list) / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
     }
 
 def run_in_memory_intraday_backtest(
@@ -483,6 +515,8 @@ def run_in_memory_intraday_backtest(
     capital = initial_capital
     r = 0.065
     trades_log = []
+    target_min_list = []
+    holding_min_list = []
     
     for date_str in sorted_days:
         candles_for_day = day_candles[date_str]
@@ -524,6 +558,7 @@ def run_in_memory_intraday_backtest(
             return max(0.0001, (days_diff - 1 + fractional_day) / 365.0) if days_diff > 0 else max(0.0, seconds_left_today / (365 * 24 * 3600))
 
         entry_T = get_dte_years(entry_candle["timestamp"], expiry_dt)
+        entry_ts_str = entry_candle["timestamp"]
         
         legs_data = []
         for leg_schema in legs:
@@ -556,8 +591,10 @@ def run_in_memory_intraday_backtest(
 
         trade_exited = False
         final_trade_pnl = 0.0
+        exit_reason = None
+        dur_minutes = 0.0
         
-        for candle in filtered_candles[1:]:
+        for idx, candle in enumerate(filtered_candles[1:], start=1):
             spot_val = candle["close"]
             timestamp_str = candle["timestamp"]
             current_T = get_dte_years(timestamp_str, expiry_dt)
@@ -587,12 +624,20 @@ def run_in_memory_intraday_backtest(
             exit_needed = False
             if active_portfolio_sl is not None and running_pnl <= -active_portfolio_sl:
                 exit_needed = True
+                exit_reason = "Stop Loss"
             elif active_portfolio_tp is not None and running_pnl >= active_portfolio_tp:
                 exit_needed = True
+                exit_reason = "Take Profit Target"
                 
             if exit_needed:
                 exit_slippage = sum(leg["quantity"] * slippage for leg in legs_data)
                 final_trade_pnl = running_pnl - exit_slippage
+                try:
+                    t_entry = datetime.strptime(entry_ts_str, "%Y-%m-%d %H:%M:%S")
+                    t_exit = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                    dur_minutes = max(1.0, (t_exit - t_entry).total_seconds() / 60.0)
+                except:
+                    dur_minutes = max(1.0, float(idx * 5))
                 trade_exited = True
                 break
 
@@ -625,6 +670,17 @@ def run_in_memory_intraday_backtest(
                 running_pnl += leg_ret * qty * lot_size
             exit_slippage = sum(leg["quantity"] * slippage for leg in legs_data)
             final_trade_pnl = running_pnl - exit_slippage
+            exit_reason = "Session Close"
+            try:
+                t_entry = datetime.strptime(entry_ts_str, "%Y-%m-%d %H:%M:%S")
+                t_exit = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                dur_minutes = max(1.0, (t_exit - t_entry).total_seconds() / 60.0)
+            except:
+                dur_minutes = max(1.0, float(len(filtered_candles) * 5))
+
+        holding_min_list.append(dur_minutes)
+        if exit_reason == "Take Profit Target":
+            target_min_list.append(dur_minutes)
 
         capital += final_trade_pnl
         trades_log.append(final_trade_pnl)
@@ -656,13 +712,23 @@ def run_in_memory_intraday_backtest(
         max_dd = 0.0
         profit_factor = 0.0
         
+    avg_target_min = round(sum(target_min_list) / len(target_min_list), 1) if target_min_list else None
+    avg_holding_min = round(sum(holding_min_list) / len(holding_min_list), 1) if holding_min_list else 0.0
+    avg_target_str = format_intraday_duration(avg_target_min)
+    avg_holding_str = format_intraday_duration(avg_holding_min)
+
     return {
         "netPnL": round(net_return, 2),
         "netReturnPct": round(net_return_pct, 2),
         "winRate": round(win_rate, 2),
         "maxDrawdown": round(max_dd, 2),
         "profitFactor": round(profit_factor, 2) if profit_factor != float("inf") else "Unlimited",
-        "totalTrades": total_trades
+        "totalTrades": total_trades,
+        "avgTimeToTarget": avg_target_str,
+        "avgTimeToTargetVal": avg_target_min,
+        "avgHoldingTime": avg_holding_str,
+        "targetHits": len(target_min_list),
+        "targetHitRate": round((len(target_min_list) / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
     }
 
 async def run_intraday_backtest(req: BacktestRequest):
@@ -1009,6 +1075,25 @@ async def run_intraday_backtest(req: BacktestRequest):
         })
 
     total_trades = len(trades_log)
+    target_min_list = []
+    holding_min_list = []
+    
+    for t in trades_log:
+        try:
+            t_ent = datetime.strptime(f"{t['entryDate']} {t['entryTime']}", "%Y-%m-%d %H:%M:%S")
+            t_ex_time = t.get('exitTime') or t['entryTime']
+            t_ex = datetime.strptime(f"{t['entryDate']} {t_ex_time}", "%Y-%m-%d %H:%M:%S")
+            dur_m = max(1.0, (t_ex - t_ent).total_seconds() / 60.0)
+        except:
+            dur_m = 1.0
+        t["duration"] = format_intraday_duration(dur_m)
+        holding_min_list.append(dur_m)
+        if "Portfolio TP" in t.get("exitReason", "") or "Target" in t.get("exitReason", ""):
+            target_min_list.append(dur_m)
+            t["timeToTarget"] = format_intraday_duration(dur_m)
+        else:
+            t["timeToTarget"] = None
+
     if total_trades > 0:
         winning_trades = [t for t in trades_log if t["netPnL"] > 0]
         losing_trades = [t for t in trades_log if t["netPnL"] <= 0]
@@ -1048,6 +1133,11 @@ async def run_intraday_backtest(req: BacktestRequest):
         max_dd = 0.0
         sharpe = 0.0
 
+    avg_target_min = round(sum(target_min_list) / len(target_min_list), 1) if target_min_list else None
+    avg_holding_min = round(sum(holding_min_list) / len(holding_min_list), 1) if holding_min_list else 0.0
+    avg_target_str = format_intraday_duration(avg_target_min)
+    avg_holding_str = format_intraday_duration(avg_holding_min)
+
     monthly_grid = []
     years_seen = sorted(list(set(datetime.strptime(ym, "%Y-%m").year for ym in monthly_pnl.keys())))
     
@@ -1072,7 +1162,12 @@ async def run_intraday_backtest(req: BacktestRequest):
             "profitFactor": round(profit_factor, 2) if profit_factor != float("inf") else "Unlimited",
             "maxDrawdown": round(max_dd, 2),
             "sharpeRatio": round(sharpe, 2),
-            "totalTrades": total_trades
+            "totalTrades": total_trades,
+            "avgTimeToTarget": avg_target_str,
+            "avgTimeToTargetVal": avg_target_min,
+            "avgHoldingTime": avg_holding_str,
+            "targetHits": len(target_min_list),
+            "targetHitRate": round((len(target_min_list) / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
         },
         "equityCurve": equity_curve,
         "monthlyGrid": monthly_grid,
@@ -1083,6 +1178,8 @@ async def run_intraday_backtest(req: BacktestRequest):
                 "exitDate": f"{t['entryDate']} {t['exitTime']}" if t['exitTime'] else t['entryDate'],
                 "exitSpot": round(t["exitSpot"], 2) if t["exitSpot"] else round(t["entrySpot"], 2),
                 "exitReason": t["exitReason"],
+                "duration": t.get("duration", "-"),
+                "timeToTarget": t.get("timeToTarget"),
                 "netPnL": round(t["netPnL"], 2)
             }
             for t in trades_log
@@ -1351,6 +1448,25 @@ async def run_backtest(req: BacktestRequest):
 
     # 3. Calculate Performance Metrics
     total_trades = len(trades_log)
+    target_days_list = []
+    holding_days_list = []
+    
+    for t in trades_log:
+        try:
+            t_ent = datetime.strptime(t["entryDate"], "%Y-%m-%d")
+            t_ex_str = t["exitDate"].strftime("%Y-%m-%d") if isinstance(t["exitDate"], datetime) else str(t["exitDate"])
+            t_ex = datetime.strptime(t_ex_str, "%Y-%m-%d")
+            dur_d = max(1, (t_ex - t_ent).days)
+        except:
+            dur_d = 1
+        t["duration"] = f"{dur_d} Days"
+        holding_days_list.append(dur_d)
+        if "Portfolio TP" in t.get("exitReason", "") or "Target" in t.get("exitReason", ""):
+            target_days_list.append(dur_d)
+            t["timeToTarget"] = f"{dur_d} Days"
+        else:
+            t["timeToTarget"] = None
+
     if total_trades > 0:
         winning_trades = [t for t in trades_log if t["netPnL"] > 0]
         losing_trades = [t for t in trades_log if t["netPnL"] <= 0]
@@ -1393,6 +1509,11 @@ async def run_backtest(req: BacktestRequest):
         max_dd = 0.0
         sharpe = 0.0
 
+    avg_target_days = round(sum(target_days_list) / len(target_days_list), 1) if target_days_list else None
+    avg_holding_days = round(sum(holding_days_list) / len(holding_days_list), 1) if holding_days_list else 0.0
+    avg_target_str = f"{avg_target_days} Days" if avg_target_days is not None else "-"
+    avg_holding_str = f"{avg_holding_days} Days" if holding_days_list else "-"
+
     # 4. Formulate monthly grid response (group by year and month)
     monthly_grid = []
     years_seen = sorted(list(set(datetime.strptime(ym, "%Y-%m").year for ym in monthly_pnl.keys())))
@@ -1418,7 +1539,12 @@ async def run_backtest(req: BacktestRequest):
             "profitFactor": round(profit_factor, 2) if profit_factor != float("inf") else "Unlimited",
             "maxDrawdown": round(max_dd, 2),
             "sharpeRatio": round(sharpe, 2),
-            "totalTrades": total_trades
+            "totalTrades": total_trades,
+            "avgTimeToTarget": avg_target_str,
+            "avgTimeToTargetVal": avg_target_days,
+            "avgHoldingTime": avg_holding_str,
+            "targetHits": len(target_days_list),
+            "targetHitRate": round((len(target_days_list) / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
         },
         "equityCurve": equity_curve,
         "monthlyGrid": monthly_grid,
@@ -1429,6 +1555,8 @@ async def run_backtest(req: BacktestRequest):
                 "exitDate": t["exitDate"].strftime("%Y-%m-%d") if isinstance(t["exitDate"], datetime) else str(t["exitDate"]),
                 "exitSpot": round(t["exitSpot"], 2),
                 "exitReason": t.get("exitReason", "Expiry"),
+                "duration": t.get("duration", "-"),
+                "timeToTarget": t.get("timeToTarget"),
                 "netPnL": round(t["netPnL"], 2)
             }
             for t in trades_log
