@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
 import { 
   Bell, Plus, Trash2, PlusCircle, Play, Clock, Activity, X,
-  ChevronLeft, ChevronRight, TrendingUp, XCircle, Pencil
+  ChevronLeft, ChevronRight, TrendingUp, XCircle, Pencil, Compass
 } from 'lucide-react';
 import { PayoffChart } from './PayoffChart';
 import type { AlertRule, TriggeredAlert } from '../types';
@@ -72,6 +72,39 @@ export const AlertsPanel: React.FC = () => {
     }
     return base;
   }, [symbol]);
+
+  const [regimeData, setRegimeData] = useState<{
+    regime: string;
+    reason: string;
+    spot: number;
+    ema20: number;
+    ema50: number;
+    rsi14: number;
+    ivp: number;
+    distFromEma20Pct: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRegime = async () => {
+      try {
+        const targetSym = (alertSymbol === "ALL" || alertSymbol === "ALL_NSE") ? (symbol || "NIFTY") : alertSymbol;
+        const res = await fetch(`${BACKEND_URL}/api/market/regime?symbol=${targetSym}`);
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          setRegimeData(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch regime:", err);
+      }
+    };
+    fetchRegime();
+    const interval = setInterval(fetchRegime, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [alertSymbol, symbol]);
 
   useEffect(() => {
     fetchAlertRules();
@@ -511,6 +544,65 @@ export const AlertsPanel: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Live Technical Regime & Direction Card */}
+        {regimeData && (
+          <div className="glass-panel rounded-xl p-4 border border-borderClr/30 flex flex-col gap-2.5 bg-gray-950/50 text-left">
+            <div className="flex items-center justify-between border-b border-borderClr/20 pb-2">
+              <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                Live Market Regime ({alertSymbol === "ALL" || alertSymbol === "ALL_NSE" ? (symbol || "NIFTY") : alertSymbol})
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                regimeData.regime === "BULLISH_DRIFT" 
+                  ? "bg-greenBrand/15 text-greenBrand border-greenBrand/40"
+                  : regimeData.regime === "BEARISH_CORRECTIVE"
+                  ? "bg-redBrand/15 text-redBrand border-redBrand/40"
+                  : regimeData.regime === "NEUTRAL_RANGE"
+                  ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/40"
+                  : regimeData.regime === "EXHAUSTION_BLOCKED"
+                  ? "bg-amber-500/15 text-amber-300 border-amber-500/40"
+                  : "bg-gray-800 text-gray-300 border-gray-700"
+              }`}>
+                {regimeData.regime === "BULLISH_DRIFT" && "🟢 Bullish Drift (+100 C-OTM)"}
+                {regimeData.regime === "BEARISH_CORRECTIVE" && "🔴 Bearish Corrective (-100 P-OTM)"}
+                {regimeData.regime === "NEUTRAL_RANGE" && "⚪ Neutral Range (ATM 0)"}
+                {regimeData.regime === "EXHAUSTION_BLOCKED" && "⛔ Exhaustion (Blocked)"}
+                {regimeData.regime === "UNALIGNED" && "⚪ Mixed / Neutral Drift"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
+              <div className="bg-gray-900/60 p-1.5 rounded border border-borderClr/20">
+                <div className="text-gray-500 text-[9px]">20 EMA</div>
+                <div className="font-mono font-bold text-gray-200">{regimeData.ema20.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-900/60 p-1.5 rounded border border-borderClr/20">
+                <div className="text-gray-500 text-[9px]">50 EMA</div>
+                <div className="font-mono font-bold text-gray-200">{regimeData.ema50.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-900/60 p-1.5 rounded border border-borderClr/20">
+                <div className="text-gray-500 text-[9px]">RSI (14)</div>
+                <div className={`font-mono font-bold ${
+                  regimeData.rsi14 > 60 ? "text-greenBrand" : regimeData.rsi14 < 45 ? "text-redBrand" : "text-cyan-400"
+                }`}>
+                  {regimeData.rsi14}
+                </div>
+              </div>
+              <div className="bg-gray-900/60 p-1.5 rounded border border-borderClr/20">
+                <div className="text-gray-500 text-[9px]">IVP (VIX)</div>
+                <div className="font-mono font-bold text-amber-400">{regimeData.ivp}%</div>
+              </div>
+            </div>
+
+            <div className="text-[9.5px] text-gray-400 flex items-center justify-between border-t border-borderClr/10 pt-1.5">
+              <span>Diagnosis: <span className="text-gray-200 font-medium">{regimeData.reason}</span></span>
+              <span className="font-mono text-gray-400">
+                Spot: <span className="text-white font-bold">{regimeData.spot.toLocaleString()}</span> ({regimeData.distFromEma20Pct > 0 ? `+${regimeData.distFromEma20Pct}%` : `${regimeData.distFromEma20Pct}%`})
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Create Alert Rules Form */}
         <div id="create-rule-form-section" className="glass-panel rounded-xl p-5 border border-borderClr/30 flex flex-col gap-4 bg-gray-950/40">

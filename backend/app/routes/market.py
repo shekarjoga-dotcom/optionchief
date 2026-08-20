@@ -84,3 +84,14 @@ def get_business_news():
     except Exception as e:
         print(f"[News API] Error fetching RSS: {e}")
         return {"status": "success", "news": get_fallback_news()}
+
+@router.get("/regime")
+def get_market_regime(symbol: str = Query("NIFTY", description="Underlying symbol (e.g. NIFTY, BANKNIFTY)")):
+    from app.services.alert_scanner import get_symbol_technical_regime
+    try:
+        data = market_service.get_underlying_data(symbol)
+        spot = data.get("spot", 0.0)
+        return get_symbol_technical_regime(symbol, spot)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing market regime: {str(e)}")
+
