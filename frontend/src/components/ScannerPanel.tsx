@@ -56,6 +56,8 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   all: [
     { id: "ALL", label: "All in Category", icon: Layers },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (EMA+RSI+IVP)", icon: Sparkles },
+    { id: "DYNAMIC REGIME IRON CONDOR", label: "🎯 Dynamic Regime Iron Condor", icon: Compass },
+    { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly", icon: Sparkles },
     { id: "1:3:2 RATIO BUTTERFLY", label: "1:3:2 Ratio Butterfly (All)", icon: Sparkles },
     { id: "1:3:2 CALL RATIO FLY", label: "1:3:2 Call Ratio Fly", icon: Scale },
     { id: "1:3:2 PUT RATIO FLY", label: "1:3:2 Put Ratio Fly", icon: Scale },
@@ -1498,7 +1500,37 @@ export const ScannerPanel: React.FC = () => {
                             }`}>
                               #{originalRank}
                             </span>
-                            {sc.name.split(" (")[0]}
+                            <span className="flex items-center gap-1.5 flex-wrap">
+                              {sc.name.split(" (")[0]}
+                              {(() => {
+                                const name = sc.name.toUpperCase();
+                                if (name.includes("BULL-SKEWED") || name.includes("BULLISH") || name.includes("BULL") || name.includes("CALL RATIO")) {
+                                  return (
+                                    <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-greenBrand/15 text-greenBrand border border-greenBrand/40 flex items-center gap-1 shadow-sm">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-greenBrand animate-pulse" />
+                                      🟢 BULL-SKEWED
+                                    </span>
+                                  );
+                                }
+                                if (name.includes("BEAR-SKEWED") || name.includes("BEARISH") || name.includes("BEAR") || name.includes("PUT RATIO")) {
+                                  return (
+                                    <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-redBrand/15 text-redBrand border border-redBrand/40 flex items-center gap-1 shadow-sm">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-redBrand animate-pulse" />
+                                      🔴 BEAR-SKEWED
+                                    </span>
+                                  );
+                                }
+                                if (name.includes("DELTA-NEUTRAL") || name.includes("NEUTRAL") || name.includes("IRON CONDOR") || name.includes("IRON BUTTERFLY") || name.includes("STRADDLE")) {
+                                  return (
+                                    <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 shadow-sm">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                      ⚪ DELTA-NEUTRAL
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </span>
                             {sc.symbol && (
                               <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-accentCyan/15 text-accentCyan border border-accentCyan/30">
                                 {sc.symbol}

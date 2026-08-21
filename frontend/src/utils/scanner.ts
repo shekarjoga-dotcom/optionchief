@@ -106,7 +106,7 @@ export function scanStrategies(
   const typeUpper = strategyType.toUpperCase();
 
   // 1. SHORT IRON CONDOR / HEDGED SHORT STRANGLE (Neutral / Safe Hedged Credit)
-  if (typeUpper === "IRON CONDOR" || typeUpper === "SHORT IRON CONDOR" || typeUpper === "HEDGED SHORT STRANGLE") {
+  if (typeUpper === "IRON CONDOR" || typeUpper === "SHORT IRON CONDOR" || typeUpper === "HEDGED SHORT STRANGLE" || typeUpper === "DYNAMIC REGIME IRON CONDOR" || typeUpper === "REGIME_IRON_CONDOR" || typeUpper === "DYNAMIC IRON CONDOR") {
     const isStrangleName = typeUpper === "HEDGED SHORT STRANGLE";
     const namePrefix = isStrangleName ? "Hedged Short Strangle" : "Short Iron Condor";
     for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {

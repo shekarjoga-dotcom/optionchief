@@ -382,10 +382,42 @@ export const AlertsPanel: React.FC = () => {
     if (type === "ALL") return "All Strategies";
     if (type === "1:3:2") return "1:3:2 Ratio Butterfly";
     if (type === "1:3:2 REGIME RATIO FLY") return "🎯 1:3:2 Dynamic Regime Ratio Fly";
+    if (type === "DYNAMIC REGIME IRON CONDOR" || type === "REGIME_IRON_CONDOR") return "🎯 Dynamic Regime Iron Condor";
+    if (type === "DYNAMIC REGIME IRON BUTTERFLY" || type === "REGIME_IRON_BUTTERFLY") return "🎯 Dynamic Regime Iron Butterfly";
     if (type === "PROTECTIVE PUT") return "Protective Put (Married Put)";
     if (type === "ZERO COST COLLAR") return "Zero-Cost Collar";
     if (type === "PUT SPREAD COLLAR") return "Put Spread Collar";
     return type;
+  };
+
+  const renderDirectionBadge = (stratName: string) => {
+    if (!stratName) return null;
+    const name = stratName.toUpperCase();
+    if (name.includes("BULL-SKEWED") || name.includes("BULLISH") || name.includes("BULL DRIFT") || name.includes("CALL RATIO FLY")) {
+      return (
+        <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-greenBrand/15 text-greenBrand border border-greenBrand/40 flex items-center gap-1 shadow-sm shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-greenBrand animate-pulse" />
+          🟢 BULL-SKEWED
+        </span>
+      );
+    }
+    if (name.includes("BEAR-SKEWED") || name.includes("BEARISH") || name.includes("BEAR CORRECTIVE") || name.includes("PUT RATIO FLY")) {
+      return (
+        <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-redBrand/15 text-redBrand border border-redBrand/40 flex items-center gap-1 shadow-sm shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-redBrand animate-pulse" />
+          🔴 BEAR-SKEWED
+        </span>
+      );
+    }
+    if (name.includes("DELTA-NEUTRAL") || name.includes("NEUTRAL") || name.includes("IRON CONDOR") || name.includes("IRON BUTTERFLY") || name.includes("STRADDLE")) {
+      return (
+        <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 shadow-sm shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+          ⚪ DELTA-NEUTRAL
+        </span>
+      );
+    }
+    return null;
   };
 
   const handleToggleAutoScan = () => {
@@ -621,6 +653,8 @@ export const AlertsPanel: React.FC = () => {
               >
                 <option value="ALL">All Strategies</option>
                 <option value="1:3:2 REGIME RATIO FLY">🎯 1:3:2 Dynamic Regime Ratio Fly (EMA + RSI + IVP)</option>
+                <option value="DYNAMIC REGIME IRON CONDOR">🎯 Dynamic Regime Iron Condor (EMA + RSI + IVP)</option>
+                <option value="DYNAMIC REGIME IRON BUTTERFLY">🎯 Dynamic Regime Iron Butterfly (EMA + RSI + IVP)</option>
                 <option value="CALL BUTTERFLY">Long Call Butterfly (1:2:1)</option>
                 <option value="PUT BUTTERFLY">Long Put Butterfly (1:2:1)</option>
                 <option value="IRON BUTTERFLY">Iron Butterfly</option>
@@ -1068,7 +1102,10 @@ export const AlertsPanel: React.FC = () => {
                           </span>
                           <span className="text-[9px] text-gray-500">{trig.timestamp}</span>
                         </div>
-                        <span className="text-[11px] font-bold text-gray-300">{trig.strategyName.split(" (")[0]}</span>
+                        <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                          <span className="text-[11px] font-bold text-gray-200">{trig.strategyName.split(" (")[0]}</span>
+                          {renderDirectionBadge(trig.strategyName)}
+                        </div>
                         <div className="flex flex-wrap items-center justify-between gap-1 mt-1 text-[9px] text-gray-400">
                           <span>POP: <strong className="text-greenBrand">{trig.pop}%</strong></span>
                           <span>R:R: <strong className="text-white">1:{trig.rrRatio.toFixed(1)}</strong></span>
@@ -1118,9 +1155,12 @@ export const AlertsPanel: React.FC = () => {
                         <ChevronRight className="w-4 h-4" />
                       </button>
                     )}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-bold text-accentCyan uppercase tracking-widest">{selectedAlert.symbol} • EXPIRY {selectedAlert.expiry}</span>
-                      <h2 className="text-sm font-extrabold text-white">{selectedAlert.strategyName.split(" (")[0]}</h2>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-accentCyan uppercase tracking-widest">{selectedAlert.symbol} • EXPIRY {selectedAlert.expiry}</span>
+                        {renderDirectionBadge(selectedAlert.strategyName)}
+                      </div>
+                      <h2 className="text-sm font-extrabold text-white">{selectedAlert.strategyName}</h2>
                       <span className="text-[10px] text-gray-500">Triggered at {selectedAlert.timestamp}</span>
                     </div>
                   </div>

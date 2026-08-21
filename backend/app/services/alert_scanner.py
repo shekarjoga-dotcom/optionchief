@@ -814,7 +814,7 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                         rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxProfit"], (int, float)) else 999.0
                     
                     results.append({
-                        "name": f"1:3:2 Put Ratio Fly [-100 P-OTM • Bearish Corrective] ({strikes[lp_idx1]}/{strikes[sp_idx]}/{strikes[lp_idx2]})",
+                        "name": f"[🔴 Bear-Skewed] 1:3:2 Put Ratio Fly [-100 P-OTM] ({strikes[lp_idx1]}/{strikes[sp_idx]}/{strikes[lp_idx2]})",
                         "symbol": symbol,
                         "expiry": expiry,
                         "legs": legs,
@@ -824,8 +824,170 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                         "rr_ratio": rr,
                         "delta": metrics["delta"],
                         "gamma": metrics["gamma"],
-                        "theta": metrics["theta"]
+                        "theta": metrics["theta"],
+                        "direction": "BEARISH",
+                        "regime": "BEARISH_CORRECTIVE"
                     })
+
+    # Dynamic Regime-Driven Iron Condor (EMA + RSI + IVP)
+    if type_upper in ["REGIME_IRON_CONDOR", "DYNAMIC REGIME IRON CONDOR", "DYNAMIC IRON CONDOR", "REGIME CONDOR", "ALL"]:
+        regime_info = get_symbol_technical_regime(symbol, spot)
+        regime = regime_info.get("regime")
+        wing = 2
+        
+        if regime == "BULLISH_DRIFT":
+            # Put short closer to ATM (higher premium), Call short pushed farther OTM (runaway room)
+            for d_put in [2, 3]:
+                for d_call in [6, 7, 8]:
+                    sp_idx = atm_idx - d_put
+                    lp_idx = sp_idx - wing
+                    sc_idx = atm_idx + d_call
+                    lc_idx = sc_idx + wing
+                    
+                    if lp_idx >= 0 and lc_idx < len(strikes):
+                        l_put = get_leg(strikes[lp_idx], 'P', 'BUY')
+                        s_put = get_leg(strikes[sp_idx], 'P', 'SELL')
+                        s_call = get_leg(strikes[sc_idx], 'C', 'SELL')
+                        l_call = get_leg(strikes[lc_idx], 'C', 'BUY')
+                        
+                        if l_put and s_put and s_call and l_call:
+                            legs = [l_put, s_put, s_call, l_call]
+                            metrics = project_strategy_py(legs, spot)
+                            rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0 else 999.0
+                            
+                            results.append({
+                                "name": f"[🟢 Bull-Skewed] Iron Condor ({strikes[lp_idx]}/{strikes[sp_idx]}/{strikes[sc_idx]}/{strikes[lc_idx]})",
+                                "symbol": symbol,
+                                "expiry": expiry,
+                                "legs": legs,
+                                "pop": metrics["pop"],
+                                "maxProfit": metrics["maxProfit"],
+                                "maxLoss": metrics["maxLoss"],
+                                "rr_ratio": rr,
+                                "delta": metrics["delta"],
+                                "gamma": metrics["gamma"],
+                                "theta": metrics["theta"],
+                                "direction": "BULLISH",
+                                "regime": "BULLISH_DRIFT"
+                            })
+        elif regime == "BEARISH_CORRECTIVE":
+            # Call short closer to ATM (higher premium), Put short pushed farther OTM (downside buffer)
+            for d_call in [2, 3]:
+                for d_put in [6, 7, 8]:
+                    sp_idx = atm_idx - d_put
+                    lp_idx = sp_idx - wing
+                    sc_idx = atm_idx + d_call
+                    lc_idx = sc_idx + wing
+                    
+                    if lp_idx >= 0 and lc_idx < len(strikes):
+                        l_put = get_leg(strikes[lp_idx], 'P', 'BUY')
+                        s_put = get_leg(strikes[sp_idx], 'P', 'SELL')
+                        s_call = get_leg(strikes[sc_idx], 'C', 'SELL')
+                        l_call = get_leg(strikes[lc_idx], 'C', 'BUY')
+                        
+                        if l_put and s_put and s_call and l_call:
+                            legs = [l_put, s_put, s_call, l_call]
+                            metrics = project_strategy_py(legs, spot)
+                            rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0 else 999.0
+                            
+                            results.append({
+                                "name": f"[🔴 Bear-Skewed] Iron Condor ({strikes[lp_idx]}/{strikes[sp_idx]}/{strikes[sc_idx]}/{strikes[lc_idx]})",
+                                "symbol": symbol,
+                                "expiry": expiry,
+                                "legs": legs,
+                                "pop": metrics["pop"],
+                                "maxProfit": metrics["maxProfit"],
+                                "maxLoss": metrics["maxLoss"],
+                                "rr_ratio": rr,
+                                "delta": metrics["delta"],
+                                "gamma": metrics["gamma"],
+                                "theta": metrics["theta"],
+                                "direction": "BEARISH",
+                                "regime": "BEARISH_CORRECTIVE"
+                            })
+        elif regime == "NEUTRAL_RANGE":
+            # Symmetric Delta-Neutral Iron Condor
+            for d in [3, 4, 5]:
+                sp_idx = atm_idx - d
+                lp_idx = sp_idx - wing
+                sc_idx = atm_idx + d
+                lc_idx = sc_idx + wing
+                
+                if lp_idx >= 0 and lc_idx < len(strikes):
+                    l_put = get_leg(strikes[lp_idx], 'P', 'BUY')
+                    s_put = get_leg(strikes[sp_idx], 'P', 'SELL')
+                    s_call = get_leg(strikes[sc_idx], 'C', 'SELL')
+                    l_call = get_leg(strikes[lc_idx], 'C', 'BUY')
+                    
+                    if l_put and s_put and s_call and l_call:
+                        legs = [l_put, s_put, s_call, l_call]
+                        metrics = project_strategy_py(legs, spot)
+                        rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0 else 999.0
+                        
+                        results.append({
+                            "name": f"[⚪ Delta-Neutral] Iron Condor ({strikes[lp_idx]}/{strikes[sp_idx]}/{strikes[sc_idx]}/{strikes[lc_idx]})",
+                            "symbol": symbol,
+                            "expiry": expiry,
+                            "legs": legs,
+                            "pop": metrics["pop"],
+                            "maxProfit": metrics["maxProfit"],
+                            "maxLoss": metrics["maxLoss"],
+                            "rr_ratio": rr,
+                            "delta": metrics["delta"],
+                            "gamma": metrics["gamma"],
+                            "theta": metrics["theta"],
+                            "direction": "NEUTRAL",
+                            "regime": "NEUTRAL_RANGE"
+                        })
+
+    # Dynamic Regime-Driven Iron Butterfly (EMA + RSI + IVP)
+    if type_upper in ["REGIME_IRON_BUTTERFLY", "DYNAMIC REGIME IRON BUTTERFLY", "DYNAMIC IRON BUTTERFLY", "ALL"]:
+        regime_info = get_symbol_technical_regime(symbol, spot)
+        regime = regime_info.get("regime")
+        wing = 4
+        
+        center_idx = atm_idx
+        dir_tag = "NEUTRAL"
+        prefix = "[⚪ Delta-Neutral]"
+        
+        if regime == "BULLISH_DRIFT":
+            center_idx = min(len(strikes) - 1 - wing, atm_idx + 2)
+            dir_tag = "BULLISH"
+            prefix = "[🟢 Bull-Skewed]"
+        elif regime == "BEARISH_CORRECTIVE":
+            center_idx = max(wing, atm_idx - 2)
+            dir_tag = "BEARISH"
+            prefix = "[🔴 Bear-Skewed]"
+            
+        if regime != "EXHAUSTION_BLOCKED":
+            lp_idx = max(0, center_idx - wing)
+            lc_idx = min(len(strikes) - 1, center_idx + wing)
+            
+            l_put = get_leg(strikes[lp_idx], 'P', 'BUY')
+            s_put = get_leg(strikes[center_idx], 'P', 'SELL')
+            s_call = get_leg(strikes[center_idx], 'C', 'SELL')
+            l_call = get_leg(strikes[lc_idx], 'C', 'BUY')
+            
+            if l_put and s_put and s_call and l_call:
+                legs = [l_put, s_put, s_call, l_call]
+                metrics = project_strategy_py(legs, spot)
+                rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0 else 999.0
+                
+                results.append({
+                    "name": f"{prefix} Iron Butterfly ({strikes[lp_idx]}/{strikes[center_idx]}/{strikes[lc_idx]})",
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "legs": legs,
+                    "pop": metrics["pop"],
+                    "maxProfit": metrics["maxProfit"],
+                    "maxLoss": metrics["maxLoss"],
+                    "rr_ratio": rr,
+                    "delta": metrics["delta"],
+                    "gamma": metrics["gamma"],
+                    "theta": metrics["theta"],
+                    "direction": dir_tag,
+                    "regime": regime
+                })
 
     # Jade Lizard (Sell OTM Put + Bear Call Spread)
     if type_upper in ["JADE LIZARD", "ALL"]:
