@@ -61,6 +61,7 @@ interface AppState {
   // Authentication actions
   requestOtp: (phone: string) => Promise<boolean>;
   registerUser: (phone: string, otp: string, pass: string) => Promise<boolean>;
+  registerDirectUser: (phone: string, pass: string, name?: string, email?: string) => Promise<boolean>;
   loginUser: (phone: string, password?: string, otp?: string) => Promise<boolean>;
   firebaseLogin: (payload: { id_token?: string; phone_number?: string; email?: string; uid?: string; display_name?: string }) => Promise<boolean>;
   updateUserProfile: (dhanClientId?: string, dhanAccessToken?: string) => Promise<boolean>;
@@ -397,6 +398,36 @@ export const useStore = create<AppState>((set, get) => ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone_number: phone, otp_code: otp, password: pass })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Registration failed");
+      }
+      localStorage.setItem("options_oracle_token", data.token);
+      localStorage.setItem("options_oracle_user", JSON.stringify(data.user));
+      set({ token: data.token, user: data.user, isAuthLoading: false });
+      get().fetchAlertRules();
+      get().fetchExecutionConfig();
+      get().fetchPortfolios();
+      return true;
+    } catch (err: any) {
+      set({ authError: err.message, isAuthLoading: false });
+      return false;
+    }
+  },
+
+  registerDirectUser: async (phone, pass, name, email) => {
+    set({ isAuthLoading: true, authError: null });
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/register-direct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          phone_number: phone, 
+          password: pass,
+          display_name: name || undefined,
+          email: email || undefined 
+        })
       });
       const data = await response.json();
       if (!response.ok) {

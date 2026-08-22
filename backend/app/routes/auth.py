@@ -32,6 +32,12 @@ class RegisterSchema(BaseModel):
     otp_code: str
     password: str
 
+class RegisterDirectSchema(BaseModel):
+    phone_number: str
+    password: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
 class LoginSchema(BaseModel):
     phone_number: str
     password: str = None
@@ -258,6 +264,66 @@ async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
     return {
         "status": "success",
         "message": f"User registered successfully. Welcome to your 15-Day Pro Trial!",
+        "token": token,
+        "user": {
+            "id": new_user.id,
+            "phone_number": new_user.phone_number,
+            "email": new_user.email,
+            "display_name": new_user.display_name,
+            "role": new_user.role,
+            **sub_info
+        }
+    }
+
+@router.post("/register-direct")
+async def register_direct(data: RegisterDirectSchema, db: AsyncSession = Depends(get_db)):
+    phone = data.phone_number.strip()
+    password = data.password.strip()
+    display_name = data.display_name.strip() if data.display_name else None
+    email = data.email.strip() if data.email else None
+
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+
+    # 1. Check if user already exists
+    user_exists_query = select(User).where(User.phone_number == phone)
+    user_exists_res = await db.execute(user_exists_query)
+    if user_exists_res.scalars().first():
+        raise HTTPException(status_code=400, detail="User with this phone number already registered. Please sign in.")
+
+    # 2. Determine role & subscription (First user is Owner, all subsequent users get 15-day trial)
+    users_count_query = select(func.count(User.id))
+    users_count_res = await db.execute(users_count_query)
+    users_count = users_count_res.scalar() or 0
+
+    is_first = (users_count == 0)
+    role = "owner" if is_first else "subscriber"
+    sub_tier = "owner" if is_first else "trial"
+    plan = "Lifetime Owner" if is_first else "15-Day Free Trial"
+    trial_end = None if is_first else (datetime.utcnow() + timedelta(days=15))
+
+    # 3. Create User
+    hashed_password = get_password_hash(password)
+    new_user = User(
+        phone_number=phone,
+        email=email,
+        display_name=display_name,
+        password_hash=hashed_password,
+        role=role,
+        subscription_tier=sub_tier,
+        plan_name=plan,
+        trial_ends_at=trial_end
+    )
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+
+    token = create_access_token({"sub": str(new_user.id), "phone": new_user.phone_number, "email": new_user.email, "role": new_user.role})
+    sub_info = get_user_subscription_info(new_user)
+
+    return {
+        "status": "success",
+        "message": "Account created successfully! Welcome to your 15-Day Pro Trial.",
         "token": token,
         "user": {
             "id": new_user.id,

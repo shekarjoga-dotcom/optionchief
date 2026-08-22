@@ -27,13 +27,14 @@ import {
   Zap,
   Layers,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  User
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
 export const LoginView: React.FC = () => {
   const { 
-    registerUser, 
+    registerDirectUser,
     loginUser, 
     firebaseLogin,
     authError, 
@@ -43,9 +44,10 @@ export const LoginView: React.FC = () => {
 
   const [view, setView] = useState<'landing' | 'auth'>('landing');
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>('otp');
+  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
   
   const [phone, setPhone] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   
@@ -213,20 +215,16 @@ export const LoginView: React.FC = () => {
       }
     }
 
-    // 2. Local / Standard Register or Password Login fallback
+    // 2. Direct Register or Password Login fallback
     if (mode === 'register') {
-      if (!otp) {
-        setLocalError("Please enter the 6-digit OTP code.");
-        return;
-      }
       if (password.length < 6) {
         setLocalError("Password must be at least 6 characters long.");
         return;
       }
 
-      const success = await registerUser(formattedPhone, otp, password);
+      const success = await registerDirectUser(formattedPhone, password, displayName);
       if (success) {
-        setSuccessMessage("Registered and logged in successfully!");
+        setSuccessMessage("Account created successfully! Welcome to your 15-Day Pro Trial.");
         checkAuthSession();
       }
     } else {
@@ -826,9 +824,30 @@ export const LoginView: React.FC = () => {
             </div>
           </div>
 
-          {/* OTP fields (Register mode or Login via OTP mode) */}
-          {(mode === 'register' || (mode === 'login' && loginMethod === 'otp')) && (
-            <div className="space-y-1.5">
+          {/* Full Name (Only in Register mode) */}
+          {mode === 'register' && (
+            <div className="space-y-1.5 animate-fadeIn">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
+                Your Name <span className="text-gray-500 font-normal lowercase">(optional)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500">
+                  <User className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  placeholder="e.g. Rahul Sharma"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full bg-gray-950/70 border border-borderClr hover:border-gray-700 focus:border-accentBrand rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none transition-all placeholder-gray-600"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* OTP fields (Only in Login via OTP mode) */}
+          {mode === 'login' && loginMethod === 'otp' && (
+            <div className="space-y-1.5 animate-fadeIn">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">SMS OTP Verification</label>
                 <button
@@ -863,7 +882,7 @@ export const LoginView: React.FC = () => {
 
           {/* Password field (Register mode or Login via Password mode) */}
           {(mode === 'register' || (mode === 'login' && loginMethod === 'password')) && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 animate-fadeIn">
               <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
                 {mode === 'register' ? 'Set Login Password' : 'Login Password'}
               </label>
@@ -903,7 +922,7 @@ export const LoginView: React.FC = () => {
                 <ShieldCheck className="w-4 h-4" />
                 <span>
                   {mode === 'register' 
-                    ? 'Verify & Create Account' 
+                    ? '🚀 Create Account (Instant 15-Day Free Trial)' 
                     : 'Secure Sign In'}
                 </span>
               </>
