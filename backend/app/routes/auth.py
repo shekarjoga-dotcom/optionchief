@@ -338,13 +338,16 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
     email = data.email.strip() if data.email else None
     uid = data.uid.strip() if data.uid else None
     
-    # Identify user by phone or email
+    # Identify user by phone, email, or firebase uid
     user = None
     if phone:
         user_res = await db.execute(select(User).where(User.phone_number == phone))
         user = user_res.scalars().first()
-    elif email:
+    if not user and email:
         user_res = await db.execute(select(User).where(User.email == email))
+        user = user_res.scalars().first()
+    if not user and uid:
+        user_res = await db.execute(select(User).where(User.phone_number == f"fb_{uid}"))
         user = user_res.scalars().first()
         
     if not user:
@@ -443,26 +446,34 @@ async def update_profile(
     
     await db.commit()
     await db.refresh(current_user)
+    sub_info = get_user_subscription_info(current_user)
     return {
         "status": "success",
         "message": "Profile updated successfully",
         "user": {
             "id": current_user.id,
             "phone_number": current_user.phone_number,
+            "email": current_user.email,
+            "display_name": current_user.display_name,
             "role": current_user.role,
             "dhan_client_id": current_user.dhan_client_id,
-            "dhan_access_token": current_user.dhan_access_token
+            "dhan_access_token": current_user.dhan_access_token,
+            **sub_info
         }
     }
 
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
+    sub_info = get_user_subscription_info(current_user)
     return {
         "id": current_user.id,
         "phone_number": current_user.phone_number,
+        "email": current_user.email,
+        "display_name": current_user.display_name,
         "role": current_user.role,
         "dhan_client_id": current_user.dhan_client_id,
-        "dhan_access_token": current_user.dhan_access_token
+        "dhan_access_token": current_user.dhan_access_token,
+        **sub_info
     }
 
 class DhanTestSchema(BaseModel):

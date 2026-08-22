@@ -603,9 +603,9 @@ const App: React.FC = () => {
             
             <div className="flex items-center gap-3 border-l border-borderClr/60 pl-4">
               <div className="flex flex-col items-end">
-                <span className="text-[11px] text-white font-semibold flex items-center gap-1.5" title={user.email || user.phone_number}>
+                <span className="text-[11px] text-white font-semibold flex items-center gap-1.5" title={user.email || user.display_name || user.phone_number}>
                   <User className="w-3 h-3 text-emerald-400" />
-                  {user.display_name || user.email || (user.phone_number?.startsWith('fb_') ? (user.email || 'Google Account') : user.phone_number)}
+                  {user.email || user.display_name || (user.phone_number?.startsWith('fb_') ? 'Account' : user.phone_number)}
                 </span>
                 <span className={`text-[9px] uppercase tracking-wider font-extrabold ${
                   user.role?.toLowerCase() === 'owner' || user.subscription_tier === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
