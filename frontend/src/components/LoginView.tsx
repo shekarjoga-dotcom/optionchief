@@ -174,7 +174,7 @@ export const LoginView: React.FC = () => {
       if (fallbackSuccess) {
         setOtpSent(true);
         setCountdown(60);
-        setSuccessMessage(`OTP code generated for ${formattedPhone}. Enter 123456 or the code sent to your phone.`);
+        setSuccessMessage(`OTP code generated for ${formattedPhone}. Please check your SMS.`);
       } else {
         setLocalError(firebaseErr.message || "Failed to send SMS OTP. Please verify your phone number.");
       }
@@ -213,15 +213,7 @@ export const LoginView: React.FC = () => {
           return;
         }
       } catch (fbConfirmErr: any) {
-        console.warn("Firebase confirmation notice, checking backend bypass:", fbConfirmErr);
-        // If test mock OTP 123456
-        if (otp === "123456") {
-          const mockSuccess = await loginUser(formattedPhone, undefined, otp);
-          if (mockSuccess) {
-            checkAuthSession();
-            return;
-          }
-        }
+        console.error("Firebase confirmation error:", fbConfirmErr);
         setLocalError(fbConfirmErr.message || "Invalid OTP code. Please check and try again.");
         setIsFirebaseLoading(false);
         return;
@@ -928,19 +920,17 @@ export const LoginView: React.FC = () => {
           </button>
         </form>
 
-        {/* Demo Fallback Info Box */}
+        {/* Security & Verification Notice */}
         <div className="mt-8 pt-6 border-t border-borderClr/20 text-center">
           <div className="p-3 bg-gray-950/50 rounded-lg border border-borderClr/20 inline-block w-full">
-            <span className="text-[10px] text-gray-500 font-extrabold uppercase block tracking-widest mb-1">Local Sandbox Mock Mode</span>
+            <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest mb-1 flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Direct Firebase SMS & Google Security
+            </span>
             <p className="text-[11px] text-gray-400">
-              No real Twilio configured? Request OTP, then enter <code className="text-accentBrand font-mono px-1 py-0.5 bg-accentBrand/15 rounded">123456</code> to bypass, or check your backend stdout terminal logs.
+              Free 15-day Pro access with real-time OTP delivery to your mobile phone.
             </p>
           </div>
-        </div>
-
-        {/* Ownership Role Info (Notice about first registration) */}
-        <div className="text-[10px] text-gray-500 text-center mt-4 italic">
-          * Note: The first phone number to register receives the owner/write profile. All subsequent registers receive read-only viewer roles.
         </div>
       </div>
     </div>

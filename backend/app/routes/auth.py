@@ -215,9 +215,7 @@ async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
     otp_res = await db.execute(otp_query)
     otp_req = otp_res.scalars().first()
 
-    is_mock_bypass = (code == "123456")
-
-    if not otp_req and not is_mock_bypass:
+    if not otp_req:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP code")
 
     # 2. Check if user already exists
@@ -289,7 +287,6 @@ async def login(data: LoginSchema, db: AsyncSession = Depends(get_db)):
             authenticated = True
     elif data.otp_code:
         code = data.otp_code.strip()
-        is_mock_bypass = (code == "123456")
         
         now = datetime.utcnow()
         otp_query = select(OTPRequest).where(
@@ -300,11 +297,10 @@ async def login(data: LoginSchema, db: AsyncSession = Depends(get_db)):
         otp_res = await db.execute(otp_query)
         otp_req = otp_res.scalars().first()
         
-        if otp_req or is_mock_bypass:
+        if otp_req:
             authenticated = True
-            if otp_req:
-                await db.delete(otp_req)
-                await db.commit()
+            await db.delete(otp_req)
+            await db.commit()
 
     if not authenticated:
         raise HTTPException(status_code=400, detail="Invalid password or OTP code")
