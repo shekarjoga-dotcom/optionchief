@@ -70,6 +70,10 @@ async def on_startup():
                 except Exception:
                     pass
                 try:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR"))
+                except Exception:
+                    pass
+                try:
                     await conn.execute(update(User).values(role="owner"))
                 except Exception:
                     pass

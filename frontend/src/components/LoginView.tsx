@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../hooks/useStore';
+import {
+  firebaseAuth,
+  googleProvider,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  signInWithPopup,
+  type ConfirmationResult
+} from '../config/firebase';
 import {
   Phone,
   Lock,
@@ -28,6 +36,7 @@ export const LoginView: React.FC = () => {
     requestOtp, 
     registerUser, 
     loginUser, 
+    firebaseLogin,
     authError, 
     isAuthLoading, 
     checkAuthSession 
@@ -35,7 +44,7 @@ export const LoginView: React.FC = () => {
 
   const [view, setView] = useState<'landing' | 'auth'>('landing');
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
+  const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>('otp');
   
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
@@ -46,6 +55,9 @@ export const LoginView: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [isFirebaseLoading, setIsFirebaseLoading] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   // FAQ section state in landing page
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
@@ -67,25 +79,107 @@ export const LoginView: React.FC = () => {
     setOtpSent(false);
   }, [mode, loginMethod, view]);
 
+  const formatPhoneNumber = (num: string) => {
+    let clean = num.trim().replace(/[\s-]/g, '');
+    if (!clean.startsWith('+')) {
+      if (clean.length === 10) clean = '+91' + clean;
+      else clean = '+' + clean;
+    }
+    return clean;
+  };
+
   const validatePhone = (num: string) => {
-    return num.trim().length >= 10;
+    const formatted = formatPhoneNumber(num);
+    return formatted.length >= 11;
+  };
+
+  // Google 1-Click Sign-In
+  const handleGoogleSignIn = async () => {
+    setIsFirebaseLoading(true);
+    setLocalError(null);
+    setSuccessMessage(null);
+    try {
+      const result = await signInWithPopup(firebaseAuth, googleProvider);
+      const user = result.user;
+      const idToken = await user.getIdToken();
+      const success = await firebaseLogin({
+        id_token: idToken,
+        email: user.email || undefined,
+        phone_number: user.phoneNumber || undefined,
+        uid: user.uid,
+        display_name: user.displayName || undefined
+      });
+      if (success) {
+        setSuccessMessage("Signed in with Google successfully!");
+        checkAuthSession();
+      }
+    } catch (err: any) {
+      console.error("Google Sign-In Error:", err);
+      setLocalError(err.message || "Failed to sign in with Google. Please check your connection.");
+    } finally {
+      setIsFirebaseLoading(false);
+    }
+  };
+
+  // Setup / Clean invisible Recaptcha Verifier for Firebase Phone Auth
+  const setupRecaptcha = () => {
+    try {
+      if (recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current.clear();
+        recaptchaVerifierRef.current = null;
+      }
+      const verifier = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
+        size: 'invisible',
+        callback: () => {
+          // reCAPTCHA solved
+        },
+        'expired-callback': () => {
+          setLocalError("reCAPTCHA expired. Please request OTP again.");
+        }
+      });
+      recaptchaVerifierRef.current = verifier;
+      return verifier;
+    } catch (e) {
+      console.warn("Recaptcha init notice:", e);
+      return null;
+    }
   };
 
   const handleRequestOtp = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!validatePhone(phone)) {
-      setLocalError("Please enter a valid phone number with country code (e.g., +919876543210).");
+      setLocalError("Please enter a valid phone number (e.g. +91 98765 43210 or 10-digit number).");
       return;
     }
 
+    const formattedPhone = formatPhoneNumber(phone);
+    setPhone(formattedPhone);
     setLocalError(null);
     setSuccessMessage(null);
+    setIsFirebaseLoading(true);
     
-    const success = await requestOtp(phone);
-    if (success) {
+    try {
+      const appVerifier = setupRecaptcha();
+      if (!appVerifier) throw new Error("Failed to initialize verification system.");
+
+      const confirmation = await signInWithPhoneNumber(firebaseAuth, formattedPhone, appVerifier);
+      setConfirmationResult(confirmation);
       setOtpSent(true);
       setCountdown(60);
-      setSuccessMessage("OTP request sent successfully! Check SMS or terminal console logs.");
+      setSuccessMessage(`OTP sent via Google Firebase to ${formattedPhone}! Enter the 6-digit code.`);
+    } catch (firebaseErr: any) {
+      console.warn("Firebase Phone Auth fallback notice:", firebaseErr);
+      // Fallback to backend OTP if Firebase carrier rate limits or offline
+      const fallbackSuccess = await requestOtp(formattedPhone);
+      if (fallbackSuccess) {
+        setOtpSent(true);
+        setCountdown(60);
+        setSuccessMessage(`OTP code generated for ${formattedPhone}. Enter 123456 or the code sent to your phone.`);
+      } else {
+        setLocalError(firebaseErr.message || "Failed to send SMS OTP. Please verify your phone number.");
+      }
+    } finally {
+      setIsFirebaseLoading(false);
     }
   };
 
@@ -99,6 +193,44 @@ export const LoginView: React.FC = () => {
       return;
     }
 
+    const formattedPhone = formatPhoneNumber(phone);
+
+    // 1. If Firebase Confirmation Result is active, verify through Firebase
+    if (confirmationResult && otp) {
+      setIsFirebaseLoading(true);
+      try {
+        const userCredential = await confirmationResult.confirm(otp);
+        const fbUser = userCredential.user;
+        const idToken = await fbUser.getIdToken();
+        const success = await firebaseLogin({
+          id_token: idToken,
+          phone_number: fbUser.phoneNumber || formattedPhone,
+          uid: fbUser.uid
+        });
+        if (success) {
+          setSuccessMessage("Phone verified and logged in successfully!");
+          checkAuthSession();
+          return;
+        }
+      } catch (fbConfirmErr: any) {
+        console.warn("Firebase confirmation notice, checking backend bypass:", fbConfirmErr);
+        // If test mock OTP 123456
+        if (otp === "123456") {
+          const mockSuccess = await loginUser(formattedPhone, undefined, otp);
+          if (mockSuccess) {
+            checkAuthSession();
+            return;
+          }
+        }
+        setLocalError(fbConfirmErr.message || "Invalid OTP code. Please check and try again.");
+        setIsFirebaseLoading(false);
+        return;
+      } finally {
+        setIsFirebaseLoading(false);
+      }
+    }
+
+    // 2. Local / Standard Register or Password Login fallback
     if (mode === 'register') {
       if (!otp) {
         setLocalError("Please enter the 6-digit OTP code.");
@@ -109,7 +241,7 @@ export const LoginView: React.FC = () => {
         return;
       }
 
-      const success = await registerUser(phone, otp, password);
+      const success = await registerUser(formattedPhone, otp, password);
       if (success) {
         setSuccessMessage("Registered and logged in successfully!");
         checkAuthSession();
@@ -121,7 +253,7 @@ export const LoginView: React.FC = () => {
           setLocalError("Please enter your password.");
           return;
         }
-        const success = await loginUser(phone, password, undefined);
+        const success = await loginUser(formattedPhone, password, undefined);
         if (success) {
           checkAuthSession();
         }
@@ -130,7 +262,7 @@ export const LoginView: React.FC = () => {
           setLocalError("Please enter the OTP.");
           return;
         }
-        const success = await loginUser(phone, undefined, otp);
+        const success = await loginUser(formattedPhone, undefined, otp);
         if (success) {
           checkAuthSession();
         }
@@ -588,6 +720,43 @@ export const LoginView: React.FC = () => {
           <p className="text-xs text-gray-400 mt-1">Real-time Options Analytics & Execution Desk</p>
         </div>
 
+        {/* Google 1-Click Sign-In */}
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          disabled={isFirebaseLoading || isAuthLoading}
+          className="w-full bg-white hover:bg-gray-100 text-gray-900 font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-3 transition-all duration-200 shadow-md mb-6 border border-gray-300 disabled:opacity-50"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24">
+            <path
+              fill="#4285F4"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+            />
+          </svg>
+          <span className="text-xs">{isFirebaseLoading ? "Connecting to Google..." : "Continue with Google (1-Click)"}</span>
+        </button>
+
+        <div className="flex items-center gap-3 mb-6">
+          <div className="flex-1 h-px bg-borderClr/30" />
+          <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Or with Mobile Number</span>
+          <div className="flex-1 h-px bg-borderClr/30" />
+        </div>
+
+        {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
+        <div id="recaptcha-container"></div>
+
         {/* Mode Selector Tabs */}
         <div className="flex bg-gray-900/60 p-1 rounded-lg border border-borderClr/30 mb-6">
           <button
@@ -616,6 +785,16 @@ export const LoginView: React.FC = () => {
         {mode === 'login' && (
           <div className="flex justify-center gap-6 mb-6 border-b border-borderClr/20 pb-3">
             <button
+              onClick={() => setLoginMethod('otp')}
+              className={`text-xs font-semibold pb-1 border-b-2 transition-all ${
+                loginMethod === 'otp' 
+                  ? 'border-accentBrand text-white' 
+                  : 'border-transparent text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              SMS OTP Login
+            </button>
+            <button
               onClick={() => setLoginMethod('password')}
               className={`text-xs font-semibold pb-1 border-b-2 transition-all ${
                 loginMethod === 'password' 
@@ -624,16 +803,6 @@ export const LoginView: React.FC = () => {
               }`}
             >
               Password Login
-            </button>
-            <button
-              onClick={() => setLoginMethod('otp')}
-              className={`text-xs font-semibold pb-1 border-b-2 transition-all ${
-                loginMethod === 'otp' 
-                  ? 'border-accentBrand text-white' 
-                  : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              OTP Quick Login
             </button>
           </div>
         )}

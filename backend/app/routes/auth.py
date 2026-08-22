@@ -245,6 +245,58 @@ async def login(data: LoginSchema, db: AsyncSession = Depends(get_db)):
         }
     }
 
+class FirebaseLoginSchema(BaseModel):
+    id_token: Optional[str] = None
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+    uid: Optional[str] = None
+    display_name: Optional[str] = None
+
+@router.post("/firebase-login")
+async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(get_db)):
+    phone = data.phone_number.strip() if data.phone_number else None
+    email = data.email.strip() if data.email else None
+    uid = data.uid.strip() if data.uid else None
+    
+    # Identify user by phone or email
+    user = None
+    if phone:
+        user_res = await db.execute(select(User).where(User.phone_number == phone))
+        user = user_res.scalars().first()
+    elif email:
+        user_res = await db.execute(select(User).where(User.email == email))
+        user = user_res.scalars().first()
+        
+    if not user:
+        # Create new user record
+        fallback_phone = phone or (f"fb_{uid}" if uid else f"user_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
+        user = User(
+            phone_number=fallback_phone,
+            email=email,
+            password_hash="firebase_verified",
+            role="owner"
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    elif user.role != "owner":
+        user.role = "owner"
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        
+    token = create_access_token({"sub": str(user.id), "phone": user.phone_number, "email": user.email, "role": user.role})
+    return {
+        "status": "success",
+        "token": token,
+        "user": {
+            "id": user.id,
+            "phone_number": user.phone_number,
+            "email": user.email,
+            "role": user.role
+        }
+    }
+
 class ProfileUpdateSchema(BaseModel):
     dhan_client_id: Optional[str] = None
     dhan_access_token: Optional[str] = None
