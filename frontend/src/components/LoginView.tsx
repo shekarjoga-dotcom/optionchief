@@ -33,7 +33,6 @@ import logoImg from '../assets/logo.png';
 
 export const LoginView: React.FC = () => {
   const { 
-    requestOtp, 
     registerUser, 
     loginUser, 
     firebaseLogin,
@@ -160,24 +159,16 @@ export const LoginView: React.FC = () => {
     
     try {
       const appVerifier = setupRecaptcha();
-      if (!appVerifier) throw new Error("Failed to initialize verification system.");
+      if (!appVerifier) throw new Error("Failed to initialize verification system. Please refresh the page.");
 
       const confirmation = await signInWithPhoneNumber(firebaseAuth, formattedPhone, appVerifier);
       setConfirmationResult(confirmation);
       setOtpSent(true);
       setCountdown(60);
-      setSuccessMessage(`OTP sent via Google Firebase to ${formattedPhone}! Enter the 6-digit code.`);
+      setSuccessMessage(`OTP sent via SMS to ${formattedPhone}! Enter the 6-digit code.`);
     } catch (firebaseErr: any) {
-      console.warn("Firebase Phone Auth fallback notice:", firebaseErr);
-      // Fallback to backend OTP if Firebase carrier rate limits or offline
-      const fallbackSuccess = await requestOtp(formattedPhone);
-      if (fallbackSuccess) {
-        setOtpSent(true);
-        setCountdown(60);
-        setSuccessMessage(`OTP code generated for ${formattedPhone}. Please check your SMS.`);
-      } else {
-        setLocalError(firebaseErr.message || "Failed to send SMS OTP. Please verify your phone number.");
-      }
+      console.error("Firebase Phone Auth error:", firebaseErr);
+      setLocalError(firebaseErr.message || "Failed to send SMS OTP. Please check your phone number and try again.");
     } finally {
       setIsFirebaseLoading(false);
     }
