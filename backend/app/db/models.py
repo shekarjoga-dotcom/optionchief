@@ -12,7 +12,11 @@ class User(Base):
     email = Column(String, nullable=True)
     display_name = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
-    role = Column(String, default="viewer", nullable=False)  # "owner" or "viewer"
+    role = Column(String, default="subscriber", nullable=False)  # "owner", "admin", "subscriber"
+    subscription_tier = Column(String, default="trial", nullable=False)  # "owner", "pro", "trial", "free"
+    plan_name = Column(String, default="15-Day Free Trial", nullable=True)
+    trial_ends_at = Column(DateTime, nullable=True)
+    subscription_ends_at = Column(DateTime, nullable=True)
     is_auto_scanning = Column(Boolean, default=False, nullable=False)
     dhan_client_id = Column(String, nullable=True)
     dhan_access_token = Column(String, nullable=True)
@@ -136,4 +140,17 @@ class RSIScannerLog(Base):
     created_at = Column(DateTime, default=func.now())
 
     user = relationship("User")
+
+
+class BroadcastLog(Base):
+    __tablename__ = "broadcast_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subject = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    channels = Column(JSON, nullable=False)  # ["telegram", "whatsapp", "email"]
+    target_audience = Column(String, default="all", nullable=False)
+    recipient_count = Column(Integer, default=0)
+    sent_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
 

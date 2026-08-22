@@ -78,7 +78,24 @@ async def on_startup():
                 except Exception:
                     pass
                 try:
-                    await conn.execute(update(User).values(role="owner"))
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN subscription_tier VARCHAR DEFAULT 'trial'"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN plan_name VARCHAR DEFAULT '15-Day Free Trial'"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN trial_ends_at TIMESTAMP"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN subscription_ends_at TIMESTAMP"))
+                except Exception:
+                    pass
+                try:
+                    # Set the primary admin (User #1) to owner role
+                    await conn.execute(text("UPDATE users SET role = 'owner', subscription_tier = 'owner', plan_name = 'Lifetime Owner' WHERE id = 1"))
                 except Exception:
                     pass
         except Exception as e:

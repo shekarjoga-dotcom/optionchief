@@ -7,6 +7,14 @@ interface UserProfile {
   email?: string;
   display_name?: string;
   role: string;
+  subscription_tier?: string;
+  plan_name?: string;
+  is_pro?: boolean;
+  is_trial?: boolean;
+  days_left?: number;
+  status?: string;
+  trial_ends_at?: string;
+  subscription_ends_at?: string;
   dhan_client_id?: string;
   dhan_access_token?: string;
 }

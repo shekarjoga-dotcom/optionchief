@@ -82,6 +82,66 @@ def send_otp_sms(phone_number: str, otp_code: str):
     return False
 
 # Security Dependency
+def get_user_subscription_info(user: User) -> dict:
+    now = datetime.utcnow()
+    role = user.role.lower() if user.role else "subscriber"
+    
+    # 1. Lifetime Owner (Admin)
+    if role in ["owner", "admin"] or user.id == 1:
+        return {
+            "tier": "owner",
+            "plan_name": "Lifetime Owner",
+            "is_pro": True,
+            "is_trial": False,
+            "days_left": 9999,
+            "status": "Owner Account",
+            "trial_ends_at": None,
+            "subscription_ends_at": None
+        }
+        
+    # 2. Paid Active Subscription (e.g. 1 Month, 6 Months, 1 Year)
+    if user.subscription_ends_at and user.subscription_ends_at > now:
+        days_left = max(0, (user.subscription_ends_at - now).days)
+        plan = user.plan_name or "Paid Pro"
+        return {
+            "tier": "pro",
+            "plan_name": plan,
+            "is_pro": True,
+            "is_trial": False,
+            "days_left": days_left,
+            "status": f"{plan} ({days_left}d left)",
+            "trial_ends_at": user.trial_ends_at.strftime("%Y-%m-%d") if user.trial_ends_at else None,
+            "subscription_ends_at": user.subscription_ends_at.strftime("%Y-%m-%d")
+        }
+        
+    # 3. 15-Day Free Full Feature Trial
+    trial_end = user.trial_ends_at or (user.created_at + timedelta(days=15) if user.created_at else now + timedelta(days=15))
+    if trial_end > now:
+        days_left = max(0, (trial_end - now).days)
+        return {
+            "tier": "trial",
+            "plan_name": "15-Day Free Trial",
+            "is_pro": True,  # Full Pro Access for 15 days!
+            "is_trial": True,
+            "days_left": days_left,
+            "status": f"Pro Trial ({days_left}d left)",
+            "trial_ends_at": trial_end.strftime("%Y-%m-%d"),
+            "subscription_ends_at": None
+        }
+        
+    # 4. Expired Trial / Free Tier
+    return {
+        "tier": "free",
+        "plan_name": "Free / Expired Plan",
+        "is_pro": False,
+        "is_trial": False,
+        "days_left": 0,
+        "status": "Trial Expired (Upgrade Required)",
+        "trial_ends_at": user.trial_ends_at.strftime("%Y-%m-%d") if user.trial_ends_at else None,
+        "subscription_ends_at": None
+    }
+
+# Security Dependency
 async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
     user = None
     if token and token != "mock_bypass_token":
@@ -92,11 +152,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
                 user_id = int(user_id_str)
                 result = await db.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
-                if user and user.role != "owner":
-                    user.role = "owner"
-                    db.add(user)
-                    await db.commit()
-                    await db.refresh(user)
         except Exception:
             pass
 
@@ -108,13 +163,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
             user = User(
                 phone_number="+919999999999",
                 password_hash="mocked",
-                role="owner"
+                role="owner",
+                subscription_tier="owner",
+                plan_name="Lifetime Owner"
             )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-        elif user.role != "owner":
-            user.role = "owner"
             db.add(user)
             await db.commit()
             await db.refresh(user)
@@ -128,12 +180,23 @@ async def request_otp(data: OTPRequestSchema, db: AsyncSession = Depends(get_db)
     otp = f"{random.randint(100000, 999999)}"
     expiry = datetime.utcnow() + timedelta(minutes=5)
 
-    otp_req = OTPRequest(phone_number=phone, otp_code=otp, expires_at=expiry)
-    db.add(otp_req)
+    # Invalidate previous OTPs
+    old_otps = await db.execute(select(OTPRequest).where(OTPRequest.phone_number == phone))
+    for o in old_otps.scalars().all():
+        await db.delete(o)
+
+    new_otp = OTPRequest(phone_number=phone, otp_code=otp, expires_at=expiry)
+    db.add(new_otp)
     await db.commit()
 
+    # Attempt sending real SMS
     send_otp_sms(phone, otp)
-    return {"status": "success", "message": "OTP sent successfully."}
+
+    return {
+        "status": "success",
+        "message": f"OTP sent to {phone}. Check SMS.",
+        "expires_in_seconds": 300
+    }
 
 @router.post("/register")
 async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
@@ -141,7 +204,7 @@ async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
     code = data.otp_code.strip()
     password = data.password.strip()
 
-    # 1. Validate OTP
+    # 1. Verify OTP
     now = datetime.utcnow()
     otp_query = select(OTPRequest).where(
         OTPRequest.phone_number == phone,
@@ -163,19 +226,26 @@ async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
     if user_exists_res.scalars().first():
         raise HTTPException(status_code=400, detail="User with this phone number already registered")
 
-    # 3. Determine role (First user is Owner, others are Viewers)
+    # 3. Determine role & subscription (First user is Owner, all subsequent users get 15-day trial)
     users_count_query = select(func.count(User.id))
     users_count_res = await db.execute(users_count_query)
     users_count = users_count_res.scalar() or 0
 
-    role = "owner" if users_count == 0 else "viewer"
+    is_first = (users_count == 0)
+    role = "owner" if is_first else "subscriber"
+    sub_tier = "owner" if is_first else "trial"
+    plan = "Lifetime Owner" if is_first else "15-Day Free Trial"
+    trial_end = None if is_first else (datetime.utcnow() + timedelta(days=15))
 
     # 4. Create User
     hashed_password = get_password_hash(password)
     new_user = User(
         phone_number=phone,
         password_hash=hashed_password,
-        role=role
+        role=role,
+        subscription_tier=sub_tier,
+        plan_name=plan,
+        trial_ends_at=trial_end
     )
     db.add(new_user)
     if otp_req:
@@ -185,14 +255,19 @@ async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
     await db.refresh(new_user)
 
     token = create_access_token({"sub": str(new_user.id), "phone": new_user.phone_number, "role": new_user.role})
+    sub_info = get_user_subscription_info(new_user)
 
     return {
         "status": "success",
-        "message": f"User registered successfully as {role}.",
+        "message": f"User registered successfully. Welcome to your 15-Day Pro Trial!",
         "token": token,
         "user": {
+            "id": new_user.id,
             "phone_number": new_user.phone_number,
-            "role": new_user.role
+            "email": new_user.email,
+            "display_name": new_user.display_name,
+            "role": new_user.role,
+            **sub_info
         }
     }
 
@@ -235,13 +310,18 @@ async def login(data: LoginSchema, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid password or OTP code")
 
     token = create_access_token({"sub": str(user.id), "phone": user.phone_number, "role": user.role})
+    sub_info = get_user_subscription_info(user)
 
     return {
         "status": "success",
         "token": token,
         "user": {
+            "id": user.id,
             "phone_number": user.phone_number,
-            "role": user.role
+            "email": user.email,
+            "display_name": user.display_name,
+            "role": user.role,
+            **sub_info
         }
     }
 
@@ -268,14 +348,26 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
         user = user_res.scalars().first()
         
     if not user:
-        # Create new user record
+        users_count_query = select(func.count(User.id))
+        users_count_res = await db.execute(users_count_query)
+        users_count = users_count_res.scalar() or 0
+        
+        is_first = (users_count == 0)
+        role = "owner" if is_first else "subscriber"
+        sub_tier = "owner" if is_first else "trial"
+        plan = "Lifetime Owner" if is_first else "15-Day Free Trial"
+        trial_end = None if is_first else (datetime.utcnow() + timedelta(days=15))
+
         fallback_phone = phone or (f"fb_{uid}" if uid else f"user_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
         user = User(
             phone_number=fallback_phone,
             email=email,
             display_name=data.display_name,
             password_hash="firebase_verified",
-            role="owner"
+            role=role,
+            subscription_tier=sub_tier,
+            plan_name=plan,
+            trial_ends_at=trial_end
         )
         db.add(user)
         await db.commit()
@@ -289,8 +381,11 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
         if email and user.email != email:
             user.email = email
             updated = True
-        if user.role != "owner":
-            user.role = "owner"
+        # If user has no trial or plan, initialize 15-day trial
+        if not user.trial_ends_at and not user.subscription_ends_at and user.role != "owner":
+            user.trial_ends_at = datetime.utcnow() + timedelta(days=15)
+            user.subscription_tier = "trial"
+            user.plan_name = "15-Day Free Trial"
             updated = True
         if updated:
             db.add(user)
@@ -298,6 +393,7 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
             await db.refresh(user)
         
     token = create_access_token({"sub": str(user.id), "phone": user.phone_number, "email": user.email, "role": user.role})
+    sub_info = get_user_subscription_info(user)
     return {
         "status": "success",
         "token": token,
@@ -306,7 +402,8 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
             "phone_number": user.phone_number,
             "email": user.email,
             "display_name": user.display_name,
-            "role": user.role
+            "role": user.role,
+            **sub_info
         }
     }
 

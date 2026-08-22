@@ -15,6 +15,7 @@ import { LoginView } from './components/LoginView';
 import { HelpPanel } from './components/HelpPanel';
 import RsiScannerPanel from './components/RsiScannerPanel';
 import { AdminPanel } from './components/AdminPanel';
+import { SubscriptionModal } from './components/SubscriptionModal';
 import {
   TrendingUp,
   Layers,
@@ -78,6 +79,7 @@ const App: React.FC = () => {
   };
 
   const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>(getInitialTab);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -559,6 +561,34 @@ const App: React.FC = () => {
               <span>Paper Trading Book</span>
             </button>
 
+            {/* Subscription Tier Pill Button */}
+            {user && (
+              <button
+                onClick={() => setShowSubscriptionModal(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-extrabold transition-all shadow-sm ${
+                  user.role?.toLowerCase() === 'owner' || user.subscription_tier === 'owner'
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                    : user.is_trial
+                    ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25'
+                    : user.subscription_tier === 'pro'
+                    ? 'bg-accentBrand/15 border-accentBrand/40 text-accentBrand hover:bg-accentBrand/25'
+                    : 'bg-redBrand/20 border-redBrand/50 text-red-300 hover:bg-redBrand/30 animate-pulse'
+                }`}
+                title="View Subscription Plans & Pricing"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                <span>
+                  {user.role?.toLowerCase() === 'owner' || user.subscription_tier === 'owner'
+                    ? '👑 OWNER'
+                    : user.is_trial
+                    ? `⏳ TRIAL: ${user.days_left ?? 15}d LEFT`
+                    : user.subscription_tier === 'pro'
+                    ? `⭐ PRO (${user.days_left ?? 30}d)`
+                    : '🔒 UPGRADE TO PRO'}
+                </span>
+              </button>
+            )}
+
             <button
               onClick={() => {
                 setDhanClientIdInput(user.dhan_client_id || '');
@@ -578,9 +608,9 @@ const App: React.FC = () => {
                   {user.display_name || user.email || (user.phone_number?.startsWith('fb_') ? (user.email || 'Google Account') : user.phone_number)}
                 </span>
                 <span className={`text-[9px] uppercase tracking-wider font-extrabold ${
-                  user.role?.toLowerCase() === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
+                  user.role?.toLowerCase() === 'owner' || user.subscription_tier === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
                 }`}>
-                  {user.role} Account
+                  {user.role?.toLowerCase() === 'owner' ? 'Owner Account' : (user.plan_name || `${user.role} Account`)}
                 </span>
               </div>
               <button
@@ -859,6 +889,12 @@ const App: React.FC = () => {
             <HelpPanel />
           </div>
         </div>
+
+        {/* Subscription Plans & Pricing Modal */}
+        <SubscriptionModal 
+          isOpen={showSubscriptionModal} 
+          onClose={() => setShowSubscriptionModal(false)} 
+        />
       </main>
     </div>
   );
