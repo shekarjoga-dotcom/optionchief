@@ -273,17 +273,29 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
         user = User(
             phone_number=fallback_phone,
             email=email,
+            display_name=data.display_name,
             password_hash="firebase_verified",
             role="owner"
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
-    elif user.role != "owner":
-        user.role = "owner"
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
+    else:
+        # Update details if available
+        updated = False
+        if data.display_name and user.display_name != data.display_name:
+            user.display_name = data.display_name
+            updated = True
+        if email and user.email != email:
+            user.email = email
+            updated = True
+        if user.role != "owner":
+            user.role = "owner"
+            updated = True
+        if updated:
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
         
     token = create_access_token({"sub": str(user.id), "phone": user.phone_number, "email": user.email, "role": user.role})
     return {
@@ -293,6 +305,7 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
             "id": user.id,
             "phone_number": user.phone_number,
             "email": user.email,
+            "display_name": user.display_name,
             "role": user.role
         }
     }

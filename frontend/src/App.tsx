@@ -573,9 +573,9 @@ const App: React.FC = () => {
             
             <div className="flex items-center gap-3 border-l border-borderClr/60 pl-4">
               <div className="flex flex-col items-end">
-                <span className="text-[11px] text-white font-semibold flex items-center gap-1">
-                  <User className="w-3 h-3 text-gray-500" />
-                  {user.phone_number}
+                <span className="text-[11px] text-white font-semibold flex items-center gap-1.5" title={user.email || user.phone_number}>
+                  <User className="w-3 h-3 text-emerald-400" />
+                  {user.display_name || user.email || (user.phone_number?.startsWith('fb_') ? (user.email || 'Google Account') : user.phone_number)}
                 </span>
                 <span className={`text-[9px] uppercase tracking-wider font-extrabold ${
                   user.role?.toLowerCase() === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
@@ -610,8 +610,15 @@ const App: React.FC = () => {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Account Phone</label>
-                  <input type="text" value={user.phone_number} disabled className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-400 cursor-not-allowed" />
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    {user.email ? 'Account Email / ID' : 'Account Phone / ID'}
+                  </label>
+                  <input 
+                    type="text" 
+                    value={user.display_name ? `${user.display_name} (${user.email || user.phone_number})` : (user.email || user.phone_number)} 
+                    disabled 
+                    className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-400 cursor-not-allowed" 
+                  />
                 </div>
 
                 <div>

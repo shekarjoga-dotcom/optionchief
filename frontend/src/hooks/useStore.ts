@@ -4,6 +4,8 @@ import type { OptionChainData, StrikeChain, StrategyLeg, SavedPortfolio, Underly
 interface UserProfile {
   id?: number;
   phone_number: string;
+  email?: string;
+  display_name?: string;
   role: string;
   dhan_client_id?: string;
   dhan_access_token?: string;
