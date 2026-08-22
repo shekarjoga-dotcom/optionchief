@@ -521,6 +521,15 @@ const App: React.FC = () => {
     };
   }, [isAutoScanning, autoScanInterval, token, user]);
 
+  // Track site visit for analytics
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/admin/track-visit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: window.location.pathname || '/' })
+    }).catch(() => {});
+  }, []);
+
   // Loading spinner during startup session verification
   if (isAuthLoading) {
     return (

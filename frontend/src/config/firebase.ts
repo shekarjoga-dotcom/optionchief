@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAnalytics, isSupported } from 'firebase/analytics';
 import { 
   getAuth, 
   RecaptchaVerifier, 
@@ -23,6 +24,8 @@ const firebaseConfig = {
 export const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const firebaseAuth = getAuth(firebaseApp);
 firebaseAuth.useDeviceLanguage();
+
+export const firebaseAnalytics = typeof window !== 'undefined' ? isSupported().then(yes => yes ? getAnalytics(firebaseApp) : null) : null;
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });

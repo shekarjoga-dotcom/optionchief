@@ -11,10 +11,13 @@ import {
   AlertTriangle, 
   Send, 
   MessageCircle, 
-  Clock, 
   Sparkles, 
   CheckCircle2, 
-  Bell
+  Bell,
+  Eye,
+  Globe,
+  Activity,
+  ExternalLink
 } from 'lucide-react';
 
 interface AdminUser {
@@ -39,6 +42,9 @@ interface AdminUser {
 
 interface SystemStats {
   total_users: number;
+  total_visitors?: number;
+  today_visitors?: number;
+  total_pageviews?: number;
   total_portfolios: number;
   active_alert_rules: number;
   rsi_scanner_logs: number;
@@ -255,6 +261,17 @@ export const AdminPanel: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <a
+            href="https://analytics.google.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 border border-blue-500/40 text-blue-300 hover:bg-blue-500/25 text-xs font-bold transition-all shadow-sm"
+          >
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <span>Google Analytics (GA4)</span>
+            <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
+          </a>
+
           <button
             onClick={handleSendReminders}
             disabled={isSendingReminders}
@@ -322,12 +339,42 @@ export const AdminPanel: React.FC = () => {
         </div>
       )}
 
-      {/* System Stats Counters */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {/* System & Visitor Traffic Stats Counters */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="glass-panel p-3.5 rounded-xl border border-borderClr/30 bg-gray-950/40 text-left">
+          <div className="flex items-center justify-between text-gray-400 text-xs">
+            <span>Today's Visitors</span>
+            <Activity className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="text-xl font-extrabold text-emerald-300 mt-1">
+            {stats?.today_visitors ?? 0}
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-xl border border-borderClr/30 bg-gray-950/40 text-left">
+          <div className="flex items-center justify-between text-gray-400 text-xs">
+            <span>Total Visitors</span>
+            <Globe className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="text-xl font-extrabold text-cyan-300 mt-1">
+            {stats?.total_visitors ?? 0}
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-xl border border-borderClr/30 bg-gray-950/40 text-left">
+          <div className="flex items-center justify-between text-gray-400 text-xs">
+            <span>Page Views</span>
+            <Eye className="w-4 h-4 text-blue-400" />
+          </div>
+          <div className="text-xl font-extrabold text-blue-300 mt-1">
+            {stats?.total_pageviews ?? 0}
+          </div>
+        </div>
+
         <div className="glass-panel p-3.5 rounded-xl border border-borderClr/30 bg-gray-950/40 text-left">
           <div className="flex items-center justify-between text-gray-400 text-xs">
             <span>Subscribers</span>
-            <Users className="w-4 h-4 text-blue-400" />
+            <Users className="w-4 h-4 text-indigo-400" />
           </div>
           <div className="text-xl font-extrabold text-white mt-1">
             {stats ? stats.total_users : '-'}
@@ -336,20 +383,10 @@ export const AdminPanel: React.FC = () => {
 
         <div className="glass-panel p-3.5 rounded-xl border border-borderClr/30 bg-gray-950/40 text-left">
           <div className="flex items-center justify-between text-gray-400 text-xs">
-            <span>15-Day Trials</span>
-            <Clock className="w-4 h-4 text-cyan-400" />
+            <span>Pro Subscribers</span>
+            <Sparkles className="w-4 h-4 text-amber-400" />
           </div>
-          <div className="text-xl font-extrabold text-cyan-300 mt-1">
-            {users.filter(u => u.is_trial).length}
-          </div>
-        </div>
-
-        <div className="glass-panel p-3.5 rounded-xl border border-borderClr/30 bg-gray-950/40 text-left">
-          <div className="flex items-center justify-between text-gray-400 text-xs">
-            <span>Pro / Owners</span>
-            <Sparkles className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-xl font-extrabold text-emerald-300 mt-1">
+          <div className="text-xl font-extrabold text-amber-300 mt-1">
             {users.filter(u => u.subscription_tier === 'pro' || u.subscription_tier === 'owner').length}
           </div>
         </div>
@@ -361,16 +398,6 @@ export const AdminPanel: React.FC = () => {
           </div>
           <div className="text-xl font-extrabold text-white mt-1">
             {stats ? stats.total_portfolios : '-'}
-          </div>
-        </div>
-
-        <div className="glass-panel p-3.5 rounded-xl border border-borderClr/30 bg-gray-950/40 text-left">
-          <div className="flex items-center justify-between text-gray-400 text-xs">
-            <span>Broadcasts Sent</span>
-            <Send className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-xl font-extrabold text-amber-300 mt-1">
-            {stats?.broadcast_messages_sent ?? 0}
           </div>
         </div>
       </div>

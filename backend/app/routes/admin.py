@@ -1,13 +1,14 @@
+import hashlib
 from datetime import datetime, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
 
 from app.db.session import get_db
-from app.db.models import User, Portfolio, AlertRule, RSIScannerLog, BroadcastLog
+from app.db.models import User, Portfolio, AlertRule, RSIScannerLog, BroadcastLog, PageVisit
 from app.routes.auth import get_current_user, get_user_subscription_info
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -289,6 +290,27 @@ async def send_trial_expiry_reminders(
         "reminders": reminder_links
     }
 
+class VisitTrackSchema(BaseModel):
+    path: Optional[str] = "/"
+
+@router.post("/track-visit")
+async def track_visit(data: VisitTrackSchema, request: Request, db: AsyncSession = Depends(get_db)):
+    try:
+        client_ip = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent", "")
+        ip_hash = hashlib.sha256(f"{client_ip}-{user_agent[:50]}".encode('utf-8')).hexdigest()[:16]
+        
+        visit = PageVisit(
+            visitor_hash=ip_hash,
+            path=data.path or "/",
+            user_agent=user_agent[:100]
+        )
+        db.add(visit)
+        await db.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
 @router.get("/system-stats")
 async def get_system_stats(
     current_user: User = Depends(get_current_user),
@@ -296,14 +318,24 @@ async def get_system_stats(
 ):
     check_super_admin(current_user)
     
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
     user_count = (await db.execute(select(func.count(User.id)))).scalar() or 0
     portfolio_count = (await db.execute(select(func.count(Portfolio.id)))).scalar() or 0
     rule_count = (await db.execute(select(func.count(AlertRule.id)))).scalar() or 0
     rsi_log_count = (await db.execute(select(func.count(RSIScannerLog.id)))).scalar() or 0
     broadcast_count = (await db.execute(select(func.count(BroadcastLog.id)))).scalar() or 0
+
+    total_visitors = (await db.execute(select(func.count(func.distinct(PageVisit.visitor_hash))))).scalar() or 0
+    today_visitors = (await db.execute(select(func.count(func.distinct(PageVisit.visitor_hash))).where(PageVisit.created_at >= today_start))).scalar() or 0
+    total_pageviews = (await db.execute(select(func.count(PageVisit.id)))).scalar() or 0
     
     return {
         "total_users": user_count,
+        "total_visitors": total_visitors,
+        "today_visitors": today_visitors,
+        "total_pageviews": total_pageviews,
         "total_portfolios": portfolio_count,
         "active_alert_rules": rule_count,
         "rsi_scanner_logs": rsi_log_count,

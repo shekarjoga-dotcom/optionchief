@@ -154,3 +154,14 @@ class BroadcastLog(Base):
     sent_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
+
+class PageVisit(Base):
+    __tablename__ = "page_visits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    visitor_hash = Column(String, index=True, nullable=False)
+    path = Column(String, default="/", nullable=False)
+    user_agent = Column(String, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+
