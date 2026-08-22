@@ -16,6 +16,7 @@ import { HelpPanel } from './components/HelpPanel';
 import RsiScannerPanel from './components/RsiScannerPanel';
 import { AdminPanel } from './components/AdminPanel';
 import { SubscriptionModal } from './components/SubscriptionModal';
+import { ProFeatureGate } from './components/ProFeatureGate';
 import {
   TrendingUp,
   Layers,
@@ -32,7 +33,8 @@ import {
   Key,
   X,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Lock
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -799,19 +801,21 @@ const App: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between border-b border-borderClr/40 gap-4">
           <div className="flex gap-2">
             {[
-              { id: 'chain', label: 'Option Chain', icon: Layers },
-              { id: 'scanner', label: 'Strategy Scanner', icon: Search },
-              { id: 'rsi_scanner', label: 'RSI Scanner', icon: Zap },
-              { id: 'alerts', label: 'Strategy Alerts', icon: Bell },
-              { id: 'backtest', label: 'Backtester', icon: History },
-              { id: 'builder', label: 'Strategy Analyzer', icon: TrendingUp },
-              { id: 'cone', label: 'Volatility Cone', icon: BarChart2 },
-              { id: 'portfolios', label: 'Paper Trading Book', icon: Briefcase },
-              ...(user?.role?.toLowerCase() === 'owner' ? [{ id: 'admin', label: 'Admin Dashboard', icon: Shield }] : []),
-              { id: 'help', label: 'Help & Videos', icon: HelpCircle }
+              { id: 'chain', label: 'Option Chain', icon: Layers, isPro: false },
+              { id: 'scanner', label: 'Strategy Scanner', icon: Search, isPro: true },
+              { id: 'rsi_scanner', label: 'RSI Scanner', icon: Zap, isPro: true },
+              { id: 'alerts', label: 'Strategy Alerts', icon: Bell, isPro: true },
+              { id: 'backtest', label: 'Backtester', icon: History, isPro: false },
+              { id: 'builder', label: 'Strategy Analyzer', icon: TrendingUp, isPro: false },
+              { id: 'cone', label: 'Volatility Cone', icon: BarChart2, isPro: false },
+              { id: 'portfolios', label: 'Paper Trading Book', icon: Briefcase, isPro: false },
+              ...(user?.role?.toLowerCase() === 'owner' ? [{ id: 'admin', label: 'Admin Dashboard', icon: Shield, isPro: false }] : []),
+              { id: 'help', label: 'Help & Videos', icon: HelpCircle, isPro: false }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
+              const isLocked = tab.isPro && !user?.is_pro;
+
               return (
                 <div key={tab.id} className="flex items-center gap-0.5">
                   <button
@@ -823,7 +827,12 @@ const App: React.FC = () => {
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    {tab.label}
+                    <span>{tab.label}</span>
+                    {isLocked && (
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-accentBrand/20 text-accentBrand border border-accentBrand/30 flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> PRO
+                      </span>
+                    )}
                   </button>
                   <a
                     href={`#${tab.id}`}
@@ -850,11 +859,27 @@ const App: React.FC = () => {
           </div>
 
           <div style={{ display: activeTab === 'scanner' ? 'block' : 'none' }}>
-            <ScannerPanel />
+            {user?.is_pro ? (
+              <ScannerPanel />
+            ) : (
+              <ProFeatureGate 
+                title="Dynamic Market Regime Scanner" 
+                description="Unlock full high-probability 1:3:2 Ratio Spreads, Iron Condors, and Iron Butterflies with automated directional skew detection and edge rankings." 
+                onUpgrade={() => setShowSubscriptionModal(true)} 
+              />
+            )}
           </div>
 
           <div style={{ display: activeTab === 'alerts' ? 'block' : 'none' }}>
-            <AlertsPanel />
+            {user?.is_pro ? (
+              <AlertsPanel />
+            ) : (
+              <ProFeatureGate 
+                title="24/7 Telegram Instant Alerts & Live Scanner" 
+                description="Receive instant market notifications on your mobile phone via Telegram the moment favorable regime ratios trigger in live market hours." 
+                onUpgrade={() => setShowSubscriptionModal(true)} 
+              />
+            )}
           </div>
 
           <div style={{ display: activeTab === 'backtest' ? 'block' : 'none' }}>
@@ -878,7 +903,15 @@ const App: React.FC = () => {
           </div>
 
           <div style={{ display: activeTab === 'rsi_scanner' ? 'block' : 'none' }}>
-            <RsiScannerPanel />
+            {user?.is_pro ? (
+              <RsiScannerPanel />
+            ) : (
+              <ProFeatureGate 
+                title="RSI Options Momentum Scalper" 
+                description="Unlock real-time 5m & 15m RSI breakout detection for high-velocity scalping trades with trailing SL and auto targets." 
+                onUpgrade={() => setShowSubscriptionModal(true)} 
+              />
+            )}
           </div>
 
           <div style={{ display: activeTab === 'admin' ? 'block' : 'none' }}>

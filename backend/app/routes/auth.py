@@ -120,30 +120,29 @@ def get_user_subscription_info(user: User) -> dict:
             "subscription_ends_at": user.subscription_ends_at.strftime("%Y-%m-%d")
         }
         
-    # 3. 15-Day Free Full Feature Trial
-    trial_end = user.trial_ends_at or (user.created_at + timedelta(days=15) if user.created_at else now + timedelta(days=15))
-    if trial_end > now:
-        days_left = max(0, (trial_end - now).days)
+    # 3. Custom Trial (if explicitly granted by Admin)
+    if user.trial_ends_at and user.trial_ends_at > now:
+        days_left = max(0, (user.trial_ends_at - now).days)
         return {
             "tier": "trial",
-            "plan_name": "15-Day Free Trial",
-            "is_pro": True,  # Full Pro Access for 15 days!
+            "plan_name": user.plan_name or "Pro Trial",
+            "is_pro": True,
             "is_trial": True,
             "days_left": days_left,
             "status": f"Pro Trial ({days_left}d left)",
-            "trial_ends_at": trial_end.strftime("%Y-%m-%d"),
+            "trial_ends_at": user.trial_ends_at.strftime("%Y-%m-%d"),
             "subscription_ends_at": None
         }
         
-    # 4. Expired Trial / Free Tier
+    # 4. Free Tier (Option Chain Free, Regime Scanners & Live Broker Locked)
     return {
         "tier": "free",
-        "plan_name": "Free / Expired Plan",
+        "plan_name": "Free Plan",
         "is_pro": False,
         "is_trial": False,
         "days_left": 0,
-        "status": "Trial Expired (Upgrade Required)",
-        "trial_ends_at": user.trial_ends_at.strftime("%Y-%m-%d") if user.trial_ends_at else None,
+        "status": "Free Plan (Upgrade to Pro)",
+        "trial_ends_at": None,
         "subscription_ends_at": None
     }
 
@@ -230,16 +229,16 @@ async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
     if user_exists_res.scalars().first():
         raise HTTPException(status_code=400, detail="User with this phone number already registered")
 
-    # 3. Determine role & subscription (First user is Owner, all subsequent users get 15-day trial)
+    # 3. Determine role & subscription (First user is Owner, all subsequent users get Free Tier)
     users_count_query = select(func.count(User.id))
     users_count_res = await db.execute(users_count_query)
     users_count = users_count_res.scalar() or 0
 
     is_first = (users_count == 0)
     role = "owner" if is_first else "subscriber"
-    sub_tier = "owner" if is_first else "trial"
-    plan = "Lifetime Owner" if is_first else "15-Day Free Trial"
-    trial_end = None if is_first else (datetime.utcnow() + timedelta(days=15))
+    sub_tier = "owner" if is_first else "free"
+    plan = "Lifetime Owner" if is_first else "Free Plan"
+    trial_end = None
 
     # 4. Create User
     hashed_password = get_password_hash(password)
@@ -263,7 +262,7 @@ async def register(data: RegisterSchema, db: AsyncSession = Depends(get_db)):
 
     return {
         "status": "success",
-        "message": f"User registered successfully. Welcome to your 15-Day Pro Trial!",
+        "message": "User registered successfully.",
         "token": token,
         "user": {
             "id": new_user.id,
@@ -291,16 +290,16 @@ async def register_direct(data: RegisterDirectSchema, db: AsyncSession = Depends
     if user_exists_res.scalars().first():
         raise HTTPException(status_code=400, detail="User with this phone number already registered. Please sign in.")
 
-    # 2. Determine role & subscription (First user is Owner, all subsequent users get 15-day trial)
+    # 2. Determine role & subscription (First user is Owner, all subsequent users get Free Tier)
     users_count_query = select(func.count(User.id))
     users_count_res = await db.execute(users_count_query)
     users_count = users_count_res.scalar() or 0
 
     is_first = (users_count == 0)
     role = "owner" if is_first else "subscriber"
-    sub_tier = "owner" if is_first else "trial"
-    plan = "Lifetime Owner" if is_first else "15-Day Free Trial"
-    trial_end = None if is_first else (datetime.utcnow() + timedelta(days=15))
+    sub_tier = "owner" if is_first else "free"
+    plan = "Lifetime Owner" if is_first else "Free Plan"
+    trial_end = None
 
     # 3. Create User
     hashed_password = get_password_hash(password)
@@ -323,7 +322,7 @@ async def register_direct(data: RegisterDirectSchema, db: AsyncSession = Depends
 
     return {
         "status": "success",
-        "message": "Account created successfully! Welcome to your 15-Day Pro Trial.",
+        "message": "Account created successfully! Welcome to OptionChief.",
         "token": token,
         "user": {
             "id": new_user.id,
@@ -419,9 +418,9 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
         
         is_first = (users_count == 0)
         role = "owner" if is_first else "subscriber"
-        sub_tier = "owner" if is_first else "trial"
-        plan = "Lifetime Owner" if is_first else "15-Day Free Trial"
-        trial_end = None if is_first else (datetime.utcnow() + timedelta(days=15))
+        sub_tier = "owner" if is_first else "free"
+        plan = "Lifetime Owner" if is_first else "Free Plan"
+        trial_end = None
 
         fallback_phone = phone or (f"fb_{uid}" if uid else f"user_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
         user = User(
@@ -445,12 +444,6 @@ async def firebase_login(data: FirebaseLoginSchema, db: AsyncSession = Depends(g
             updated = True
         if email and user.email != email:
             user.email = email
-            updated = True
-        # If user has no trial or plan, initialize 15-day trial
-        if not user.trial_ends_at and not user.subscription_ends_at and user.role != "owner":
-            user.trial_ends_at = datetime.utcnow() + timedelta(days=15)
-            user.subscription_tier = "trial"
-            user.plan_name = "15-Day Free Trial"
             updated = True
         if updated:
             db.add(user)
