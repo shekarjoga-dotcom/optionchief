@@ -99,6 +99,12 @@ async def on_startup():
                 except Exception:
                     pass
 
+                try:
+                    # Clear placeholder internal emails for phone-registered users
+                    await conn.execute(text("UPDATE users SET email = NULL WHERE email LIKE '%@optionchief.in' AND role != 'owner'"))
+                except Exception:
+                    pass
+
             # Restore and preserve known subscribers across container restarts
             from app.db.session import async_session
             from datetime import datetime, timedelta
@@ -108,7 +114,7 @@ async def on_startup():
                 subscribers_to_restore = [
                     {"phone": "+919999999999", "email": "owner@optionchief.in", "name": "Lifetime Owner", "role": "owner", "tier": "owner", "plan": "Lifetime Owner"},
                     {"phone": "ravikumar.balki@gmail.com", "email": "ravikumar.balki@gmail.com", "name": "Ravikumar Bala", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
-                    {"phone": "+919360222312", "email": "rajan@optionchief.in", "name": "RAJAN", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
+                    {"phone": "+919360222312", "email": None, "name": "RAJAN", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
                     {"phone": "romazicinfotech@gmail.com", "email": "romazicinfotech@gmail.com", "name": "CHARLES DSOUZA", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
                     {"phone": "sanjaymadann666@gmail.com", "email": "sanjaymadann666@gmail.com", "name": "Sanjay Madann", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
                     {"phone": "varinderkgoyal@gmail.com", "email": "varinderkgoyal@gmail.com", "name": "Varinder Goyal", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
@@ -119,7 +125,7 @@ async def on_startup():
                 for sub in subscribers_to_restore:
                     # Check if user already exists by phone or email
                     existing = (await session.execute(
-                        select(User).where((User.phone_number == sub["phone"]) | (User.email == sub["email"]))
+                        select(User).where((User.phone_number == sub["phone"]) | ((User.email == sub["email"]) if sub["email"] else False))
                     )).scalars().first()
                     
                     if not existing:
@@ -135,6 +141,9 @@ async def on_startup():
                             created_at=now - timedelta(days=1)
                         )
                         session.add(new_user)
+                    else:
+                        if sub["email"] is None and existing.email and existing.email.endswith("@optionchief.in"):
+                            existing.email = None
                 await session.commit()
 
         except Exception as e:

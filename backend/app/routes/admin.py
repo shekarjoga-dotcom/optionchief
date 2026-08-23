@@ -260,7 +260,7 @@ async def send_broadcast(
             if not target_email and "@" in (u.phone_number or ""):
                 target_email = u.phone_number
 
-            if target_email and "@" in target_email:
+            if target_email and "@" in target_email and not target_email.endswith("@optionchief.in"):
                 gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(target_email)}&su={encoded_subject}&body={encoded_body}"
                 mailto_url = f"mailto:{target_email}?subject={encoded_subject}&body={encoded_body}"
                 email_links.append({
