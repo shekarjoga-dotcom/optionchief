@@ -98,6 +98,45 @@ async def on_startup():
                     await conn.execute(text("UPDATE users SET role = 'owner', subscription_tier = 'owner', plan_name = 'Lifetime Owner' WHERE id = 1"))
                 except Exception:
                     pass
+
+            # Restore and preserve known subscribers across container restarts
+            from app.db.session import async_session
+            from datetime import datetime, timedelta
+            from sqlalchemy.future import select
+            
+            async with async_session() as session:
+                subscribers_to_restore = [
+                    {"phone": "+919999999999", "email": "owner@optionchief.in", "name": "Lifetime Owner", "role": "owner", "tier": "owner", "plan": "Lifetime Owner"},
+                    {"phone": "ravikumar.balki@gmail.com", "email": "ravikumar.balki@gmail.com", "name": "Ravikumar Bala", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
+                    {"phone": "+919360222312", "email": "rajan@optionchief.in", "name": "RAJAN", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
+                    {"phone": "romazicinfotech@gmail.com", "email": "romazicinfotech@gmail.com", "name": "CHARLES DSOUZA", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
+                    {"phone": "sanjaymadann666@gmail.com", "email": "sanjaymadann666@gmail.com", "name": "Sanjay Madann", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
+                    {"phone": "varinderkgoyal@gmail.com", "email": "varinderkgoyal@gmail.com", "name": "Varinder Goyal", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"},
+                    {"phone": "+918500503785", "email": "shekarjoga@gmail.com", "name": "Shekar Joga", "role": "subscriber", "tier": "trial", "plan": "15-Day Free Trial"}
+                ]
+                
+                now = datetime.utcnow()
+                for sub in subscribers_to_restore:
+                    # Check if user already exists by phone or email
+                    existing = (await session.execute(
+                        select(User).where((User.phone_number == sub["phone"]) | (User.email == sub["email"]))
+                    )).scalars().first()
+                    
+                    if not existing:
+                        new_user = User(
+                            phone_number=sub["phone"],
+                            email=sub["email"],
+                            display_name=sub["name"],
+                            password_hash="",
+                            role=sub["role"],
+                            subscription_tier=sub["tier"],
+                            plan_name=sub["plan"],
+                            trial_ends_at=now + timedelta(days=14),
+                            created_at=now - timedelta(days=1)
+                        )
+                        session.add(new_user)
+                await session.commit()
+
         except Exception as e:
             print(f"[Startup DB Init Warning] {e}")
 
