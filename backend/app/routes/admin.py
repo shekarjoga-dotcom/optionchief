@@ -261,11 +261,15 @@ async def send_broadcast(
                 target_email = u.phone_number
 
             if target_email and "@" in target_email:
+                gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(target_email)}&su={encoded_subject}&body={encoded_body}"
+                mailto_url = f"mailto:{target_email}?subject={encoded_subject}&body={encoded_body}"
                 email_links.append({
                     "user_id": u.id,
                     "name": u.display_name or target_email.split('@')[0],
                     "email": target_email,
-                    "link": f"mailto:{target_email}?subject={encoded_subject}&body={encoded_body}"
+                    "link": gmail_url,
+                    "gmail_link": gmail_url,
+                    "mailto_link": mailto_url
                 })
                 # Attempt direct SMTP dispatch
                 try:
@@ -341,7 +345,7 @@ async def send_trial_expiry_reminders(
 
         # Email link / dispatch
         target_email = u.email if (u.email and "@" in u.email) else (u.phone_number if "@" in (u.phone_number or "") else None)
-        mail_link = f"mailto:{target_email}?subject={urllib.parse.quote('OptionChief Trial Expiration Reminder')}&body={encoded}" if target_email else None
+        mail_link = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(target_email)}&su={urllib.parse.quote('OptionChief Trial Expiration Reminder')}&body={encoded}" if target_email else None
 
         # Try automatic SMTP dispatch
         if target_email:

@@ -579,14 +579,17 @@ export const AdminPanel: React.FC = () => {
             <div className="p-3 rounded-lg bg-gray-900/80 border border-blue-500/30">
               <h5 className="text-[11px] font-bold text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5" />
-                1-Click Email (Mailto) Direct Links:
+                1-Click Gmail / Email Direct Links:
               </h5>
               <div className="flex flex-wrap gap-2">
                 {emailLinks.map((item, idx) => (
                   <a
                     key={idx}
                     href={item.link}
-                    className="px-2.5 py-1 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-bold hover:bg-blue-500/25 flex items-center gap-1"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Click to open Gmail draft for ${item.email}`}
+                    className="px-2.5 py-1 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-bold hover:bg-blue-500/25 flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <span>{item.name || item.email}</span>
                     <span>➔</span>
