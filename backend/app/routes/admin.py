@@ -205,21 +205,77 @@ async def send_broadcast(
         except Exception as e:
             print(f"[Broadcast Telegram Error] {e}")
             
-    # 2. WhatsApp Direct Link Previews generated for recipient list
+    # 2. WhatsApp Direct Link Previews generated for recipient list with valid phone numbers
     whatsapp_links = []
     if "whatsapp" in data.channels:
         import urllib.parse
         encoded_text = urllib.parse.quote(f"*[OptionChief Update]*\n\n*{data.subject}*\n\n{data.message}\n\n👉 Login: https://optionchief.in")
-        for u in target_recipients[:15]:
-            clean_num = u.phone_number.replace("+", "").replace(" ", "").replace("-", "")
+        for u in target_recipients:
+            clean_num = (u.phone_number or "").replace("+", "").replace(" ", "").replace("-", "")
             if clean_num.isdigit() and len(clean_num) >= 10:
                 whatsapp_links.append({
                     "user_id": u.id,
                     "phone": u.phone_number,
+                    "name": u.display_name or u.phone_number,
                     "link": f"https://wa.me/{clean_num}?text={encoded_text}"
                 })
 
-    # 3. Log broadcast to database
+    # 3. Email Dispatch via SMTP & 1-Click Mailto Previews for all email accounts
+    email_dispatched_count = 0
+    email_links = []
+    if "email" in data.channels:
+        import urllib.parse
+        from app.routes.notifications import send_alert_email
+
+        html_content = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; background-color: #0d1117; color: #c9d1d9; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <div style="text-align: center; border-bottom: 2px solid #30363d; padding-bottom: 15px; margin-bottom: 20px;">
+                <h1 style="color: #38bdf8; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px;">OptionChief</h1>
+                <span style="font-size: 12px; color: #8b949e;">Options Strategy & Execution Terminal</span>
+              </div>
+              <h2 style="color: #ff9800; margin-top: 0; font-size: 18px;">{data.subject}</h2>
+              <div style="font-size: 14px; line-height: 1.6; color: #e6edf3; white-space: pre-line; background-color: #0d1117; padding: 15px; border-radius: 8px; border: 1px solid #21262d;">
+                {data.message}
+              </div>
+              <div style="text-align: center; margin-top: 25px;">
+                <a href="https://optionchief.in" style="background-color: #0284c7; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                  Open OptionChief Terminal ➔
+                </a>
+              </div>
+              <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #30363d; font-size: 11px; color: #8b949e; text-align: center;">
+                OptionChief • Sent to registered subscriber
+              </div>
+            </div>
+          </body>
+        </html>
+        """
+
+        encoded_subject = urllib.parse.quote(f"[OptionChief] {data.subject}")
+        encoded_body = urllib.parse.quote(f"{data.message}\n\n👉 Login: https://optionchief.in")
+
+        for u in target_recipients:
+            target_email = u.email
+            if not target_email and "@" in (u.phone_number or ""):
+                target_email = u.phone_number
+
+            if target_email and "@" in target_email:
+                email_links.append({
+                    "user_id": u.id,
+                    "name": u.display_name or target_email.split('@')[0],
+                    "email": target_email,
+                    "link": f"mailto:{target_email}?subject={encoded_subject}&body={encoded_body}"
+                })
+                # Attempt direct SMTP dispatch
+                try:
+                    sent = send_alert_email(target_email, f"[OptionChief] {data.subject}", html_content)
+                    if sent:
+                        email_dispatched_count += 1
+                except Exception as ex:
+                    print(f"[Broadcast Email Error to {target_email}]: {ex}")
+
+    # 4. Log broadcast to database
     log = BroadcastLog(
         subject=data.subject,
         message=data.message,
@@ -233,9 +289,11 @@ async def send_broadcast(
     
     return {
         "status": "success",
-        "message": f"Broadcast dispatched to {recipient_count} subscribers across {', '.join(data.channels)}.",
+        "message": f"Broadcast processed for {recipient_count} subscribers (Dispatched {email_dispatched_count} emails via SMTP).",
         "recipient_count": recipient_count,
         "telegram_dispatched": telegram_sent,
+        "email_dispatched_count": email_dispatched_count,
+        "email_links": email_links,
         "whatsapp_preview_count": len(whatsapp_links),
         "whatsapp_links": whatsapp_links
     }
@@ -248,7 +306,6 @@ async def send_trial_expiry_reminders(
     check_super_admin(current_user)
     
     users = (await db.execute(select(User))).scalars().all()
-    now = datetime.utcnow()
     
     expiring_users = []
     for u in users:
@@ -264,24 +321,56 @@ async def send_trial_expiry_reminders(
         return {
             "status": "success",
             "message": "No subscribers currently have trials expiring in <= 3 days.",
-            "count": 0
+            "count": 0,
+            "reminders": []
         }
         
     import urllib.parse
+    from app.routes.notifications import send_alert_email
+
     reminder_links = []
     for item in expiring_users:
         u = item["user"]
         days = item["days_left"]
-        msg = f"⏳ *OptionChief Reminder*: Your {item['plan']} expires in *{days} day{'s' if days != 1 else ''}*!\n\nRenew your plan (1 Mo @ ₹499 | 6 Mos @ ₹2,499 | 1 Yr @ ₹4,499) to maintain 24/7 real-time Regime Ratio Fly and Iron Condor alerts.\n\n👉 Upgrade: https://optionchief.in"
+        msg = f"⏳ OptionChief Reminder: Your {item['plan']} expires in {days} day{'s' if days != 1 else ''}!\n\nRenew your plan (1 Mo @ ₹499 | 6 Mos @ ₹2,499 | 1 Yr @ ₹4,499) to maintain 24/7 real-time Regime Ratio Fly and Iron Condor alerts.\n\n👉 Upgrade: https://optionchief.in"
         encoded = urllib.parse.quote(msg)
-        clean_num = u.phone_number.replace("+", "").replace(" ", "").replace("-", "")
-        if clean_num.isdigit() and len(clean_num) >= 10:
-            reminder_links.append({
-                "user_id": u.id,
-                "phone": u.phone_number,
-                "days_left": days,
-                "whatsapp_link": f"https://wa.me/{clean_num}?text={encoded}"
-            })
+        
+        # WhatsApp link for phone number
+        clean_num = (u.phone_number or "").replace("+", "").replace(" ", "").replace("-", "")
+        wa_link = f"https://wa.me/{clean_num}?text={encoded}" if (clean_num.isdigit() and len(clean_num) >= 10) else None
+
+        # Email link / dispatch
+        target_email = u.email if (u.email and "@" in u.email) else (u.phone_number if "@" in (u.phone_number or "") else None)
+        mail_link = f"mailto:{target_email}?subject={urllib.parse.quote('OptionChief Trial Expiration Reminder')}&body={encoded}" if target_email else None
+
+        # Try automatic SMTP dispatch
+        if target_email:
+            try:
+                email_html = f"""
+                <div style="font-family: Arial, sans-serif; background-color: #0d1117; color: #c9d1d9; padding: 20px;">
+                  <div style="max-width: 550px; margin: 0 auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px;">
+                    <h2 style="color: #f59e0b; margin-top: 0;">⏳ OptionChief Access Expiring</h2>
+                    <p style="font-size: 14px; line-height: 1.6;">Your <strong>{item['plan']}</strong> has <strong>{days} day{'s' if days != 1 else ''} remaining</strong>.</p>
+                    <p style="font-size: 13px; color: #8b949e;">Renew now to keep unlimited access to 1:3:2 Ratio Scanners, live Greeks, and Telegram push alerts.</p>
+                    <div style="text-align: center; margin: 25px 0;">
+                      <a href="https://optionchief.in" style="background-color: #0284c7; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">Renew Subscription (₹499/mo) ➔</a>
+                    </div>
+                  </div>
+                </div>
+                """
+                send_alert_email(target_email, "⏳ OptionChief: Your Access is Expiring Soon", email_html)
+            except Exception as ex:
+                print(f"[Reminder Email Error to {target_email}]: {ex}")
+
+        reminder_links.append({
+            "user_id": u.id,
+            "phone": u.phone_number or target_email,
+            "email": target_email,
+            "name": u.display_name or (target_email or u.phone_number),
+            "days_left": days,
+            "whatsapp_link": wa_link,
+            "email_link": mail_link
+        })
             
     return {
         "status": "success",

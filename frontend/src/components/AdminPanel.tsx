@@ -11,6 +11,7 @@ import {
   AlertTriangle, 
   Send, 
   MessageCircle, 
+  Mail,
   Sparkles, 
   CheckCircle2, 
   Bell,
@@ -64,10 +65,11 @@ export const AdminPanel: React.FC = () => {
   const [broadcastSubject, setBroadcastSubject] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [targetAudience, setTargetAudience] = useState<'all' | 'trial' | 'pro' | 'expired'>('all');
-  const [channels, setChannels] = useState<string[]>(['telegram', 'whatsapp']);
+  const [channels, setChannels] = useState<string[]>(['telegram', 'whatsapp', 'email']);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [broadcastSuccess, setBroadcastSuccess] = useState<string | null>(null);
-  const [whatsappLinks, setWhatsappLinks] = useState<{ phone: string; link: string; user_id: number }[]>([]);
+  const [whatsappLinks, setWhatsappLinks] = useState<{ phone: string; link: string; user_id: number; name?: string }[]>([]);
+  const [emailLinks, setEmailLinks] = useState<{ email: string; link: string; user_id: number; name?: string }[]>([]);
 
   // Reminders Dispatch state
   const [isSendingReminders, setIsSendingReminders] = useState(false);
@@ -183,6 +185,7 @@ export const AdminPanel: React.FC = () => {
     setIsBroadcasting(true);
     setBroadcastSuccess(null);
     setWhatsappLinks([]);
+    setEmailLinks([]);
     try {
       const res = await fetch(`${BACKEND_URL}/api/admin/broadcast/send`, {
         method: 'POST',
@@ -201,6 +204,7 @@ export const AdminPanel: React.FC = () => {
       if (res.ok) {
         setBroadcastSuccess(data.message);
         if (data.whatsapp_links) setWhatsappLinks(data.whatsapp_links);
+        if (data.email_links) setEmailLinks(data.email_links);
         setBroadcastSubject('');
         setBroadcastMessage('');
         fetchAdminData();
@@ -321,18 +325,31 @@ export const AdminPanel: React.FC = () => {
             {reminderData.reminders.map((r, i) => (
               <div key={i} className="p-2.5 rounded-lg bg-gray-950 border border-borderClr/30 flex items-center justify-between text-xs">
                 <div>
-                  <span className="font-bold text-white block">{r.phone}</span>
+                  <span className="font-bold text-white block">{r.name || r.email || r.phone}</span>
                   <span className="text-[10px] text-amber-400 font-semibold">{r.days_left} day(s) remaining</span>
                 </div>
-                <a
-                  href={r.whatsapp_link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold hover:bg-emerald-500/30 flex items-center gap-1"
-                >
-                  <MessageCircle className="w-3 h-3" />
-                  Send WhatsApp
-                </a>
+                <div className="flex items-center gap-1.5">
+                  {r.whatsapp_link && (
+                    <a
+                      href={r.whatsapp_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold hover:bg-emerald-500/30 flex items-center gap-1"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      <span>WhatsApp</span>
+                    </a>
+                  )}
+                  {r.email_link && (
+                    <a
+                      href={r.email_link}
+                      className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] font-bold hover:bg-blue-500/30 flex items-center gap-1"
+                    >
+                      <Mail className="w-3 h-3" />
+                      <span>Email</span>
+                    </a>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -479,6 +496,19 @@ export const AdminPanel: React.FC = () => {
                     />
                     <span>WhatsApp</span>
                   </label>
+
+                  <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={channels.includes('email')}
+                      onChange={(e) => {
+                        if (e.target.checked) setChannels([...channels, 'email']);
+                        else setChannels(channels.filter(c => c !== 'email'));
+                      }}
+                      className="rounded bg-gray-900 border-gray-700 text-blue-500 focus:ring-0"
+                    />
+                    <span>Email (SMTP)</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -500,7 +530,7 @@ export const AdminPanel: React.FC = () => {
 
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-gray-500 italic">
-              Dispatches instantly to the official Telegram bot channel and generates one-click WhatsApp subscriber links.
+              Dispatches automated emails to all registered emails, announces to Telegram bot, and generates WhatsApp/Mailto subscriber links.
             </span>
             <button
               type="submit"
@@ -520,29 +550,52 @@ export const AdminPanel: React.FC = () => {
           </div>
         )}
 
-        {/* WhatsApp Direct Links preview if generated */}
-        {whatsappLinks.length > 0 && (
-          <div className="mt-3 p-3 rounded-lg bg-gray-900/80 border border-emerald-500/30">
-            <h5 className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <MessageCircle className="w-3.5 h-3.5" />
-              1-Click WhatsApp Direct Delivery Links:
-            </h5>
-            <div className="flex flex-wrap gap-2">
-              {whatsappLinks.map((item, idx) => (
-                <a
-                  key={idx}
-                  href={item.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold hover:bg-emerald-500/25 flex items-center gap-1"
-                >
-                  <span>{item.phone}</span>
-                  <span>➔</span>
-                </a>
-              ))}
+        {/* WhatsApp & Email Direct Links preview if generated */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {whatsappLinks.length > 0 && (
+            <div className="p-3 rounded-lg bg-gray-900/80 border border-emerald-500/30">
+              <h5 className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <MessageCircle className="w-3.5 h-3.5" />
+                1-Click WhatsApp Delivery Links:
+              </h5>
+              <div className="flex flex-wrap gap-2">
+                {whatsappLinks.map((item, idx) => (
+                  <a
+                    key={idx}
+                    href={item.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold hover:bg-emerald-500/25 flex items-center gap-1"
+                  >
+                    <span>{item.phone}</span>
+                    <span>➔</span>
+                  </a>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {emailLinks.length > 0 && (
+            <div className="p-3 rounded-lg bg-gray-900/80 border border-blue-500/30">
+              <h5 className="text-[11px] font-bold text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5" />
+                1-Click Email (Mailto) Direct Links:
+              </h5>
+              <div className="flex flex-wrap gap-2">
+                {emailLinks.map((item, idx) => (
+                  <a
+                    key={idx}
+                    href={item.link}
+                    className="px-2.5 py-1 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-bold hover:bg-blue-500/25 flex items-center gap-1"
+                  >
+                    <span>{item.name || item.email}</span>
+                    <span>➔</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* SECTION: Subscribers Table */}
