@@ -165,24 +165,41 @@ export function scanStrategies(
     }
   }
 
-  // 2. IRON BUTTERFLY (Neutral / Safe Hedged)
-  else if (typeUpper === "IRON BUTTERFLY") {
-    const shortPut = getLegHelper(atmStrike, 'P', 'SELL');
-    const shortCall = getLegHelper(atmStrike, 'C', 'SELL');
-    const longPutIdx = atmIdx - wingWidth;
-    const longCallIdx = atmIdx + wingWidth;
+  // 2. IRON BUTTERFLY & DYNAMIC REGIME IRON BUTTERFLY (Neutral / Bull-Skewed / Bear-Skewed / Safe Hedged)
+  else if (typeUpper === "IRON BUTTERFLY" || typeUpper === "DYNAMIC REGIME IRON BUTTERFLY" || typeUpper === "REGIME_IRON_BUTTERFLY" || typeUpper === "DYNAMIC IRON BUTTERFLY") {
+    const isDynamic = typeUpper.includes("DYNAMIC") || typeUpper.includes("REGIME");
+    
+    // Centers to scan: ATM for classic, or ATM, ATM+1, ATM+2, ATM-1, ATM-2 for dynamic regime
+    const centerOffsets = isDynamic ? [0, 1, 2, -1, -2] : [0];
 
-    if (longPutIdx >= 0 && longCallIdx < strikesList.length) {
-      const longPut = getLegHelper(strikesList[longPutIdx], 'P', 'BUY');
-      const longCall = getLegHelper(strikesList[longCallIdx], 'C', 'BUY');
+    for (const offset of centerOffsets) {
+      const centerIdx = atmIdx + offset;
+      if (centerIdx < 0 || centerIdx >= strikesList.length) continue;
 
-      if (shortPut && shortCall && longPut && longCall) {
-        const scanRes = buildScanResult(
-          `Iron Butterfly (${strikesList[longPutIdx]}/${atmStrike}/${strikesList[longCallIdx]})`,
-          [longPut, shortPut, shortCall, longCall],
-          `Sell ATM Put/Call at ${atmStrike}, hedged with wings at ${strikesList[longPutIdx]} and ${strikesList[longCallIdx]}.`
-        );
-        if (scanRes) results.push(scanRes);
+      const centerStrike = strikesList[centerIdx];
+      const longPutIdx = centerIdx - wingWidth;
+      const longCallIdx = centerIdx + wingWidth;
+
+      if (longPutIdx >= 0 && longCallIdx < strikesList.length) {
+        const shortPut = getLegHelper(centerStrike, 'P', 'SELL');
+        const shortCall = getLegHelper(centerStrike, 'C', 'SELL');
+        const longPut = getLegHelper(strikesList[longPutIdx], 'P', 'BUY');
+        const longCall = getLegHelper(strikesList[longCallIdx], 'C', 'BUY');
+
+        if (shortPut && shortCall && longPut && longCall) {
+          const dirTag = offset === 0 ? "[⚪ Delta-Neutral]" : offset > 0 ? "[🟢 Bull-Skewed]" : "[🔴 Bear-Skewed]";
+          const name = isDynamic
+            ? `${dirTag} Iron Butterfly (${strikesList[longPutIdx]}/${centerStrike}/${strikesList[longCallIdx]})`
+            : `Iron Butterfly (${strikesList[longPutIdx]}/${centerStrike}/${strikesList[longCallIdx]})`;
+          const desc = offset === 0
+            ? `Delta-Neutral ATM Iron Butterfly: Sell Put/Call at ${centerStrike}, protected by wings at ${strikesList[longPutIdx]} and ${strikesList[longCallIdx]}.`
+            : offset > 0
+              ? `Bull-Skewed Dynamic Butterfly: Apex centered at ${centerStrike} (+${offset} strike OTM) capturing upward momentum with fixed wings.`
+              : `Bear-Skewed Dynamic Butterfly: Apex centered at ${centerStrike} (${offset} strike OTM) capturing downward drift with fixed wings.`;
+
+          const scanRes = buildScanResult(name, [longPut, shortPut, shortCall, longCall], desc);
+          if (scanRes) results.push(scanRes);
+        }
       }
     }
   }

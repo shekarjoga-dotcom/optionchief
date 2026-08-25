@@ -102,6 +102,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   bullish: [
     { id: "ALL", label: "All in Category", icon: Layers },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bullish Drift)", icon: Sparkles },
+    { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly (Bull Skew)", icon: Sparkles },
     { id: "BULL CALL SPREAD", label: "Bull Call Spread", icon: LineChart },
     { id: "BULL PUT SPREAD", label: "Bull Put Spread", icon: ShieldCheck },
     { id: "1:2 PUT RATIO SPREAD", label: "1:2 Put Ratio Spread", icon: Scale },
@@ -120,6 +121,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   bearish: [
     { id: "ALL", label: "All in Category", icon: Layers },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bearish Corrective)", icon: Sparkles },
+    { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly (Bear Skew)", icon: Sparkles },
     { id: "BEAR CALL SPREAD", label: "Bear Call Spread", icon: ShieldAlert },
     { id: "BEAR PUT SPREAD", label: "Bear Put Spread", icon: LineChart },
     { id: "1:2 CALL RATIO SPREAD", label: "1:2 Call Ratio Spread", icon: Scale },
@@ -138,6 +140,8 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   neutral: [
     { id: "ALL", label: "All in Category", icon: Layers },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Neutral Range)", icon: Sparkles },
+    { id: "DYNAMIC REGIME IRON CONDOR", label: "🎯 Dynamic Regime Iron Condor", icon: Compass },
+    { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly", icon: Sparkles },
     { id: "SHORT IRON CONDOR", label: "Short Iron Condor (Credit)", icon: Compass },
     { id: "LONG IRON CONDOR", label: "Long Iron Condor (Breakout)", icon: Activity },
     { id: "IRON CONDOR", label: "Iron Condor", icon: Compass },
@@ -157,6 +161,8 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   safe_hedged: [
     { id: "ALL", label: "All in Category", icon: Layers },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Dynamic Wings)", icon: Sparkles },
+    { id: "DYNAMIC REGIME IRON CONDOR", label: "🎯 Dynamic Regime Iron Condor", icon: Compass },
+    { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly", icon: Sparkles },
     { id: "IRON CONDOR", label: "Iron Condor", icon: Compass },
     { id: "WIDE WING IRON CONDOR", label: "Wide Wing Iron Condor", icon: Compass },
     { id: "RATIO IRON CONDOR (1:2)", label: "Ratio Iron Condor (1:2)", icon: Compass },
@@ -701,14 +707,15 @@ export const ScannerPanel: React.FC = () => {
 
         const typesToScan = subCategory === "ALL"
           ? (category === "safe_hedged"
-              ? ["SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
+              ? ["DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
               : category === "neutral"
-                ? ["SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE"]
+                ? ["DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE"]
                 : category === "bullish"
-                  ? ["BULL CALL SPREAD", "BULL PUT SPREAD", "DIR BULL FLY", "BULL CONDOR", "BULL IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:2 PUT RATIO SPREAD", "BULL STRADDLE", "BULL STRANGLE", "SHORT BULL STRADDLE", "SHORT BULL STRANGLE", "COVERED CALL", "SYNTHETIC LONG", "SYNTHETIC LONG CALL"]
+                  ? ["DYNAMIC REGIME IRON BUTTERFLY", "BULL CALL SPREAD", "BULL PUT SPREAD", "DIR BULL FLY", "BULL CONDOR", "BULL IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:2 PUT RATIO SPREAD", "BULL STRADDLE", "BULL STRANGLE", "SHORT BULL STRADDLE", "SHORT BULL STRANGLE", "COVERED CALL", "SYNTHETIC LONG", "SYNTHETIC LONG CALL"]
                   : category === "bearish"
-                    ? ["BEAR CALL SPREAD", "BEAR PUT SPREAD", "DIR BEAR FLY", "BEAR CONDOR", "BEAR IRON BUTTERFLY", "1:3:2 PUT RATIO FLY", "1:2 CALL RATIO SPREAD", "BEAR STRADDLE", "BEAR STRANGLE", "SHORT BEAR STRADDLE", "SHORT BEAR STRANGLE", "COVERED PUT", "SYNTHETIC SHORT", "SYNTHETIC LONG PUT"]
+                    ? ["DYNAMIC REGIME IRON BUTTERFLY", "BEAR CALL SPREAD", "BEAR PUT SPREAD", "DIR BEAR FLY", "BEAR CONDOR", "BEAR IRON BUTTERFLY", "1:3:2 PUT RATIO FLY", "1:2 CALL RATIO SPREAD", "BEAR STRADDLE", "BEAR STRANGLE", "SHORT BEAR STRADDLE", "SHORT BEAR STRANGLE", "COVERED PUT", "SYNTHETIC SHORT", "SYNTHETIC LONG PUT"]
                     : [
+                        "DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY",
                         "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", 
                         "BULL CALL SPREAD", "BEAR PUT SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", 
                         "CALL CONDOR", "PUT CONDOR", "DIR BULL FLY", "DIR BEAR FLY", 

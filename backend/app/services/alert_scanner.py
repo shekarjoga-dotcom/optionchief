@@ -941,53 +941,58 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                         })
 
     # Dynamic Regime-Driven Iron Butterfly (EMA + RSI + IVP)
-    if type_upper in ["REGIME_IRON_BUTTERFLY", "DYNAMIC REGIME IRON BUTTERFLY", "DYNAMIC IRON BUTTERFLY", "ALL"]:
+    if type_upper in ["REGIME_IRON_BUTTERFLY", "DYNAMIC REGIME IRON BUTTERFLY", "DYNAMIC IRON BUTTERFLY", "IRON BUTTERFLY", "ALL"]:
         regime_info = get_symbol_technical_regime(symbol, spot)
         regime = regime_info.get("regime")
-        wing = 4
         
-        center_idx = atm_idx
-        dir_tag = "NEUTRAL"
-        prefix = "[⚪ Delta-Neutral]"
-        
+        # Test candidate centers based on regime
+        candidate_centers = []
         if regime == "BULLISH_DRIFT":
-            center_idx = min(len(strikes) - 1 - wing, atm_idx + 2)
-            dir_tag = "BULLISH"
-            prefix = "[🟢 Bull-Skewed]"
+            candidate_centers.append((min(len(strikes) - 1, atm_idx + 2), "BULLISH", "[🟢 Bull-Skewed]"))
+            candidate_centers.append((min(len(strikes) - 1, atm_idx + 1), "BULLISH", "[🟢 Bull-Skewed]"))
+            candidate_centers.append((atm_idx, "NEUTRAL", "[⚪ Delta-Neutral]"))
         elif regime == "BEARISH_CORRECTIVE":
-            center_idx = max(wing, atm_idx - 2)
-            dir_tag = "BEARISH"
-            prefix = "[🔴 Bear-Skewed]"
-            
-        if regime != "EXHAUSTION_BLOCKED":
-            lp_idx = max(0, center_idx - wing)
-            lc_idx = min(len(strikes) - 1, center_idx + wing)
-            
-            l_put = get_leg(strikes[lp_idx], 'P', 'BUY')
-            s_put = get_leg(strikes[center_idx], 'P', 'SELL')
-            s_call = get_leg(strikes[center_idx], 'C', 'SELL')
-            l_call = get_leg(strikes[lc_idx], 'C', 'BUY')
-            
-            if l_put and s_put and s_call and l_call:
-                legs = [l_put, s_put, s_call, l_call]
-                metrics = project_strategy_py(legs, spot)
-                rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0 else 999.0
+            candidate_centers.append((max(0, atm_idx - 2), "BEARISH", "[🔴 Bear-Skewed]"))
+            candidate_centers.append((max(0, atm_idx - 1), "BEARISH", "[🔴 Bear-Skewed]"))
+            candidate_centers.append((atm_idx, "NEUTRAL", "[⚪ Delta-Neutral]"))
+        else:
+            candidate_centers.append((atm_idx, "NEUTRAL", "[⚪ Delta-Neutral]"))
+            if atm_idx + 1 < len(strikes):
+                candidate_centers.append((atm_idx + 1, "BULLISH", "[🟢 Bull-Skewed]"))
+            if atm_idx - 1 >= 0:
+                candidate_centers.append((atm_idx - 1, "BEARISH", "[🔴 Bear-Skewed]"))
+
+        for wing in [2, 3, 4, 5]:
+            for center_idx, dir_tag, prefix in candidate_centers:
+                lp_idx = center_idx - wing
+                lc_idx = center_idx + wing
                 
-                results.append({
-                    "name": f"{prefix} Iron Butterfly ({strikes[lp_idx]}/{strikes[center_idx]}/{strikes[lc_idx]})",
-                    "symbol": symbol,
-                    "expiry": expiry,
-                    "legs": legs,
-                    "pop": metrics["pop"],
-                    "maxProfit": metrics["maxProfit"],
-                    "maxLoss": metrics["maxLoss"],
-                    "rr_ratio": rr,
-                    "delta": metrics["delta"],
-                    "gamma": metrics["gamma"],
-                    "theta": metrics["theta"],
-                    "direction": dir_tag,
-                    "regime": regime
-                })
+                if lp_idx >= 0 and lc_idx < len(strikes):
+                    l_put = get_leg(strikes[lp_idx], 'P', 'BUY')
+                    s_put = get_leg(strikes[center_idx], 'P', 'SELL')
+                    s_call = get_leg(strikes[center_idx], 'C', 'SELL')
+                    l_call = get_leg(strikes[lc_idx], 'C', 'BUY')
+                    
+                    if l_put and s_put and s_call and l_call:
+                        legs = [l_put, s_put, s_call, l_call]
+                        metrics = project_strategy_py(legs, spot)
+                        rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0 else 999.0
+                        
+                        results.append({
+                            "name": f"{prefix} Iron Butterfly ({strikes[lp_idx]}/{strikes[center_idx]}/{strikes[lc_idx]})",
+                            "symbol": symbol,
+                            "expiry": expiry,
+                            "legs": legs,
+                            "pop": metrics["pop"],
+                            "maxProfit": metrics["maxProfit"],
+                            "maxLoss": metrics["maxLoss"],
+                            "rr_ratio": rr,
+                            "delta": metrics["delta"],
+                            "gamma": metrics["gamma"],
+                            "theta": metrics["theta"],
+                            "direction": dir_tag,
+                            "regime": regime
+                        })
 
     # Jade Lizard (Sell OTM Put + Bear Call Spread)
     if type_upper in ["JADE LIZARD", "ALL"]:
