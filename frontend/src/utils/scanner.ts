@@ -1223,7 +1223,7 @@ export function scanStrategies(
   }
 
   // 42. JADE LIZARD (Bullish to Neutral Credit Strategy with Zero Upside Risk)
-  else if (typeUpper === "JADE LIZARD") {
+  else if (typeUpper === "JADE LIZARD" || typeUpper === "JADE_LIZARD" || typeUpper.includes("JADE LIZARD")) {
     for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {
       for (let sCallOff = minDist; sCallOff <= maxDist; sCallOff += step) {
         const putIdx = atmIdx - sPutOff;
@@ -1249,7 +1249,7 @@ export function scanStrategies(
   }
 
   // 43. TWISTED JADE LIZARD (Bearish to Neutral Credit Strategy with Zero Downside Risk)
-  else if (typeUpper === "TWISTED JADE LIZARD") {
+  else if (typeUpper === "TWISTED JADE LIZARD" || typeUpper === "TWISTED_JADE_LIZARD" || typeUpper.includes("TWISTED JADE LIZARD")) {
     for (let sCallOff = minDist; sCallOff <= maxDist; sCallOff += step) {
       for (let sPutOff = minDist; sPutOff <= maxDist; sPutOff += step) {
         const callIdx = atmIdx + sCallOff;

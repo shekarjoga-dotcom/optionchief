@@ -763,14 +763,15 @@ export const ScannerPanel: React.FC = () => {
     }
   }, [symbol]);
 
-  // Automatically trigger scan when options data or expiries are ready
-  const hasAutoScannedRef = useRef(false);
+  // Automatically trigger scan whenever options, category, subCategory, family, or expiries change
   useEffect(() => {
-    if (!hasAutoScannedRef.current && selectedExpiries.length > 0) {
-      hasAutoScannedRef.current = true;
-      handleScan();
+    if (selectedExpiries.length > 0) {
+      const timer = setTimeout(() => {
+        handleScan();
+      }, 100);
+      return () => clearTimeout(timer);
     }
-  }, [options, selectedExpiries]);
+  }, [category, subCategory, selectedFamily, selectedExpiries, symbol, minWingWidth, maxWingWidth, minDist, maxDist, scanStep]);
 
   const fetchOptionsForSymbolAndExpiry = async (sym: string, exp: string) => {
     if (sym === symbol && exp === selectedExpiry && options && options.length >= 5 && spot > 0) {
