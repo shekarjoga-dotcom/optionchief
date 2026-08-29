@@ -229,14 +229,28 @@ export const LegManager: React.FC = () => {
     }
   };
 
-  const loadPresetStrategy = (presetType: 'short_iron_condor' | 'long_iron_condor' | 'jade_lizard' | 'twisted_jade_lizard' | 'call_butterfly' | 'iron_butterfly') => {
+  const loadPresetStrategy = (presetType: 'short_iron_condor' | 'long_iron_condor' | 'jade_lizard' | 'twisted_jade_lizard' | 'call_butterfly' | 'iron_butterfly' | 'protective_put' | 'protective_call') => {
     clearLegs();
     const spot = underlying?.spot || 24500;
     const roundSpot = Math.round(spot / 100) * 100;
     const defaultQty = getLotSizeForSymbol(symbol || underlying?.symbol || "");
-    const exp = selectedExpiry || new Date().toISOString().split('T')[0];
+    const exp = selectedExpiry || (expiryDates.length > 0 ? expiryDates[0] : new Date().toISOString().split('T')[0]);
 
-    if (presetType === 'short_iron_condor') {
+    if (presetType === 'protective_put') {
+      const putStrike = roundSpot - 100;
+      const row = options.find(o => o.strike === putStrike);
+      const putPrice = row?.PE?.lastPrice || 60;
+      const putIv = row?.PE?.impliedVolatility || 0.16;
+      addLeg({ strike: spot, optionType: 'F', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: spot, currentPrice: spot, iv: 0 });
+      addLeg({ strike: putStrike, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: putPrice, currentPrice: putPrice, iv: putIv });
+    } else if (presetType === 'protective_call') {
+      const callStrike = roundSpot + 100;
+      const row = options.find(o => o.strike === callStrike);
+      const callPrice = row?.CE?.lastPrice || 60;
+      const callIv = row?.CE?.impliedVolatility || 0.16;
+      addLeg({ strike: spot, optionType: 'F', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: spot, currentPrice: spot, iv: 0 });
+      addLeg({ strike: callStrike, optionType: 'C', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: callPrice, currentPrice: callPrice, iv: callIv });
+    } else if (presetType === 'short_iron_condor') {
       addLeg({ strike: roundSpot - 200, optionType: 'P', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 70, currentPrice: 70, iv: 0.16 });
       addLeg({ strike: roundSpot - 300, optionType: 'P', expiry: exp, action: 'BUY', quantity: defaultQty, entryPrice: 40, currentPrice: 40, iv: 0.16 });
       addLeg({ strike: roundSpot + 200, optionType: 'C', expiry: exp, action: 'SELL', quantity: defaultQty, entryPrice: 70, currentPrice: 70, iv: 0.16 });
@@ -288,6 +302,18 @@ export const LegManager: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-borderClr/40">
           <span className="text-[10px] text-gray-400 font-extrabold uppercase">Quick Templates:</span>
           <button
+            onClick={() => loadPresetStrategy('protective_put')}
+            className="px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-colors shadow-sm"
+          >
+            🛡️ Protective Put (Married Put)
+          </button>
+          <button
+            onClick={() => loadPresetStrategy('protective_call')}
+            className="px-2.5 py-1 rounded bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-bold transition-colors shadow-sm"
+          >
+            🛡️ Protective Call (Covered Short)
+          </button>
+          <button
             onClick={() => loadPresetStrategy('call_butterfly')}
             className="px-2.5 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-xs font-bold transition-colors shadow-sm"
           >
@@ -315,13 +341,13 @@ export const LegManager: React.FC = () => {
             onClick={() => loadPresetStrategy('jade_lizard')}
             className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold transition-colors"
           >
-            ⚡ Jade Lizard (No Upside Risk)
+            ⚡ Jade Lizard
           </button>
           <button
             onClick={() => loadPresetStrategy('twisted_jade_lizard')}
-            className="px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-colors"
+            className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold transition-colors"
           >
-            ⚡ Twisted Jade Lizard (No Downside Risk)
+            ⚡ Twisted Jade Lizard
           </button>
         </div>
 

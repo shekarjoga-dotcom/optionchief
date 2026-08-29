@@ -34,27 +34,106 @@ import {
   ChevronUp,
   ChevronDown,
   SlidersHorizontal,
-  XCircle
+  XCircle,
+  Zap
 } from 'lucide-react';
 
 
 interface SubCategoryOption {
   id: string;
   label: string;
-  icon: React.ComponentType<any>;
+  icon: any;
 }
 
-const CATEGORIES = [
-  { id: 'all', label: 'All Strategies', icon: Layers, activeClass: 'bg-white text-black border-white' },
+export const CATEGORIES = [
+  { id: 'all', label: 'All Stances', icon: Layers, activeClass: 'bg-white text-black border-white' },
   { id: 'bullish', label: 'Bullish', icon: TrendingUp, activeClass: 'bg-[#4f46e5] text-white border-[#4f46e5]' },
   { id: 'bearish', label: 'Bearish', icon: TrendingDown, activeClass: 'bg-red-600 text-white border-red-600' },
   { id: 'neutral', label: 'Neutral', icon: Scale, activeClass: 'bg-cyan-500 text-black border-cyan-500' },
   { id: 'safe_hedged', label: 'Safe Hedged (Theta Decay)', icon: ShieldCheck, activeClass: 'bg-[#f59e0b] text-black border-[#f59e0b]' }
 ] as const;
 
+export const STRATEGY_FAMILIES = [
+  { id: "ALL_FAMILIES", label: "🌟 All Families", icon: Layers, color: "text-white" },
+  { id: "QUANT_REGIME", label: "🎯 Quant & Regime", icon: Sparkles, color: "text-amber-400" },
+  { id: "PROTECTIVE_HEDGES", label: "🛡️ Protective & Synthetic", icon: ShieldCheck, color: "text-emerald-400" },
+  { id: "BUTTERFLIES_CONDORS", label: "🦋 Butterflies & Condors", icon: Compass, color: "text-cyan-400" },
+  { id: "VERTICAL_SPREADS", label: "📈 Vertical Spreads", icon: LineChart, color: "text-indigo-400" },
+  { id: "LIZARDS", label: "🦎 Lizards", icon: Zap, color: "text-purple-400" },
+  { id: "STRADDLES_STRANGLES", label: "⚡ Straddles & Strangles", icon: Activity, color: "text-rose-400" }
+] as const;
+
+export const STRATEGY_FAMILY_MAPPING: Record<string, string[]> = {
+  QUANT_REGIME: [
+    "1:3:2 REGIME RATIO FLY",
+    "DYNAMIC REGIME IRON CONDOR",
+    "DYNAMIC REGIME IRON BUTTERFLY",
+    "1:3:2 RATIO BUTTERFLY",
+    "1:3:2 CALL RATIO FLY",
+    "1:3:2 PUT RATIO FLY"
+  ],
+  PROTECTIVE_HEDGES: [
+    "PROTECTIVE PUT",
+    "PROTECTIVE CALL",
+    "COVERED CALL",
+    "COVERED PUT",
+    "SYNTHETIC LONG",
+    "SYNTHETIC SHORT",
+    "SYNTHETIC LONG CALL",
+    "SYNTHETIC LONG PUT"
+  ],
+  BUTTERFLIES_CONDORS: [
+    "SHORT IRON CONDOR",
+    "LONG IRON CONDOR",
+    "IRON CONDOR",
+    "WIDE WING IRON CONDOR",
+    "RATIO IRON CONDOR (1:2)",
+    "IRON BUTTERFLY",
+    "BULL IRON BUTTERFLY",
+    "BEAR IRON BUTTERFLY",
+    "DIR BULL FLY",
+    "DIR BEAR FLY",
+    "CALL BUTTERFLY",
+    "PUT BUTTERFLY",
+    "CALL CONDOR",
+    "PUT CONDOR",
+    "BULL CONDOR",
+    "BEAR CONDOR"
+  ],
+  VERTICAL_SPREADS: [
+    "BULL PUT SPREAD",
+    "BEAR CALL SPREAD",
+    "BULL CALL SPREAD",
+    "BEAR PUT SPREAD",
+    "1:2 PUT RATIO SPREAD",
+    "1:2 CALL RATIO SPREAD"
+  ],
+  LIZARDS: [
+    "JADE LIZARD",
+    "TWISTED JADE LIZARD"
+  ],
+  STRADDLES_STRANGLES: [
+    "LONG STRADDLE",
+    "SHORT STRADDLE",
+    "LONG STRANGLE",
+    "SHORT STRANGLE",
+    "HEDGED SHORT STRANGLE",
+    "BULL STRADDLE",
+    "BEAR STRADDLE",
+    "SHORT BULL STRADDLE",
+    "SHORT BEAR STRADDLE",
+    "BULL STRANGLE",
+    "BEAR STRANGLE",
+    "SHORT BULL STRANGLE",
+    "SHORT BEAR STRANGLE"
+  ]
+};
+
 const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   all: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "PROTECTIVE PUT", label: "🛡️ Protective Put (Married Put)", icon: ShieldCheck },
+    { id: "PROTECTIVE CALL", label: "🛡️ Protective Call (Covered Short)", icon: ShieldAlert },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (EMA+RSI+IVP)", icon: Sparkles },
     { id: "DYNAMIC REGIME IRON CONDOR", label: "🎯 Dynamic Regime Iron Condor", icon: Compass },
     { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly", icon: Sparkles },
@@ -101,6 +180,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   bullish: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "PROTECTIVE PUT", label: "🛡️ Protective Put (Married Put)", icon: ShieldCheck },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bullish Drift)", icon: Sparkles },
     { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly (Bull Skew)", icon: Sparkles },
     { id: "BULL CALL SPREAD", label: "Bull Call Spread", icon: LineChart },
@@ -120,6 +200,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   bearish: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "PROTECTIVE CALL", label: "🛡️ Protective Call (Covered Short)", icon: ShieldAlert },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bearish Corrective)", icon: Sparkles },
     { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly (Bear Skew)", icon: Sparkles },
     { id: "BEAR CALL SPREAD", label: "Bear Call Spread", icon: ShieldAlert },
@@ -160,6 +241,8 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   safe_hedged: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "PROTECTIVE PUT", label: "🛡️ Protective Put (Married Put)", icon: ShieldCheck },
+    { id: "PROTECTIVE CALL", label: "🛡️ Protective Call (Covered Short)", icon: ShieldAlert },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Dynamic Wings)", icon: Sparkles },
     { id: "DYNAMIC REGIME IRON CONDOR", label: "🎯 Dynamic Regime Iron Condor", icon: Compass },
     { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly", icon: Sparkles },
@@ -266,8 +349,28 @@ export const ScannerPanel: React.FC = () => {
   // Category & Sub-category
   const [category, setCategory] = useState<'all' | 'bullish' | 'bearish' | 'neutral' | 'safe_hedged'>('safe_hedged');
   const [subCategory, setSubCategory] = useState<string>("ALL");
+  const [selectedFamily, setSelectedFamily] = useState<string>("ALL_FAMILIES");
+  const [strategySearch, setStrategySearch] = useState<string>("");
   const [scannedResults, setScannedResults] = useState<ScannedStrategy[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+
+  const currentSubCategories = useMemo(() => {
+    const list = SUB_CATEGORIES_MAP[category] || [];
+    return list.filter(sub => {
+      if (sub.id === 'ALL') return true;
+      // 1. Family filter
+      if (selectedFamily !== 'ALL_FAMILIES') {
+        const familyStrategies = STRATEGY_FAMILY_MAPPING[selectedFamily] || [];
+        if (!familyStrategies.includes(sub.id)) return false;
+      }
+      // 2. Search query filter
+      if (strategySearch.trim()) {
+        const q = strategySearch.toLowerCase();
+        return sub.label.toLowerCase().includes(q) || sub.id.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [category, selectedFamily, strategySearch]);
 
   // Trade execution modal state
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
@@ -705,16 +808,17 @@ export const ScannerPanel: React.FC = () => {
           )
         );
 
-        const typesToScan = subCategory === "ALL"
+        let typesToScan = subCategory === "ALL"
           ? (category === "safe_hedged"
-              ? ["DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
+              ? ["PROTECTIVE PUT", "PROTECTIVE CALL", "DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
               : category === "neutral"
-                ? ["DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE"]
+                ? ["DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
                 : category === "bullish"
-                  ? ["DYNAMIC REGIME IRON BUTTERFLY", "BULL CALL SPREAD", "BULL PUT SPREAD", "DIR BULL FLY", "BULL CONDOR", "BULL IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:2 PUT RATIO SPREAD", "BULL STRADDLE", "BULL STRANGLE", "SHORT BULL STRADDLE", "SHORT BULL STRANGLE", "COVERED CALL", "SYNTHETIC LONG", "SYNTHETIC LONG CALL"]
+                  ? ["PROTECTIVE PUT", "DYNAMIC REGIME IRON BUTTERFLY", "BULL CALL SPREAD", "BULL PUT SPREAD", "DIR BULL FLY", "BULL CONDOR", "BULL IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:2 PUT RATIO SPREAD", "BULL STRADDLE", "BULL STRANGLE", "SHORT BULL STRADDLE", "SHORT BULL STRANGLE", "COVERED CALL", "SYNTHETIC LONG", "SYNTHETIC LONG CALL"]
                   : category === "bearish"
-                    ? ["DYNAMIC REGIME IRON BUTTERFLY", "BEAR CALL SPREAD", "BEAR PUT SPREAD", "DIR BEAR FLY", "BEAR CONDOR", "BEAR IRON BUTTERFLY", "1:3:2 PUT RATIO FLY", "1:2 CALL RATIO SPREAD", "BEAR STRADDLE", "BEAR STRANGLE", "SHORT BEAR STRADDLE", "SHORT BEAR STRANGLE", "COVERED PUT", "SYNTHETIC SHORT", "SYNTHETIC LONG PUT"]
+                    ? ["PROTECTIVE CALL", "DYNAMIC REGIME IRON BUTTERFLY", "BEAR CALL SPREAD", "BEAR PUT SPREAD", "DIR BEAR FLY", "BEAR CONDOR", "BEAR IRON BUTTERFLY", "1:3:2 PUT RATIO FLY", "1:2 CALL RATIO SPREAD", "BEAR STRADDLE", "BEAR STRANGLE", "SHORT BEAR STRADDLE", "SHORT BEAR STRANGLE", "COVERED PUT", "SYNTHETIC SHORT", "SYNTHETIC LONG PUT"]
                     : [
+                        "PROTECTIVE PUT", "PROTECTIVE CALL",
                         "DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY",
                         "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", 
                         "BULL CALL SPREAD", "BEAR PUT SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", 
@@ -729,6 +833,11 @@ export const ScannerPanel: React.FC = () => {
                         "SYNTHETIC LONG", "SYNTHETIC SHORT", "SYNTHETIC LONG CALL", "SYNTHETIC LONG PUT"
                       ])
           : [subCategory];
+
+        if (subCategory === "ALL" && selectedFamily !== "ALL_FAMILIES") {
+          const allowedFamilyStrategies = STRATEGY_FAMILY_MAPPING[selectedFamily] || [];
+          typesToScan = typesToScan.filter(t => allowedFamilyStrategies.includes(t));
+        }
 
         let allScans: ScannedStrategy[] = [];
 
@@ -887,34 +996,109 @@ export const ScannerPanel: React.FC = () => {
         })}
       </div>
 
-      {/* Sub-categories selector */}
-      <div className="flex flex-wrap gap-2 items-center">
-        {SUB_CATEGORIES_MAP[category]?.map((sub) => {
-          const SubIcon = sub.icon;
-          const isActive = subCategory === sub.id;
-          
-          let activeSubClass = "bg-accentBrand/20 border-accentBrand text-white";
-          if (category === 'bullish') activeSubClass = "bg-[#4f46e5]/20 border-[#4f46e5]/60 text-indigo-300";
-          else if (category === 'bearish') activeSubClass = "bg-red-600/20 border-red-600/60 text-red-300";
-          else if (category === 'neutral') activeSubClass = "bg-cyan-500/20 border-cyan-500/60 text-cyan-300";
-          else if (category === 'safe_hedged') activeSubClass = "bg-[#f59e0b]/20 border-[#f59e0b]/60 text-amber-300";
-          else if (category === 'all') activeSubClass = "bg-white/10 border-white/40 text-white";
+      {/* Strategy Family Group Filter & Quick Search Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-cardBg border border-borderClr/40 shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider mr-1">
+            Group:
+          </span>
+          {STRATEGY_FAMILIES.map((fam) => {
+            const FamIcon = fam.icon;
+            const isFamActive = selectedFamily === fam.id;
+            return (
+              <button
+                key={fam.id}
+                onClick={() => {
+                  setSelectedFamily(fam.id);
+                  setSubCategory("ALL");
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                  isFamActive
+                    ? "bg-accentBrand/20 border-accentBrand text-white shadow-sm"
+                    : "bg-gray-950/80 border-borderClr/40 text-gray-400 hover:text-white hover:border-gray-500"
+                }`}
+              >
+                <FamIcon className={`w-3.5 h-3.5 ${isFamActive ? fam.color : "opacity-70"}`} />
+                <span>{fam.label}</span>
+              </button>
+            );
+          })}
+        </div>
 
-          return (
+        {/* Search input and reset */}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search strategy..."
+              value={strategySearch}
+              onChange={(e) => setStrategySearch(e.target.value)}
+              className="bg-gray-950 border border-borderClr/60 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accentBrand w-44"
+            />
+            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2 top-2.5" />
+          </div>
+          {(strategySearch || selectedFamily !== "ALL_FAMILIES") && (
             <button
-              key={sub.id}
-              onClick={() => setSubCategory(sub.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all flex items-center gap-1.5 ${
-                isActive
-                  ? activeSubClass
-                  : "bg-gray-950 border-borderClr/30 text-gray-500 hover:text-white"
-              }`}
+              onClick={() => {
+                setSelectedFamily("ALL_FAMILIES");
+                setStrategySearch("");
+              }}
+              className="text-[10px] text-gray-400 hover:text-accentCyan underline px-1"
             >
-              {sub.id !== 'ALL' && <SubIcon className="w-3.5 h-3.5 opacity-70" />}
-              <span>{sub.label}</span>
+              Reset
             </button>
-          );
-        })}
+          )}
+        </div>
+      </div>
+
+      {/* Sub-categories selector list (Clean & Tidy Container) */}
+      <div className="glass-panel rounded-xl p-3.5 border border-borderClr/30 flex flex-col gap-2">
+        <div className="flex items-center justify-between text-[11px] text-gray-400 font-semibold border-b border-borderClr/20 pb-2">
+          <span>
+            Strategies in <strong className="text-white capitalize">{category.replace('_', ' ')}</strong> 
+            {selectedFamily !== "ALL_FAMILIES" && (
+              <span className="text-accentCyan font-bold"> • {STRATEGY_FAMILIES.find(f => f.id === selectedFamily)?.label}</span>
+            )}:
+          </span>
+          <span className="text-[10px] text-gray-500">
+            {currentSubCategories.length} {currentSubCategories.length === 1 ? "strategy" : "strategies"} available
+          </span>
+        </div>
+
+        {currentSubCategories.length === 0 ? (
+          <div className="text-center py-4 text-xs text-gray-500">
+            No strategies match your active group / search filter.
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2 items-center max-h-[160px] overflow-y-auto pr-1">
+            {currentSubCategories.map((sub) => {
+              const SubIcon = sub.icon;
+              const isActive = subCategory === sub.id;
+              
+              let activeSubClass = "bg-accentBrand/20 border-accentBrand text-white shadow-sm";
+              if (category === 'bullish') activeSubClass = "bg-[#4f46e5]/25 border-[#4f46e5] text-indigo-200 shadow-sm";
+              else if (category === 'bearish') activeSubClass = "bg-red-600/25 border-red-600 text-red-200 shadow-sm";
+              else if (category === 'neutral') activeSubClass = "bg-cyan-500/25 border-cyan-500 text-cyan-200 shadow-sm";
+              else if (category === 'safe_hedged') activeSubClass = "bg-[#f59e0b]/25 border-[#f59e0b] text-amber-200 shadow-sm";
+              else if (category === 'all') activeSubClass = "bg-white/20 border-white text-white shadow-sm";
+
+              return (
+                <button
+                  key={sub.id}
+                  onClick={() => setSubCategory(sub.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                    isActive
+                      ? activeSubClass
+                      : "bg-gray-950 border-borderClr/30 text-gray-400 hover:text-white hover:border-gray-600"
+                  }`}
+                >
+                  {sub.id !== 'ALL' && <SubIcon className="w-3.5 h-3.5 opacity-75" />}
+                  <span>{sub.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Expiry Selector */}

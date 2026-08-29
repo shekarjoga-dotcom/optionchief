@@ -1058,9 +1058,9 @@ export function scanStrategies(
     }
   }
 
-  // 38. SYNTHETIC LONG CALL
-  else if (typeUpper === "SYNTHETIC LONG CALL") {
-    for (let pOff = 0; pOff <= Math.min(4, maxDist); pOff += step) {
+  // 38. PROTECTIVE PUT (Married Put / Synthetic Long Call)
+  else if (typeUpper === "PROTECTIVE PUT" || typeUpper === "SYNTHETIC LONG CALL" || typeUpper === "MARRIED PUT") {
+    for (let pOff = 0; pOff <= Math.min(6, maxDist); pOff += step) {
       const putIdx = atmIdx - pOff;
       if (putIdx >= 0) {
         const putStrike = strikesList[putIdx];
@@ -1078,9 +1078,9 @@ export function scanStrategies(
             iv: 0
           };
           const scanRes = buildScanResult(
-            `Synthetic Long Call (${putStrike} Put)`,
+            `🛡️ Protective Put (${putStrike} PE / Married Put)`,
             [lFuture, lPut],
-            `Long Underlying Stock/Future at ${spot.toFixed(1)} & Buy Put at ${putStrike} to protect the downside, mimicking a Long Call.`
+            `Long Underlying Stock/Future at ${spot.toFixed(1)} & Buy ${putStrike} Put hedge to protect downside risk while keeping unlimited upside.`
           );
           if (scanRes) results.push(scanRes);
         }
@@ -1088,9 +1088,9 @@ export function scanStrategies(
     }
   }
 
-  // 39. SYNTHETIC LONG PUT
-  else if (typeUpper === "SYNTHETIC LONG PUT") {
-    for (let cOff = 0; cOff <= Math.min(4, maxDist); cOff += step) {
+  // 39. PROTECTIVE CALL (Covered Short / Synthetic Long Put)
+  else if (typeUpper === "PROTECTIVE CALL" || typeUpper === "SYNTHETIC LONG PUT" || typeUpper === "COVERED SHORT") {
+    for (let cOff = 0; cOff <= Math.min(6, maxDist); cOff += step) {
       const callIdx = atmIdx + cOff;
       if (callIdx < strikesList.length) {
         const callStrike = strikesList[callIdx];
@@ -1108,9 +1108,9 @@ export function scanStrategies(
             iv: 0
           };
           const scanRes = buildScanResult(
-            `Synthetic Long Put (${callStrike} Call)`,
+            `🛡️ Protective Call (${callStrike} CE / Covered Short)`,
             [sFuture, lCall],
-            `Short Underlying Stock/Future at ${spot.toFixed(1)} & Buy Call at ${callStrike} to protect the upside, mimicking a Long Put.`
+            `Short Underlying Stock/Future at ${spot.toFixed(1)} & Buy ${callStrike} Call hedge to cap upside gap risk while profiting from downward moves.`
           );
           if (scanRes) results.push(scanRes);
         }

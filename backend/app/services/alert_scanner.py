@@ -1054,7 +1054,7 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                             "theta": metrics["theta"]
                         })
                     
-    if type_upper in ["PROTECTIVE PUT", "ALL"]:
+    if type_upper in ["PROTECTIVE PUT", "MARRIED PUT", "ALL"]:
         for offset in range(0, 8):
             put_idx = atm_idx - offset
             if put_idx >= 0:
@@ -1076,7 +1076,7 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                         rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxProfit"], (int, float)) else 999.0
                         
                     results.append({
-                        "name": f"Protective Put ({strikes[put_idx]} PE)",
+                        "name": f"🛡️ Protective Put ({strikes[put_idx]} PE)",
                         "symbol": "",
                         "expiry": expiry,
                         "legs": legs,
@@ -1086,7 +1086,44 @@ def scan_strategies_py(strategy_type: str, options: list, spot: float, expiry: s
                         "rr_ratio": rr,
                         "delta": metrics["delta"],
                         "gamma": metrics["gamma"],
-                        "theta": metrics["theta"]
+                        "theta": metrics["theta"],
+                        "direction": "BULLISH"
+                    })
+
+    if type_upper in ["PROTECTIVE CALL", "COVERED SHORT", "ALL"]:
+        for offset in range(0, 8):
+            call_idx = atm_idx + offset
+            if call_idx < len(strikes):
+                l_call = get_leg(strikes[call_idx], 'C', 'BUY')
+                if l_call:
+                    s_future = {
+                        "strike": spot,
+                        "optionType": 'F',
+                        "expiry": expiry,
+                        "action": 'SELL',
+                        "quantity": 1.0,
+                        "entryPrice": spot,
+                        "iv": 0.0
+                    }
+                    legs = [s_future, l_call]
+                    metrics = project_strategy_py(legs, spot)
+                    rr = 0.0
+                    if isinstance(metrics["maxLoss"], (int, float)) and metrics["maxLoss"] != 0:
+                        rr = abs(metrics["maxProfit"]) / abs(metrics["maxLoss"]) if isinstance(metrics["maxProfit"], (int, float)) else 999.0
+                        
+                    results.append({
+                        "name": f"🛡️ Protective Call ({strikes[call_idx]} CE)",
+                        "symbol": "",
+                        "expiry": expiry,
+                        "legs": legs,
+                        "pop": metrics["pop"],
+                        "maxProfit": metrics["maxProfit"],
+                        "maxLoss": metrics["maxLoss"],
+                        "rr_ratio": rr,
+                        "delta": metrics["delta"],
+                        "gamma": metrics["gamma"],
+                        "theta": metrics["theta"],
+                        "direction": "BEARISH"
                     })
 
     if type_upper in ["ZERO COST COLLAR", "ALL"]:

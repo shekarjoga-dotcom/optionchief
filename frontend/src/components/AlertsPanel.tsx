@@ -651,33 +651,60 @@ export const AlertsPanel: React.FC = () => {
                 onChange={(e) => setAlertStrategyType(e.target.value)}
                 className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-amber-400 outline-none"
               >
-                <option value="ALL">All Strategies</option>
-                <option value="1:3:2 REGIME RATIO FLY">🎯 1:3:2 Dynamic Regime Ratio Fly (EMA + RSI + IVP)</option>
-                <option value="DYNAMIC REGIME IRON CONDOR">🎯 Dynamic Regime Iron Condor (EMA + RSI + IVP)</option>
-                <option value="DYNAMIC REGIME IRON BUTTERFLY">🎯 Dynamic Regime Iron Butterfly (EMA + RSI + IVP)</option>
-                <option value="CALL BUTTERFLY">Long Call Butterfly (1:2:1)</option>
-                <option value="PUT BUTTERFLY">Long Put Butterfly (1:2:1)</option>
-                <option value="IRON BUTTERFLY">Iron Butterfly</option>
-                <option value="1:3:2 RATIO BUTTERFLY">1:3:2 Ratio Butterfly (All)</option>
-                <option value="1:3:2 CALL RATIO FLY">1:3:2 Call Ratio Fly</option>
-                <option value="1:3:2 PUT RATIO FLY">1:3:2 Put Ratio Fly</option>
-                <option value="JADE LIZARD">Jade Lizard (No Upside Risk)</option>
-                <option value="TWISTED JADE LIZARD">Twisted Jade Lizard (No Downside Risk)</option>
-                <option value="SHORT IRON CONDOR">Short Iron Condor (Credit)</option>
-                <option value="LONG IRON CONDOR">Long Iron Condor (Breakout)</option>
-                <option value="IRON CONDOR">Iron Condor</option>
-                <option value="SHORT STRADDLE">Short Straddle</option>
-                <option value="SHORT STRANGLE">Short Strangle</option>
-                <option value="RATIO IRON CONDOR (1:2)">Ratio Iron Condor (1:2)</option>
-                <option value="IRON BUTTERFLY">Iron Butterfly</option>
-                <option value="1:2 PUT RATIO SPREAD">1:2 Put Ratio Spread</option>
-                <option value="1:2 CALL RATIO SPREAD">1:2 Call Ratio Spread</option>
-                <option value="HEDGED SHORT STRANGLE">Hedged Short Strangle</option>
-                <option value="COVERED CALL">Covered Call</option>
-                <option value="COVERED PUT">Covered Put</option>
-                <option value="PROTECTIVE PUT">Protective Put (Married Put)</option>
-                <option value="ZERO COST COLLAR">Zero-Cost Collar</option>
-                <option value="PUT SPREAD COLLAR">Put Spread Collar</option>
+                <option value="ALL">🌟 All Strategies</option>
+                
+                <optgroup label="🎯 Quant & Dynamic Regime">
+                  <option value="1:3:2 REGIME RATIO FLY">🎯 1:3:2 Dynamic Regime Ratio Fly (EMA + RSI + IVP)</option>
+                  <option value="DYNAMIC REGIME IRON CONDOR">🎯 Dynamic Regime Iron Condor (EMA + RSI + IVP)</option>
+                  <option value="DYNAMIC REGIME IRON BUTTERFLY">🎯 Dynamic Regime Iron Butterfly (EMA + RSI + IVP)</option>
+                  <option value="1:3:2 RATIO BUTTERFLY">1:3:2 Ratio Butterfly (All)</option>
+                  <option value="1:3:2 CALL RATIO FLY">1:3:2 Call Ratio Fly</option>
+                  <option value="1:3:2 PUT RATIO FLY">1:3:2 Put Ratio Fly</option>
+                </optgroup>
+
+                <optgroup label="🛡️ Protective Hedges & Collars">
+                  <option value="PROTECTIVE PUT">🛡️ Protective Put (Married Put)</option>
+                  <option value="PROTECTIVE CALL">🛡️ Protective Call (Covered Short)</option>
+                  <option value="ZERO COST COLLAR">🛡️ Zero-Cost Collar</option>
+                  <option value="PUT SPREAD COLLAR">🛡️ Put Spread Collar</option>
+                  <option value="COVERED CALL">Covered Call</option>
+                  <option value="COVERED PUT">Covered Put</option>
+                </optgroup>
+
+                <optgroup label="🦋 Butterflies & Condors">
+                  <option value="SHORT IRON CONDOR">Short Iron Condor (Credit)</option>
+                  <option value="LONG IRON CONDOR">Long Iron Condor (Breakout)</option>
+                  <option value="IRON CONDOR">Iron Condor</option>
+                  <option value="WIDE WING IRON CONDOR">Wide Wing Iron Condor</option>
+                  <option value="RATIO IRON CONDOR (1:2)">Ratio Iron Condor (1:2)</option>
+                  <option value="IRON BUTTERFLY">Iron Butterfly</option>
+                  <option value="CALL BUTTERFLY">Long Call Butterfly (1:2:1)</option>
+                  <option value="PUT BUTTERFLY">Long Put Butterfly (1:2:1)</option>
+                  <option value="CALL CONDOR">Call Condor</option>
+                  <option value="PUT CONDOR">Put Condor</option>
+                </optgroup>
+
+                <optgroup label="📈 Vertical Spreads">
+                  <option value="BULL PUT SPREAD">Bull Put Spread (Credit)</option>
+                  <option value="BEAR CALL SPREAD">Bear Call Spread (Credit)</option>
+                  <option value="BULL CALL SPREAD">Bull Call Spread (Debit)</option>
+                  <option value="BEAR PUT SPREAD">Bear Put Spread (Debit)</option>
+                  <option value="1:2 PUT RATIO SPREAD">1:2 Put Ratio Spread</option>
+                  <option value="1:2 CALL RATIO SPREAD">1:2 Call Ratio Spread</option>
+                </optgroup>
+
+                <optgroup label="🦎 Lizards">
+                  <option value="JADE LIZARD">Jade Lizard (No Upside Risk)</option>
+                  <option value="TWISTED JADE LIZARD">Twisted Jade Lizard (No Downside Risk)</option>
+                </optgroup>
+
+                <optgroup label="⚡ Straddles & Strangles">
+                  <option value="LONG STRADDLE">Long Straddle</option>
+                  <option value="SHORT STRADDLE">Short Straddle</option>
+                  <option value="LONG STRANGLE">Long Strangle</option>
+                  <option value="SHORT STRANGLE">Short Strangle</option>
+                  <option value="HEDGED SHORT STRANGLE">Hedged Short Strangle</option>
+                </optgroup>
               </select>
             </div>
 
