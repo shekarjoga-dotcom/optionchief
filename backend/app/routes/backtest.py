@@ -579,16 +579,22 @@ def run_in_memory_intraday_backtest(
             })
             
         max_profit, max_loss = compute_strategy_max_profit_loss(legs_data, entry_spot, lot_size)
-        active_portfolio_tp = None
-        active_portfolio_sl = None
+        active_portfolio_tp = req.portfolioTakeProfit
+        active_portfolio_sl = req.portfolioStopLoss
 
         if take_profit_pct is not None and max_profit != float('inf'):
-            active_portfolio_tp = max_profit * (take_profit_pct / 100.0)
+            pct_tp = max_profit * (take_profit_pct / 100.0)
+            if active_portfolio_tp is None or pct_tp < active_portfolio_tp:
+                active_portfolio_tp = pct_tp
         if stop_loss_pct is not None:
             if stop_loss_type == "pct_max_profit" and max_profit != float('inf'):
-                active_portfolio_sl = max_profit * (stop_loss_pct / 100.0)
+                pct_sl = max_profit * (stop_loss_pct / 100.0)
             elif max_loss != float('inf'):
-                active_portfolio_sl = max_loss * (stop_loss_pct / 100.0)
+                pct_sl = max_loss * (stop_loss_pct / 100.0)
+            else:
+                pct_sl = None
+            if pct_sl is not None and (active_portfolio_sl is None or pct_sl < active_portfolio_sl):
+                active_portfolio_sl = pct_sl
 
         trade_exited = False
         final_trade_pnl = 0.0

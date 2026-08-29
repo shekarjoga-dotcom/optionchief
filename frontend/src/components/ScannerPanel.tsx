@@ -1101,6 +1101,61 @@ export const ScannerPanel: React.FC = () => {
         )}
       </div>
 
+      {/* Max Loss Restriction & Risk Guard Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-r from-red-950/30 via-gray-950/60 to-gray-950/30 border border-red-500/30 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-xs text-red-400 font-extrabold uppercase tracking-wider">
+            <ShieldAlert className="w-4 h-4 text-red-400" />
+            <span>Max Loss Cap (₹):</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { label: "🌟 Any Risk", val: "" },
+              { label: "≤ ₹5,000", val: "5000" },
+              { label: "≤ ₹10,000", val: "10000" },
+              { label: "≤ ₹15,000", val: "15000" },
+              { label: "≤ ₹20,000", val: "20000" },
+              { label: "≤ ₹25,000", val: "25000" }
+            ].map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => setLossMax(opt.val)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                  lossMax === opt.val
+                    ? "bg-red-600 text-white border-red-500 shadow-sm"
+                    : "bg-gray-950 border-borderClr/40 text-gray-400 hover:text-white hover:border-gray-500"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom Input */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-400 font-bold uppercase">Custom Limit:</span>
+          <div className="relative">
+            <span className="absolute left-2 top-1 text-xs text-gray-500 font-mono">₹</span>
+            <input
+              type="number"
+              placeholder="e.g. 10000"
+              value={lossMax}
+              onChange={(e) => setLossMax(e.target.value)}
+              className="bg-gray-950 border border-borderClr/60 rounded-lg pl-5 pr-2 py-1 text-xs text-white placeholder-gray-600 w-28 focus:outline-none focus:border-red-400 font-mono"
+            />
+          </div>
+          {lossMax && (
+            <button
+              onClick={() => setLossMax('')}
+              className="text-[10px] text-gray-400 hover:text-red-400 underline px-1"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Expiry Selector */}
       <div className="glass-panel rounded-xl p-4 border border-borderClr/30 flex flex-col gap-4">
         <ExpirySelector />

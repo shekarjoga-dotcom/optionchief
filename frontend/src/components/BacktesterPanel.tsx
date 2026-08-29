@@ -207,6 +207,13 @@ const STRATEGY_PRESETS: Record<string, StrategyPreset> = {
       { action: "BUY", optionType: "P", strikeOffset: -100, quantity: 1 }
     ]
   },
+  "protective_call": {
+    name: "Protective Call (Covered Short)",
+    legs: [
+      { action: "SELL", optionType: "F", strikeOffset: 0, quantity: 1 },
+      { action: "BUY", optionType: "C", strikeOffset: 100, quantity: 1 }
+    ]
+  },
   "zero_cost_collar": {
     name: "Zero-Cost Collar",
     legs: [
@@ -227,6 +234,8 @@ const STRATEGY_PRESETS: Record<string, StrategyPreset> = {
 };
 
 const OPTIMIZATION_PROMPTS: Record<string, string> = {
+  "protective_put": "Optimize Protective Put by sweeping Stop Loss / Max Loss Caps (₹5k to ₹20k) and Entry Days. Goal: Minimize Max Drawdown while keeping upside returns.",
+  "protective_call": "Optimize Protective Call by sweeping Stop Loss / Max Loss Caps (₹5k to ₹20k) and Entry Days. Goal: Minimize Max Drawdown.",
   "straddle_short": "Optimize the Short Straddle by sweeping Stop Loss from 10% to 50% (increments of 10%) and Entry Times from 09:20 to 10:15. Goal: Maximize win rate and minimize Max Drawdown.",
   "short_iron_condor": "Optimize the Short Iron Condor (Credit) by sweeping wing widths (100 to 400 points) and entry days of the week. Goal: Maximize Profit Factor while keeping drawdowns low.",
   "long_iron_condor": "Optimize the Long Iron Condor (Breakout Debit) by sweeping inner/outer strike offsets and entry days. Goal: Maximize Net Return on breakout moves.",
@@ -248,7 +257,6 @@ const OPTIMIZATION_PROMPTS: Record<string, string> = {
   "synthetic_short": "Optimize the Synthetic Short by sweeping entry times and underlying target offsets. Goal: Maximize Sharpe Ratio.",
   "synthetic_long_call": "Optimize the Synthetic Long Call by sweeping Put strike offsets and Stop Loss levels. Goal: Maximize Profit Factor.",
   "synthetic_long_put": "Optimize the Synthetic Long Put by sweeping Call strike offsets and Stop Loss levels. Goal: Maximize Profit Factor.",
-  "protective_put": "Optimize the Protective Put by sweeping Put strike offsets (-50 to -200) and Stop Loss levels. Goal: Minimize drawdown.",
   "zero_cost_collar": "Optimize the Zero-Cost Collar by sweeping Call/Put strike offsets and Entry Days. Goal: Maximize win rate.",
   "put_spread_collar": "Optimize the Put Spread Collar by sweeping wing widths and Exit days. Goal: Maximize Net Return."
 };
@@ -1468,25 +1476,52 @@ export const BacktesterPanel: React.FC = () => {
 
             <div className="border-t border-borderClr/20 my-1 pt-2.5 flex flex-col gap-2.5">
               <span className="text-[10px] text-amber-400 font-extrabold uppercase tracking-widest block">Portfolio Protection</span>
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5">
                 <div className="flex flex-col gap-1">
-                  <span className="text-[9px] text-gray-500 font-bold uppercase">Portfolio SL</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-gray-400 font-bold uppercase">Max Loss Restriction / Portfolio SL (₹)</span>
+                    <span className="text-[8px] text-amber-400 font-mono">Hard exit if loss hits ₹ limit</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-0.5">
+                    {[
+                      { label: "No SL", val: "" },
+                      { label: "₹5,000", val: "5000" },
+                      { label: "₹10,000", val: "10000" },
+                      { label: "₹15,000", val: "15000" },
+                      { label: "₹20,000", val: "20000" },
+                      { label: "₹25,000", val: "25000" }
+                    ].map((opt) => (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        onClick={() => setPortfolioStopLoss(opt.val)}
+                        className={`px-2 py-0.5 rounded text-[9.5px] font-bold border transition-all ${
+                          portfolioStopLoss === opt.val
+                            ? "bg-red-600 text-white border-red-500 shadow-sm"
+                            : "bg-gray-900 border-borderClr/40 text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="number"
-                    placeholder="None"
+                    placeholder="e.g. 10000"
                     value={portfolioStopLoss}
                     onChange={(e) => setPortfolioStopLoss(e.target.value)}
-                    className="bg-gray-900 border border-borderClr rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-amber-400"
+                    className="bg-gray-900 border border-borderClr rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-amber-400 font-mono"
                   />
                 </div>
+
                 <div className="flex flex-col gap-1">
-                  <span className="text-[9px] text-gray-500 font-bold uppercase">Portfolio TP</span>
+                  <span className="text-[9px] text-gray-500 font-bold uppercase">Portfolio Target / TP (₹)</span>
                   <input
                     type="number"
-                    placeholder="None"
+                    placeholder="e.g. 25000 (Optional)"
                     value={portfolioTakeProfit}
                     onChange={(e) => setPortfolioTakeProfit(e.target.value)}
-                    className="bg-gray-900 border border-borderClr rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-amber-400"
+                    className="bg-gray-900 border border-borderClr rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-amber-400 font-mono"
                   />
                 </div>
               </div>
