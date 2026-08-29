@@ -689,9 +689,9 @@ export const ScannerPanel: React.FC = () => {
     }
 
     if (selectedExpiry && expiryDates.includes(selectedExpiry)) {
-      setSelectedExpiries([selectedExpiry]);
+      setSelectedExpiries(prev => (prev.length === 1 && prev[0] === selectedExpiry ? prev : [selectedExpiry]));
     } else if (expiryDates.length > 0 && selectedExpiries.length === 0) {
-      setSelectedExpiries([expiryDates[0]]);
+      setSelectedExpiries(prev => (prev.length === 1 && prev[0] === expiryDates[0] ? prev : [expiryDates[0]]));
     }
   }, [symbol, selectedExpiry, expiryDates]);
 
@@ -763,15 +763,17 @@ export const ScannerPanel: React.FC = () => {
     }
   }, [symbol]);
 
+  const selectedExpiriesKey = useMemo(() => selectedExpiries.join(','), [selectedExpiries]);
+
   // Automatically trigger scan whenever options, category, subCategory, family, or expiries change
   useEffect(() => {
     if (selectedExpiries.length > 0) {
       const timer = setTimeout(() => {
         handleScan();
-      }, 100);
+      }, 150);
       return () => clearTimeout(timer);
     }
-  }, [category, subCategory, selectedFamily, selectedExpiries, symbol, minWingWidth, maxWingWidth, minDist, maxDist, scanStep]);
+  }, [category, subCategory, selectedFamily, selectedExpiriesKey, symbol, minWingWidth, maxWingWidth, minDist, maxDist, scanStep]);
 
   const fetchOptionsForSymbolAndExpiry = async (sym: string, exp: string) => {
     if (sym === symbol && exp === selectedExpiry && options && options.length >= 5 && spot > 0) {
@@ -794,7 +796,6 @@ export const ScannerPanel: React.FC = () => {
       return;
     }
     setIsScanning(true);
-    setSelectedStrategy(null); // Clear active strategy representation on recalculating scans
     setSortField(null); // Reset sorting to default
     setSortDirection('desc');
 
