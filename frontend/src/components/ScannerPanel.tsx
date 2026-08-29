@@ -180,6 +180,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   bullish: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "JADE LIZARD", label: "🦎 Jade Lizard (No Upside Risk)", icon: Sparkles },
     { id: "PROTECTIVE PUT", label: "🛡️ Protective Put (Married Put)", icon: ShieldCheck },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bullish Drift)", icon: Sparkles },
     { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly (Bull Skew)", icon: Sparkles },
@@ -200,6 +201,7 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   bearish: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "TWISTED JADE LIZARD", label: "🦎 Twisted Jade Lizard (No Downside Risk)", icon: Sparkles },
     { id: "PROTECTIVE CALL", label: "🛡️ Protective Call (Covered Short)", icon: ShieldAlert },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Bearish Corrective)", icon: Sparkles },
     { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly (Bear Skew)", icon: Sparkles },
@@ -220,6 +222,8 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   neutral: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "JADE LIZARD", label: "🦎 Jade Lizard (No Upside Risk)", icon: Sparkles },
+    { id: "TWISTED JADE LIZARD", label: "🦎 Twisted Jade Lizard (No Downside Risk)", icon: Sparkles },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Neutral Range)", icon: Sparkles },
     { id: "DYNAMIC REGIME IRON CONDOR", label: "🎯 Dynamic Regime Iron Condor", icon: Compass },
     { id: "DYNAMIC REGIME IRON BUTTERFLY", label: "🎯 Dynamic Regime Iron Butterfly", icon: Sparkles },
@@ -241,6 +245,8 @@ const SUB_CATEGORIES_MAP: Record<string, SubCategoryOption[]> = {
   ],
   safe_hedged: [
     { id: "ALL", label: "All in Category", icon: Layers },
+    { id: "JADE LIZARD", label: "🦎 Jade Lizard (No Upside Risk)", icon: Sparkles },
+    { id: "TWISTED JADE LIZARD", label: "🦎 Twisted Jade Lizard (No Downside Risk)", icon: Sparkles },
     { id: "PROTECTIVE PUT", label: "🛡️ Protective Put (Married Put)", icon: ShieldCheck },
     { id: "PROTECTIVE CALL", label: "🛡️ Protective Call (Covered Short)", icon: ShieldAlert },
     { id: "1:3:2 REGIME RATIO FLY", label: "🎯 1:3:2 Regime Ratio Fly (Dynamic Wings)", icon: Sparkles },
@@ -810,14 +816,15 @@ export const ScannerPanel: React.FC = () => {
 
         let typesToScan = subCategory === "ALL"
           ? (category === "safe_hedged"
-              ? ["PROTECTIVE PUT", "PROTECTIVE CALL", "DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
+              ? ["JADE LIZARD", "TWISTED JADE LIZARD", "PROTECTIVE PUT", "PROTECTIVE CALL", "DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "WIDE WING IRON CONDOR", "1:2 PUT RATIO SPREAD", "1:2 CALL RATIO SPREAD", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
               : category === "neutral"
-                ? ["DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
+                ? ["JADE LIZARD", "TWISTED JADE LIZARD", "DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY", "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:3:2 PUT RATIO FLY", "CALL BUTTERFLY", "PUT BUTTERFLY", "CALL CONDOR", "PUT CONDOR", "WIDE WING IRON CONDOR", "SHORT STRADDLE", "SHORT STRANGLE", "HEDGED SHORT STRANGLE", "COVERED CALL", "COVERED PUT"]
                 : category === "bullish"
-                  ? ["PROTECTIVE PUT", "DYNAMIC REGIME IRON BUTTERFLY", "BULL CALL SPREAD", "BULL PUT SPREAD", "DIR BULL FLY", "BULL CONDOR", "BULL IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:2 PUT RATIO SPREAD", "BULL STRADDLE", "BULL STRANGLE", "SHORT BULL STRADDLE", "SHORT BULL STRANGLE", "COVERED CALL", "SYNTHETIC LONG", "SYNTHETIC LONG CALL"]
+                  ? ["JADE LIZARD", "PROTECTIVE PUT", "DYNAMIC REGIME IRON BUTTERFLY", "BULL CALL SPREAD", "BULL PUT SPREAD", "DIR BULL FLY", "BULL CONDOR", "BULL IRON BUTTERFLY", "1:3:2 CALL RATIO FLY", "1:2 PUT RATIO SPREAD", "BULL STRADDLE", "BULL STRANGLE", "SHORT BULL STRADDLE", "SHORT BULL STRANGLE", "COVERED CALL", "SYNTHETIC LONG", "SYNTHETIC LONG CALL"]
                   : category === "bearish"
-                    ? ["PROTECTIVE CALL", "DYNAMIC REGIME IRON BUTTERFLY", "BEAR CALL SPREAD", "BEAR PUT SPREAD", "DIR BEAR FLY", "BEAR CONDOR", "BEAR IRON BUTTERFLY", "1:3:2 PUT RATIO FLY", "1:2 CALL RATIO SPREAD", "BEAR STRADDLE", "BEAR STRANGLE", "SHORT BEAR STRADDLE", "SHORT BEAR STRANGLE", "COVERED PUT", "SYNTHETIC SHORT", "SYNTHETIC LONG PUT"]
+                    ? ["TWISTED JADE LIZARD", "PROTECTIVE CALL", "DYNAMIC REGIME IRON BUTTERFLY", "BEAR CALL SPREAD", "BEAR PUT SPREAD", "DIR BEAR FLY", "BEAR CONDOR", "BEAR IRON BUTTERFLY", "1:3:2 PUT RATIO FLY", "1:2 CALL RATIO SPREAD", "BEAR STRADDLE", "BEAR STRANGLE", "SHORT BEAR STRADDLE", "SHORT BEAR STRANGLE", "COVERED PUT", "SYNTHETIC SHORT", "SYNTHETIC LONG PUT"]
                     : [
+                        "JADE LIZARD", "TWISTED JADE LIZARD",
                         "PROTECTIVE PUT", "PROTECTIVE CALL",
                         "DYNAMIC REGIME IRON CONDOR", "DYNAMIC REGIME IRON BUTTERFLY",
                         "SHORT IRON CONDOR", "LONG IRON CONDOR", "IRON CONDOR", "IRON BUTTERFLY", "BULL PUT SPREAD", "BEAR CALL SPREAD", 
