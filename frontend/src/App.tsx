@@ -897,6 +897,7 @@ const App: React.FC = () => {
 
           <div style={{ display: activeTab === 'builder' ? 'block' : 'none' }}>
             <div className="flex flex-col gap-6">
+              <ExpirySelector />
               <LegManager />
               <HedgingAdvisor />
               <PayoffChart />

@@ -13,6 +13,7 @@ export const LegManager: React.FC = () => {
     addLeg, 
     underlying, 
     selectedExpiry, 
+    expiryDates,
     symbol, 
     options, 
     saveCurrentPortfolio, 
@@ -26,6 +27,7 @@ export const LegManager: React.FC = () => {
   const [isSharing, setIsSharing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [quickAddStrike, setQuickAddStrike] = useState<number | ''>('');
+  const [quickAddExpiry, setQuickAddExpiry] = useState<string>('');
 
   const sortedStrikes = [...options].map(o => o.strike).sort((a, b) => a - b);
   const atmStrike = options.length > 0 && underlying?.spot
@@ -51,6 +53,10 @@ export const LegManager: React.FC = () => {
 
   const handleActionChange = (id: string, action: 'BUY' | 'SELL') => {
     updateLeg(id, { action });
+  };
+
+  const handleExpiryChange = (id: string, newExpiry: string) => {
+    updateLeg(id, { expiry: newExpiry });
   };
 
   const handleStrikeChange = (id: string, newStrike: number, optType: 'C' | 'P' | 'F') => {
@@ -88,6 +94,7 @@ export const LegManager: React.FC = () => {
 
   const addCustomLeg = (type: 'C' | 'P' | 'F', customStrike?: number) => {
     const strike = customStrike || (typeof quickAddStrike === 'number' && quickAddStrike > 0 ? quickAddStrike : atmStrike);
+    const exp = quickAddExpiry || selectedExpiry || (expiryDates.length > 0 ? expiryDates[0] : new Date().toISOString().split('T')[0]);
     const defaultQty = getLotSizeForSymbol(symbol || underlying?.symbol || "");
     const row = options.find(o => o.strike === strike);
     const contract = type === 'C' ? row?.CE : (type === 'P' ? row?.PE : null);
@@ -97,7 +104,7 @@ export const LegManager: React.FC = () => {
     addLeg({
       strike,
       optionType: type,
-      expiry: selectedExpiry || new Date().toISOString().split('T')[0],
+      expiry: exp,
       action: 'BUY',
       quantity: defaultQty,
       entryPrice: price,
@@ -283,11 +290,25 @@ export const LegManager: React.FC = () => {
           <div className="text-center py-6 text-xs text-gray-500 flex flex-col items-center gap-2">
             <span>No active legs. Select a quick template above, use the Option Chain matrix, or add custom legs below.</span>
             <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              {expiryDates.length > 0 && (
+                <select
+                  value={quickAddExpiry || selectedExpiry}
+                  onChange={(e) => setQuickAddExpiry(e.target.value)}
+                  className="px-2.5 py-1.5 text-xs font-bold bg-gray-900 border border-borderClr text-accentCyan rounded-lg outline-none focus:border-accentCyan cursor-pointer"
+                  title="Select Expiry"
+                >
+                  {expiryDates.map((exp) => (
+                    <option key={exp} value={exp}>
+                      Expiry: {exp}
+                    </option>
+                  ))}
+                </select>
+              )}
               {sortedStrikes.length > 0 && (
                 <select
                   value={quickAddStrike}
                   onChange={(e) => setQuickAddStrike(e.target.value ? parseFloat(e.target.value) : '')}
-                  className="px-2.5 py-1.5 text-xs font-bold bg-gray-900 border border-borderClr text-white rounded-lg outline-none focus:border-accentBrand"
+                  className="px-2.5 py-1.5 text-xs font-bold bg-gray-900 border border-borderClr text-white rounded-lg outline-none focus:border-accentBrand cursor-pointer"
                 >
                   <option value="">Select Strike (Default ATM {atmStrike})</option>
                   {sortedStrikes.map((s) => (
@@ -328,7 +349,7 @@ export const LegManager: React.FC = () => {
                     key={leg.id}
                     className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-cardBgLight border border-borderClr/60 shadow-sm"
                   >
-                    {/* Action, Strike & Type */}
+                    {/* Action, Strike, Type & Expiry */}
                     <div className="flex items-center gap-2">
                       <select
                         value={leg.action}
@@ -387,6 +408,25 @@ export const LegManager: React.FC = () => {
                             <option value="C">CE</option>
                             <option value="P">PE</option>
                           </select>
+
+                          {/* Expiry Selector Dropdown */}
+                          {expiryDates.length > 0 && (
+                            <select
+                              value={leg.expiry}
+                              onChange={(e) => handleExpiryChange(leg.id, e.target.value)}
+                              className="text-[11px] font-bold rounded px-2 py-1 bg-gray-900 border border-borderClr text-accentCyan outline-none focus:border-accentCyan cursor-pointer"
+                              title="Contract Expiration Date"
+                            >
+                              {expiryDates.map((exp) => (
+                                <option key={exp} value={exp}>
+                                  {exp}
+                                </option>
+                              ))}
+                              {!expiryDates.includes(leg.expiry) && leg.expiry && (
+                                <option value={leg.expiry}>{leg.expiry}</option>
+                              )}
+                            </select>
+                          )}
                         </div>
                       )}
                     </div>
@@ -448,6 +488,20 @@ export const LegManager: React.FC = () => {
             <div className="flex flex-wrap gap-3 justify-between items-center border-t border-borderClr/30 pt-3 text-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] text-gray-400 font-bold uppercase">Add Leg:</span>
+                {expiryDates.length > 0 && (
+                  <select
+                    value={quickAddExpiry || selectedExpiry}
+                    onChange={(e) => setQuickAddExpiry(e.target.value)}
+                    className="px-2 py-1 text-xs font-bold bg-gray-900 border border-borderClr text-accentCyan rounded outline-none focus:border-accentCyan cursor-pointer"
+                    title="Select Expiry for new leg"
+                  >
+                    {expiryDates.map((exp) => (
+                      <option key={exp} value={exp}>
+                        Exp: {exp}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 {sortedStrikes.length > 0 && (
                   <select
                     value={quickAddStrike}
