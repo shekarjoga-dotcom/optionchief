@@ -1276,8 +1276,8 @@ export function scanStrategies(
 
   // Rank scanned results
   const ranked = results.sort((a, b) => {
-    const lossA = typeof a.maxLoss === 'number' ? Math.abs(a.maxLoss) : 10000;
-    const lossB = typeof b.maxLoss === 'number' ? Math.abs(b.maxLoss) : 10000;
+    const lossA = typeof a.maxLoss === 'number' ? Math.min(Math.abs(a.maxLoss), (a.margin || 100000)) : 10000;
+    const lossB = typeof b.maxLoss === 'number' ? Math.min(Math.abs(b.maxLoss), (b.margin || 100000)) : 10000;
     const scoreA = a.pop * (typeof a.maxProfit === 'number' ? a.maxProfit : 1000) / Math.max(1, lossA);
     const scoreB = b.pop * (typeof b.maxProfit === 'number' ? b.maxProfit : 1000) / Math.max(1, lossB);
     return scoreB - scoreA;

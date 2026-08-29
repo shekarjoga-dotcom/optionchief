@@ -887,8 +887,14 @@ export const ScannerPanel: React.FC = () => {
           const loss = typeof scan.maxLoss === 'number' ? Math.abs(scan.maxLoss) : null;
           const margin = scan.margin || 100000;
 
-          const isNakedStrategy = scan.name.toLowerCase().includes("strangle") || 
-                                 scan.name.toLowerCase().includes("straddle") || 
+          const nameLower = scan.name.toLowerCase();
+          const isNakedStrategy = nameLower.includes("strangle") || 
+                                 nameLower.includes("straddle") || 
+                                 nameLower.includes("lizard") ||
+                                 nameLower.includes("covered") ||
+                                 nameLower.includes("synthetic") ||
+                                 nameLower.includes("ratio") ||
+                                 nameLower.includes("protective") ||
                                  scan.maxLoss === "Unlimited";
 
           // Discard if profit is too low to cover transaction fees (e.g. < ₹50 for small lot sizes like SENSEX)
@@ -898,7 +904,7 @@ export const ScannerPanel: React.FC = () => {
           // Discard if return on margin is less than 0.05%
           if (profit !== null && (profit / margin) < 0.0005) continue;
 
-          // Discard if risk-to-reward ratio is too extreme ONLY for hedged strategies (unhedged straddles/strangles have theoretical unlimited loss)
+          // Discard if risk-to-reward ratio is too extreme ONLY for fully hedged fixed-wing spreads (unhedged straddles/strangles/lizards have theoretical spot-to-zero downside)
           if (!isNakedStrategy && profit !== null && loss !== null && profit > 0 && (loss / profit) > 50) continue;
 
           seenKeys.add(legKey);
@@ -907,8 +913,8 @@ export const ScannerPanel: React.FC = () => {
 
         // Re-rank combined scans by POP * Expected yield
         const rankedScans = uniqueScans.sort((a, b) => {
-          const lossA = typeof a.maxLoss === 'number' ? Math.abs(a.maxLoss) : 10000;
-          const lossB = typeof b.maxLoss === 'number' ? Math.abs(b.maxLoss) : 10000;
+          const lossA = typeof a.maxLoss === 'number' ? Math.min(Math.abs(a.maxLoss), (a.margin || 100000)) : 10000;
+          const lossB = typeof b.maxLoss === 'number' ? Math.min(Math.abs(b.maxLoss), (b.margin || 100000)) : 10000;
           const scoreA = a.pop * (typeof a.maxProfit === 'number' ? a.maxProfit : 1000) / Math.max(1, lossA);
           const scoreB = b.pop * (typeof b.maxProfit === 'number' ? b.maxProfit : 1000) / Math.max(1, lossB);
           return scoreB - scoreA;
