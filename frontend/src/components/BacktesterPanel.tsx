@@ -1594,9 +1594,20 @@ export const BacktesterPanel: React.FC = () => {
         {/* Strategy Leg Builder */}
         <div className="glass-panel rounded-xl p-5 border border-borderClr/30 flex flex-col gap-4 bg-gray-950/40">
           <div className="flex items-center justify-between border-b border-borderClr/20 pb-2">
-            <span className="text-xs font-bold text-white uppercase tracking-wider">
-              Strategy Legs ({legs.length})
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Strategy Legs ({legs.length})
+              </span>
+              {portfolioStopLoss ? (
+                <span className="text-[10px] bg-red-950/60 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded font-mono font-bold">
+                  🛡️ Max Loss Cap: ₹{parseFloat(portfolioStopLoss).toLocaleString()}
+                </span>
+              ) : (
+                <span className="text-[10px] bg-amber-950/40 border border-amber-500/30 text-amber-400 px-1.5 py-0.5 rounded font-mono">
+                  ⚠️ No SL (Hold to Expiry)
+                </span>
+              )}
+            </div>
             <button
               onClick={handleAddLeg}
               className="px-2 py-1 rounded bg-gray-900 border border-borderClr/60 hover:text-white text-xs font-bold flex items-center gap-1 transition-all"
