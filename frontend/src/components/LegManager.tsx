@@ -1,16 +1,38 @@
 import React, { useState } from 'react';
 import { useStore } from '../hooks/useStore';
-import { Trash2, Coins, Link as LinkIcon } from 'lucide-react';
+import { Trash2, Link as LinkIcon } from 'lucide-react';
 import { getLotSizeForSymbol, getCurrencySymbol } from '../utils/optionsMath';
 import { BACKEND_URL } from '../config';
 
 export const LegManager: React.FC = () => {
-  const { legs, removeLeg, updateLeg, clearLegs, underlying, selectedExpiry, symbol, saveCurrentPortfolio, fetchPortfolios, user } = useStore();
+  const { 
+    legs, 
+    removeLeg, 
+    updateLeg, 
+    clearLegs, 
+    addLeg, 
+    underlying, 
+    selectedExpiry, 
+    symbol, 
+    options, 
+    saveCurrentPortfolio, 
+    fetchPortfolios, 
+    user 
+  } = useStore();
+
   const [saveName, setSaveName] = useState("");
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareData, setShareData] = useState<any>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [quickAddStrike, setQuickAddStrike] = useState<number | ''>('');
+
+  const sortedStrikes = [...options].map(o => o.strike).sort((a, b) => a - b);
+  const atmStrike = options.length > 0 && underlying?.spot
+    ? options.reduce((prev, curr) =>
+        Math.abs(curr.strike - underlying.spot) < Math.abs(prev.strike - underlying.spot) ? curr : prev
+      ).strike
+    : (underlying?.spot ? Math.round(underlying.spot / 50) * 50 : 24000);
 
   const handleQtyChange = (id: string, qtyStr: string) => {
     const qty = parseInt(qtyStr) || 0;
@@ -31,25 +53,56 @@ export const LegManager: React.FC = () => {
     updateLeg(id, { action });
   };
 
+  const handleStrikeChange = (id: string, newStrike: number, optType: 'C' | 'P' | 'F') => {
+    const row = options.find(o => o.strike === newStrike);
+    const contract = optType === 'C' ? row?.CE : (optType === 'P' ? row?.PE : null);
+    const price = contract?.lastPrice || (optType === 'F' ? (underlying?.spot || newStrike) : 5.0);
+    const iv = contract?.impliedVolatility || 0.16;
+
+    updateLeg(id, {
+      strike: newStrike,
+      entryPrice: price,
+      currentPrice: price,
+      iv: iv
+    });
+  };
+
+  const handleOptionTypeChange = (id: string, newType: 'C' | 'P', currentStrike: number) => {
+    const row = options.find(o => o.strike === currentStrike);
+    const contract = newType === 'C' ? row?.CE : row?.PE;
+    const price = contract?.lastPrice || 5.0;
+    const iv = contract?.impliedVolatility || 0.16;
+
+    updateLeg(id, {
+      optionType: newType,
+      entryPrice: price,
+      currentPrice: price,
+      iv: iv
+    });
+  };
+
   const handleAddFutureLeg = () => {
     if (!underlying) return;
     addCustomLeg('F', underlying.spot);
   };
 
-  const { addLeg } = useStore();
-  const addCustomLeg = (type: 'C' | 'P' | 'F', defaultStrike = 0) => {
-    const spot = underlying?.spot || 100;
-    const strike = defaultStrike || spot;
+  const addCustomLeg = (type: 'C' | 'P' | 'F', customStrike?: number) => {
+    const strike = customStrike || (typeof quickAddStrike === 'number' && quickAddStrike > 0 ? quickAddStrike : atmStrike);
     const defaultQty = getLotSizeForSymbol(symbol || underlying?.symbol || "");
+    const row = options.find(o => o.strike === strike);
+    const contract = type === 'C' ? row?.CE : (type === 'P' ? row?.PE : null);
+    const price = contract?.lastPrice || (type === 'F' ? (underlying?.spot || strike) : 5.0);
+    const iv = contract?.impliedVolatility || 0.16;
+
     addLeg({
       strike,
       optionType: type,
       expiry: selectedExpiry || new Date().toISOString().split('T')[0],
       action: 'BUY',
       quantity: defaultQty,
-      entryPrice: type === 'F' ? spot : 5.0,
-      currentPrice: type === 'F' ? spot : 5.0,
-      iv: 0.16
+      entryPrice: price,
+      currentPrice: price,
+      iv: iv
     });
   };
 
@@ -229,16 +282,36 @@ export const LegManager: React.FC = () => {
         {legs.length === 0 ? (
           <div className="text-center py-6 text-xs text-gray-500 flex flex-col items-center gap-2">
             <span>No active legs. Select a quick template above, use the Option Chain matrix, or add custom legs below.</span>
-            <div className="flex gap-2 mt-2">
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              {sortedStrikes.length > 0 && (
+                <select
+                  value={quickAddStrike}
+                  onChange={(e) => setQuickAddStrike(e.target.value ? parseFloat(e.target.value) : '')}
+                  className="px-2.5 py-1.5 text-xs font-bold bg-gray-900 border border-borderClr text-white rounded-lg outline-none focus:border-accentBrand"
+                >
+                  <option value="">Select Strike (Default ATM {atmStrike})</option>
+                  {sortedStrikes.map((s) => (
+                    <option key={s} value={s}>
+                      Strike: {s} {s === atmStrike ? "(ATM)" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button
                 onClick={() => addCustomLeg('C')}
-                className="px-2.5 py-1.5 rounded bg-gray-900 border border-borderClr hover:bg-gray-800 text-white font-semibold"
+                className="px-3 py-1.5 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold hover:bg-blue-500/30 transition-all"
               >
-                + Add Custom Option
+                + Add Call (CE)
+              </button>
+              <button
+                onClick={() => addCustomLeg('P')}
+                className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold hover:bg-amber-500/30 transition-all"
+              >
+                + Add Put (PE)
               </button>
               <button
                 onClick={handleAddFutureLeg}
-                className="px-2.5 py-1.5 rounded bg-gray-900 border border-borderClr hover:bg-gray-800 text-white font-semibold"
+                className="px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-300 font-bold hover:bg-purple-500/30 transition-all"
               >
                 + Add Long/Short Future
               </button>
@@ -247,20 +320,20 @@ export const LegManager: React.FC = () => {
         ) : (
           <>
             {/* Legs List */}
-            <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
+            <div className="flex flex-col gap-3 max-h-[320px] overflow-y-auto pr-1">
               {legs.map((leg) => {
                 const isFuture = leg.optionType === 'F';
                 return (
                   <div
                     key={leg.id}
-                    className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-cardBgLight border border-borderClr/60"
+                    className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-cardBgLight border border-borderClr/60 shadow-sm"
                   >
-                    {/* Action & Type */}
+                    {/* Action, Strike & Type */}
                     <div className="flex items-center gap-2">
                       <select
                         value={leg.action}
                         onChange={(e) => handleActionChange(leg.id, e.target.value as 'BUY' | 'SELL')}
-                        className={`text-xs font-extrabold rounded px-2 py-1 outline-none border ${
+                        className={`text-xs font-extrabold rounded px-2 py-1 outline-none border cursor-pointer ${
                           leg.action === 'BUY'
                             ? "bg-greenBrand/10 border-greenBrand/40 text-greenBrand"
                             : "bg-redBrand/10 border-redBrand/40 text-redBrand"
@@ -270,13 +343,56 @@ export const LegManager: React.FC = () => {
                         <option value="SELL">SELL</option>
                       </select>
 
-                      <span className="text-xs font-bold text-white uppercase tracking-wider">
-                        {isFuture ? "Future" : `${leg.strike} ${leg.optionType === 'C' ? 'CE' : 'PE'}`}
-                      </span>
+                      {isFuture ? (
+                        <span className="text-xs font-bold text-purple-300 uppercase tracking-wider bg-purple-500/15 border border-purple-500/30 px-2 py-1 rounded">
+                          FUTURE (Spot: {underlying?.spot || leg.strike})
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          {/* Strike Selector Dropdown */}
+                          {sortedStrikes.length > 0 ? (
+                            <select
+                              value={leg.strike}
+                              onChange={(e) => handleStrikeChange(leg.id, parseFloat(e.target.value), leg.optionType)}
+                              className="text-xs font-extrabold rounded px-2.5 py-1 bg-gray-900 border border-borderClr text-white outline-none focus:border-accentBrand cursor-pointer"
+                            >
+                              {sortedStrikes.map((s) => (
+                                <option key={s} value={s}>
+                                  {s} {s === atmStrike ? "(ATM)" : ""}
+                                </option>
+                              ))}
+                              {!sortedStrikes.includes(leg.strike) && (
+                                <option value={leg.strike}>{leg.strike} (Custom)</option>
+                              )}
+                            </select>
+                          ) : (
+                            <input
+                              type="number"
+                              value={leg.strike}
+                              onChange={(e) => handleStrikeChange(leg.id, parseFloat(e.target.value) || 0, leg.optionType)}
+                              className="text-xs font-extrabold rounded px-2 py-1 bg-gray-900 border border-borderClr text-white w-24 outline-none focus:border-accentBrand"
+                            />
+                          )}
+
+                          {/* Option Type Selector (CE / PE) */}
+                          <select
+                            value={leg.optionType}
+                            onChange={(e) => handleOptionTypeChange(leg.id, e.target.value as 'C' | 'P', leg.strike)}
+                            className={`text-xs font-extrabold rounded px-2 py-1 outline-none border cursor-pointer ${
+                              leg.optionType === 'C'
+                                ? "bg-blue-500/15 border-blue-500/40 text-blue-300"
+                                : "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                            }`}
+                          >
+                            <option value="C">CE</option>
+                            <option value="P">PE</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
 
                     {/* Inputs */}
-                    <div className="flex flex-wrap items-center gap-4 text-xs">
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
                       {/* Quantity */}
                       <div className="flex flex-col gap-1">
                         <span className="text-[10px] text-gray-500 font-semibold uppercase">Qty</span>
@@ -284,19 +400,19 @@ export const LegManager: React.FC = () => {
                           type="number"
                           value={leg.quantity}
                           onChange={(e) => handleQtyChange(leg.id, e.target.value)}
-                          className="bg-gray-950 border border-borderClr rounded px-2 py-1 text-white w-20 focus:outline-none focus:border-accentBrand"
+                          className="bg-gray-950 border border-borderClr rounded px-2 py-1 text-white w-20 focus:outline-none focus:border-accentBrand font-mono"
                         />
                       </div>
 
                       {/* Entry Price */}
                       <div className="flex flex-col gap-1">
-                        <span className="text-[10px] text-gray-500 font-semibold uppercase">Entry Price</span>
+                        <span className="text-[10px] text-gray-500 font-semibold uppercase">Price</span>
                         <input
                           type="number"
                           step="0.05"
                           value={leg.entryPrice}
                           onChange={(e) => handlePriceChange(leg.id, e.target.value)}
-                          className="bg-gray-950 border border-borderClr rounded px-2 py-1 text-white w-24 focus:outline-none focus:border-accentBrand"
+                          className="bg-gray-950 border border-borderClr rounded px-2 py-1 text-white w-24 focus:outline-none focus:border-accentBrand font-mono"
                         />
                       </div>
 
@@ -309,7 +425,7 @@ export const LegManager: React.FC = () => {
                             step="0.1"
                             value={Math.round(leg.iv * 1000) / 10}
                             onChange={(e) => handleIvChange(leg.id, e.target.value)}
-                            className="bg-gray-950 border border-borderClr rounded px-2 py-1 text-white w-16 focus:outline-none focus:border-accentBrand"
+                            className="bg-gray-950 border border-borderClr rounded px-2 py-1 text-white w-16 focus:outline-none focus:border-accentBrand font-mono"
                           />
                         </div>
                       )}
@@ -319,6 +435,7 @@ export const LegManager: React.FC = () => {
                     <button
                       onClick={() => removeLeg(leg.id)}
                       className="text-gray-500 hover:text-redBrand p-1.5 rounded transition-all hover:bg-gray-900"
+                      title="Remove Leg"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -328,41 +445,56 @@ export const LegManager: React.FC = () => {
             </div>
 
             {/* Quick Add Custom Options inside manager */}
-            <div className="flex flex-wrap gap-2 justify-between items-center border-t border-borderClr/30 pt-3 text-xs">
-              <div className="flex gap-2">
+            <div className="flex flex-wrap gap-3 justify-between items-center border-t border-borderClr/30 pt-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] text-gray-400 font-bold uppercase">Add Leg:</span>
+                {sortedStrikes.length > 0 && (
+                  <select
+                    value={quickAddStrike}
+                    onChange={(e) => setQuickAddStrike(e.target.value ? parseFloat(e.target.value) : '')}
+                    className="px-2 py-1 text-xs font-bold bg-gray-900 border border-borderClr text-white rounded outline-none focus:border-accentBrand cursor-pointer"
+                  >
+                    <option value="">Strike: ATM ({atmStrike})</option>
+                    {sortedStrikes.map((s) => (
+                      <option key={s} value={s}>
+                        Strike: {s} {s === atmStrike ? "(ATM)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <button
                   onClick={() => addCustomLeg('C')}
-                  className="px-2 py-1 border border-borderClr text-gray-300 hover:text-white rounded hover:bg-gray-800"
+                  className="px-2.5 py-1 border border-blue-500/40 text-blue-300 hover:bg-blue-500/20 rounded font-semibold transition-colors flex items-center gap-1"
                 >
-                  + Add Custom Call (CE)
+                  + Add Call (CE)
                 </button>
                 <button
                   onClick={() => addCustomLeg('P')}
-                  className="px-2 py-1 border border-borderClr text-gray-300 hover:text-white rounded hover:bg-gray-800"
+                  className="px-2.5 py-1 border border-amber-500/40 text-amber-300 hover:bg-amber-500/20 rounded font-semibold transition-colors flex items-center gap-1"
                 >
-                  + Add Custom Put (PE)
+                  + Add Put (PE)
                 </button>
                 <button
                   onClick={handleAddFutureLeg}
-                  className="px-2 py-1 border border-borderClr text-gray-300 hover:text-white rounded hover:bg-gray-800"
+                  className="px-2.5 py-1 border border-purple-500/40 text-purple-300 hover:bg-purple-500/20 rounded font-semibold transition-colors flex items-center gap-1"
                 >
-                  + Add Future Leg
+                  + Add Future
                 </button>
               </div>
 
               {/* Save & Trade Form */}
               {user?.role !== 'viewer' && (
-                <div className="flex gap-2 items-center">
+                <div className="flex flex-wrap gap-2 items-center">
                   <input
                     type="text"
                     placeholder="Strategy Name (e.g. Iron Condor)..."
                     value={saveName}
                     onChange={(e) => setSaveName(e.target.value)}
-                    className="px-2.5 py-1.5 rounded bg-gray-950 border border-borderClr text-white placeholder-gray-600 focus:outline-none focus:border-accentBrand w-48"
+                    className="px-2.5 py-1.5 rounded bg-gray-950 border border-borderClr text-white placeholder-gray-600 focus:outline-none focus:border-accentBrand w-44"
                   />
                   <button
                     onClick={handleSave}
-                    className="px-3 py-1.5 rounded bg-accentBrand hover:bg-accentBrand/90 text-white font-bold text-xs"
+                    className="px-3 py-1.5 rounded bg-accentBrand hover:bg-accentBrand/90 text-white font-bold text-xs shadow-md"
                     title="Save Strategy Template"
                   >
                     Save Strategy
@@ -378,10 +510,9 @@ export const LegManager: React.FC = () => {
                   </button>
                   <button
                     onClick={handleExecutePaperTrade}
-                    className="px-3 py-1.5 rounded bg-greenBrand hover:bg-greenBrand/90 text-black font-extrabold flex items-center gap-1 transition-all text-xs"
-                    title="Execute Paper Trade"
+                    className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                    title="Execute directly into Paper Trading Book"
                   >
-                    <Coins className="w-3.5 h-3.5" />
                     <span>Execute Trade</span>
                   </button>
                 </div>
@@ -391,106 +522,59 @@ export const LegManager: React.FC = () => {
         )}
       </div>
 
-      {/* 1-Click Broker Entry Link & Share Strategy Modal */}
+      {/* Share Modal */}
       {shareModalOpen && shareData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-gray-900 border border-gray-700/80 rounded-xl p-6 max-w-lg w-full shadow-2xl relative">
-            <button
-              onClick={() => setShareModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white text-lg font-bold"
-            >
-              ✕
-            </button>
-
-            <div className="flex items-center gap-2 mb-4">
-              <LinkIcon className="w-5 h-5 text-purple-400" />
-              <h3 className="text-base font-bold text-white uppercase tracking-wider">Strategy Entry Link & Broker Basket</h3>
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="glass-panel border border-borderClr bg-gray-950 rounded-xl max-w-lg w-full p-5 flex flex-col gap-4 text-left animate-scaleUp">
+            <div className="flex justify-between items-center border-b border-borderClr/40 pb-2">
+              <h3 className="text-sm font-bold text-white uppercase flex items-center gap-2">
+                <LinkIcon className="w-4 h-4 text-purple-400" />
+                1-Click Broker Order Execution Link
+              </h3>
+              <button
+                onClick={() => setShareModalOpen(false)}
+                className="text-gray-400 hover:text-white text-xs font-bold"
+              >
+                ✕
+              </button>
             </div>
 
-            {/* Payoff & Risk Summary */}
-            <div className="bg-gray-950 border border-gray-800 rounded-lg p-3 mb-4 text-xs space-y-1.5">
-              <div className="text-gray-300 font-bold mb-1">
-                {symbol || underlying?.symbol || "NIFTY"} Strategy Summary:
+            <div className="p-3 bg-gray-900 rounded-lg border border-borderClr/60 flex flex-col gap-2">
+              <span className="text-xs text-gray-300 font-semibold">{shareData.strategyName}</span>
+              <div className="flex flex-wrap gap-1.5">
+                {shareData.legs.map((l: any, i: number) => (
+                  <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-gray-950 border border-borderClr text-gray-300 font-mono">
+                    {l.action} {l.strike} {l.optionType === 'C' ? 'CE' : (l.optionType === 'P' ? 'PE' : 'FUT')} ({l.lots} lot)
+                  </span>
+                ))}
               </div>
-              {legs.map((l, i) => (
-                <div key={i} className="flex items-center gap-2 font-mono text-[11px]">
-                  <span className={`w-2 h-2 rounded-full ${l.action === 'BUY' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                  <span className="font-bold text-white">{l.action} {l.quantity / getLotSizeForSymbol(symbol || "")} LOT</span>
-                  <span className="text-gray-400">{l.strike} {l.optionType === 'F' ? 'FUT' : l.optionType === 'C' ? 'CE' : 'PE'} @ {getCurrencySymbol(symbol)}{l.entryPrice}</span>
-                </div>
-              ))}
             </div>
 
-            {/* Short Strategy Entry Link */}
-            <div className="mb-5">
-              <label className="block text-xs font-semibold text-purple-300 mb-1">Strategy Share Link:</label>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] text-gray-400 font-semibold">Universal Web & Deep Link:</span>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   readOnly
                   value={shareData.shareUrl}
-                  className="bg-gray-950 border border-purple-800/60 rounded px-3 py-1.5 text-xs text-white w-full font-mono select-all focus:outline-none"
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-xs text-purple-300 w-full font-mono select-all focus:outline-none"
                 />
                 <button
                   onClick={handleCopyLink}
-                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
-                    copied ? "bg-emerald-600 text-white" : "bg-purple-600 hover:bg-purple-500 text-white"
-                  }`}
+                  className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shrink-0"
                 >
-                  {copied ? "Copied! ✓" : "Copy Link"}
+                  {copied ? "Copied!" : "Copy"}
                 </button>
               </div>
             </div>
 
-            {/* 1-Click Broker Execution Deep Links */}
-            <div className="space-y-2.5">
-              <div className="text-xs font-bold text-gray-300 uppercase tracking-wider">1-Click Broker Entry Links:</div>
-              
-              {/* Dhan Web 1-Click Link */}
-              <a
-                href={shareData.brokerLinks.dhanUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-700/60 text-emerald-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
+            <div className="flex justify-end pt-2 border-t border-borderClr/40">
+              <button
+                onClick={() => setShareModalOpen(false)}
+                className="px-4 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-white text-xs font-bold"
               >
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Execute on Dhan HQ Web App (web.dhan.co)</span>
-                </div>
-                <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </a>
-
-              {/* Zerodha Kite 1-Click Link */}
-              <a
-                href={shareData.brokerLinks.kiteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between bg-cyan-950/80 hover:bg-cyan-900/90 border border-cyan-700/60 text-cyan-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
-                  <span>Execute on Zerodha Kite (1-Click Basket)</span>
-                </div>
-                <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </a>
-
-              {/* Kotak Neo 1-Click Link */}
-              <a
-                href={shareData.brokerLinks.kotakUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between bg-red-950/80 hover:bg-red-900/90 border border-red-700/60 text-red-300 p-3 rounded-lg font-bold text-xs transition-all shadow-md group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                  <span>Execute on Kotak Neo Web App (neo.kotaksecurities.com)</span>
-                </div>
-                <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </a>
-            </div>
-
-            <div className="mt-5 text-[10px] text-gray-500 text-center">
-              Educational Disclaimer: Review position risks and broker margin requirements before execution.
+                Close
+              </button>
             </div>
           </div>
         </div>
