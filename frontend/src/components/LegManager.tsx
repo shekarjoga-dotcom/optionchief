@@ -55,16 +55,61 @@ export const LegManager: React.FC = () => {
     updateLeg(id, { action });
   };
 
-  const handleExpiryChange = (id: string, newExpiry: string) => {
-    updateLeg(id, { expiry: newExpiry });
+  // Helper to fetch live market price & IV for any given strike, option type, and expiry
+  const fetchPriceForContract = async (strike: number, optType: 'C' | 'P' | 'F', targetExpiry: string) => {
+    if (optType === 'F') {
+      return { price: underlying?.spot || strike, iv: 0.16 };
+    }
+
+    // 1. If targetExpiry matches loaded options in store
+    if (targetExpiry === selectedExpiry && options.length > 0) {
+      const row = options.find(o => o.strike === strike);
+      const contract = optType === 'C' ? row?.CE : row?.PE;
+      return {
+        price: contract?.lastPrice !== undefined ? contract.lastPrice : 5.0,
+        iv: contract?.impliedVolatility !== undefined ? contract.impliedVolatility : 0.16
+      };
+    }
+
+    // 2. Otherwise fetch the option chain for this specific expiry
+    try {
+      const headers: Record<string, string> = {};
+      const localClientId = localStorage.getItem("dhan_client_id");
+      const localAccessToken = localStorage.getItem("dhan_access_token");
+      if (localClientId) headers["X-Dhan-Client-Id"] = localClientId;
+      if (localAccessToken) headers["X-Dhan-Access-Token"] = localAccessToken;
+
+      const sym = symbol || underlying?.symbol || "NIFTY";
+      const res = await fetch(`${BACKEND_URL}/api/market/option-chain?symbol=${sym}&expiry=${targetExpiry}`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const row = data.options?.find((o: any) => o.strike === strike);
+        const contract = optType === 'C' ? row?.CE : row?.PE;
+        return {
+          price: contract?.lastPrice !== undefined ? contract.lastPrice : 5.0,
+          iv: contract?.impliedVolatility !== undefined ? contract.impliedVolatility : 0.16
+        };
+      }
+    } catch (e) {
+      console.error("Error fetching price for contract:", e);
+    }
+
+    return { price: 5.0, iv: 0.16 };
   };
 
-  const handleStrikeChange = (id: string, newStrike: number, optType: 'C' | 'P' | 'F') => {
-    const row = options.find(o => o.strike === newStrike);
-    const contract = optType === 'C' ? row?.CE : (optType === 'P' ? row?.PE : null);
-    const price = contract?.lastPrice || (optType === 'F' ? (underlying?.spot || newStrike) : 5.0);
-    const iv = contract?.impliedVolatility || 0.16;
+  const handleExpiryChange = async (id: string, newExpiry: string, strike: number, optType: 'C' | 'P' | 'F') => {
+    const { price, iv } = await fetchPriceForContract(strike, optType, newExpiry);
+    updateLeg(id, {
+      expiry: newExpiry,
+      entryPrice: price,
+      currentPrice: price,
+      iv: iv
+    });
+  };
 
+  const handleStrikeChange = async (id: string, newStrike: number, optType: 'C' | 'P' | 'F', legExpiry?: string) => {
+    const exp = legExpiry || selectedExpiry || (expiryDates.length > 0 ? expiryDates[0] : "");
+    const { price, iv } = await fetchPriceForContract(newStrike, optType, exp);
     updateLeg(id, {
       strike: newStrike,
       entryPrice: price,
@@ -73,12 +118,9 @@ export const LegManager: React.FC = () => {
     });
   };
 
-  const handleOptionTypeChange = (id: string, newType: 'C' | 'P', currentStrike: number) => {
-    const row = options.find(o => o.strike === currentStrike);
-    const contract = newType === 'C' ? row?.CE : row?.PE;
-    const price = contract?.lastPrice || 5.0;
-    const iv = contract?.impliedVolatility || 0.16;
-
+  const handleOptionTypeChange = async (id: string, newType: 'C' | 'P', strike: number, legExpiry?: string) => {
+    const exp = legExpiry || selectedExpiry || (expiryDates.length > 0 ? expiryDates[0] : "");
+    const { price, iv } = await fetchPriceForContract(strike, newType, exp);
     updateLeg(id, {
       optionType: newType,
       entryPrice: price,
@@ -92,14 +134,11 @@ export const LegManager: React.FC = () => {
     addCustomLeg('F', underlying.spot);
   };
 
-  const addCustomLeg = (type: 'C' | 'P' | 'F', customStrike?: number) => {
+  const addCustomLeg = async (type: 'C' | 'P' | 'F', customStrike?: number) => {
     const strike = customStrike || (typeof quickAddStrike === 'number' && quickAddStrike > 0 ? quickAddStrike : atmStrike);
     const exp = quickAddExpiry || selectedExpiry || (expiryDates.length > 0 ? expiryDates[0] : new Date().toISOString().split('T')[0]);
     const defaultQty = getLotSizeForSymbol(symbol || underlying?.symbol || "");
-    const row = options.find(o => o.strike === strike);
-    const contract = type === 'C' ? row?.CE : (type === 'P' ? row?.PE : null);
-    const price = contract?.lastPrice || (type === 'F' ? (underlying?.spot || strike) : 5.0);
-    const iv = contract?.impliedVolatility || 0.16;
+    const { price, iv } = await fetchPriceForContract(strike, type, exp);
 
     addLeg({
       strike,
@@ -374,7 +413,7 @@ export const LegManager: React.FC = () => {
                           {sortedStrikes.length > 0 ? (
                             <select
                               value={leg.strike}
-                              onChange={(e) => handleStrikeChange(leg.id, parseFloat(e.target.value), leg.optionType)}
+                              onChange={(e) => handleStrikeChange(leg.id, parseFloat(e.target.value), leg.optionType, leg.expiry)}
                               className="text-xs font-extrabold rounded px-2.5 py-1 bg-gray-900 border border-borderClr text-white outline-none focus:border-accentBrand cursor-pointer"
                             >
                               {sortedStrikes.map((s) => (
@@ -390,7 +429,7 @@ export const LegManager: React.FC = () => {
                             <input
                               type="number"
                               value={leg.strike}
-                              onChange={(e) => handleStrikeChange(leg.id, parseFloat(e.target.value) || 0, leg.optionType)}
+                              onChange={(e) => handleStrikeChange(leg.id, parseFloat(e.target.value) || 0, leg.optionType, leg.expiry)}
                               className="text-xs font-extrabold rounded px-2 py-1 bg-gray-900 border border-borderClr text-white w-24 outline-none focus:border-accentBrand"
                             />
                           )}
@@ -398,7 +437,7 @@ export const LegManager: React.FC = () => {
                           {/* Option Type Selector (CE / PE) */}
                           <select
                             value={leg.optionType}
-                            onChange={(e) => handleOptionTypeChange(leg.id, e.target.value as 'C' | 'P', leg.strike)}
+                            onChange={(e) => handleOptionTypeChange(leg.id, e.target.value as 'C' | 'P', leg.strike, leg.expiry)}
                             className={`text-xs font-extrabold rounded px-2 py-1 outline-none border cursor-pointer ${
                               leg.optionType === 'C'
                                 ? "bg-blue-500/15 border-blue-500/40 text-blue-300"
@@ -413,7 +452,7 @@ export const LegManager: React.FC = () => {
                           {expiryDates.length > 0 && (
                             <select
                               value={leg.expiry}
-                              onChange={(e) => handleExpiryChange(leg.id, e.target.value)}
+                              onChange={(e) => handleExpiryChange(leg.id, e.target.value, leg.strike, leg.optionType)}
                               className="text-[11px] font-bold rounded px-2 py-1 bg-gray-900 border border-borderClr text-accentCyan outline-none focus:border-accentCyan cursor-pointer"
                               title="Contract Expiration Date"
                             >
