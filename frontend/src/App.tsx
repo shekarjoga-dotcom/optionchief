@@ -897,7 +897,7 @@ const App: React.FC = () => {
           <div className="flex gap-2">
             {[
               { id: 'chain', label: 'Option Chain', icon: Layers, isPro: false },
-              { id: 'scanner', label: 'Strategy Scanner', icon: Search, isPro: true },
+              { id: 'scanner', label: 'Strategy Scanner', icon: Search, isPro: false },
               { id: 'rsi_scanner', label: 'RSI Scanner', icon: Zap, isPro: true },
               { id: 'alerts', label: 'Strategy Alerts', icon: Bell, isPro: true },
               { id: 'backtest', label: 'Backtester', icon: History, isPro: false },
@@ -954,15 +954,7 @@ const App: React.FC = () => {
           </div>
 
           <div style={{ display: activeTab === 'scanner' ? 'block' : 'none' }}>
-            {user?.is_pro ? (
-              <ScannerPanel />
-            ) : (
-              <ProFeatureGate 
-                title="Dynamic Market Regime Scanner" 
-                description="Unlock full high-probability 1:3:2 Ratio Spreads, Iron Condors, and Iron Butterflies with automated directional skew detection and edge rankings." 
-                onUpgrade={() => setShowSubscriptionModal(true)} 
-              />
-            )}
+            <ScannerPanel />
           </div>
 
           <div style={{ display: activeTab === 'alerts' ? 'block' : 'none' }}>

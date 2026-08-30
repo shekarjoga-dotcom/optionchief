@@ -957,7 +957,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <ShieldCheck className="w-4 h-4" />
                 <span>
                   {mode === 'register' 
-                    ? '🚀 Create Account (Instant 15-Day Free Trial)' 
+                    ? '🚀 Create Free Account (No Credit Card)' 
                     : 'Secure Sign In'}
                 </span>
               </>
