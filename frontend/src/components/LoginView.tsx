@@ -269,7 +269,7 @@ export const LoginView: React.FC = () => {
             <div className="flex items-center gap-2.5">
               <img 
                 src={logoImg} 
-                className="w-9 h-9 rounded-lg object-cover bg-gray-900 border border-borderClr/60 shadow-lg shadow-accentBrand/10" 
+                className="w-10 h-10 rounded-full object-cover bg-white p-0.5 border border-amber-500/40 shadow-md shadow-amber-500/10" 
                 alt="OptionChief Logo" 
               />
               <div>
