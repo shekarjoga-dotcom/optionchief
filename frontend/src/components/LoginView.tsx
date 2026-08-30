@@ -728,12 +728,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
         {/* Logo and Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-accentBrand/10 border border-accentBrand/20 text-accentBrand text-xs font-bold mb-3 animate-pulse">
+          <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold mb-3">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>optionchief.in Secure Portal</span>
+            <span>100% Free Core Tools • No Credit Card</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">optionchief.in</h1>
-          <p className="text-xs text-gray-400 mt-1">Instant 15-Day Free Trial • No Credit Card Required</p>
+          <p className="text-xs text-gray-400 mt-1">Sign in to save custom portfolios, sync settings, and track paper trades.</p>
         </div>
 
         {/* Google 1-Click Sign-In */}
@@ -966,14 +966,14 @@ export const LoginView: React.FC<LoginViewProps> = ({
         </form>
 
         {/* Security & Verification Notice */}
-        <div className="mt-8 pt-6 border-t border-borderClr/20 text-center">
+        <div className="mt-6 pt-4 border-t border-borderClr/20 text-center">
           <div className="p-3 bg-gray-950/50 rounded-lg border border-borderClr/20 inline-block w-full">
             <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest mb-1 flex items-center justify-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5" />
-              Direct Firebase SMS & Google Security
+              100% Free Core Tools • No Traps
             </span>
             <p className="text-[11px] text-gray-400">
-              Free 15-day Pro access with real-time OTP delivery to your mobile phone.
+              Instant access • No credit card required • No automated debits.
             </p>
           </div>
         </div>

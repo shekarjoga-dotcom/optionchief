@@ -36,7 +36,8 @@ import {
   RefreshCw,
   ExternalLink,
   Lock,
-  Sparkles
+  Sparkles,
+  ArrowRight
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -587,6 +588,30 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-darkBg text-gray-200 pb-12">
+      {/* Non-intrusive Welcome Guest Banner */}
+      {!user && (
+        <div className="bg-gradient-to-r from-emerald-950/80 via-gray-950 to-cyan-950/80 border-b border-emerald-500/30 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              ✨ Free Core Mode
+            </span>
+            <span className="text-gray-200">
+              Live OptionChain, Strategy Payoff Simulator & 40+ Screeners are <strong className="text-emerald-400">100% Free Forever</strong>. No credit card or forced subscription required!
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[11px] shadow-sm transition-all flex items-center gap-1"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>Sign Up Free (Sync Portfolios)</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Navigation Bar */}
       <header className="border-b border-borderClr/60 bg-gray-950/80 sticky top-0 z-40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -644,7 +669,7 @@ const App: React.FC = () => {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-black font-extrabold text-xs shadow-md transition-all transform hover:scale-105"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>15-Day Free Trial</span>
+                <span>Sign In / Free Account</span>
               </button>
             )}
 
