@@ -28,11 +28,24 @@ import {
   Layers,
   ChevronUp,
   ChevronDown,
-  User
+  User,
+  X
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
-export const LoginView: React.FC = () => {
+export interface LoginViewProps {
+  isModal?: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
+  initialMode?: 'login' | 'register';
+}
+
+export const LoginView: React.FC<LoginViewProps> = ({
+  isModal = false,
+  isOpen = true,
+  onClose,
+  initialMode = 'login'
+}) => {
   const { 
     registerDirectUser,
     loginUser, 
@@ -42,8 +55,8 @@ export const LoginView: React.FC = () => {
     checkAuthSession 
   } = useStore();
 
-  const [view, setView] = useState<'landing' | 'auth'>('landing');
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [view, setView] = useState<'landing' | 'auth'>(isModal ? 'auth' : 'landing');
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
   
   const [phone, setPhone] = useState('');
@@ -112,7 +125,8 @@ export const LoginView: React.FC = () => {
       });
       if (success) {
         setSuccessMessage("Signed in with Google successfully!");
-        checkAuthSession();
+        await checkAuthSession();
+        if (onClose) onClose();
       }
     } catch (err: any) {
       console.error("Google Sign-In Error:", err);
@@ -202,7 +216,8 @@ export const LoginView: React.FC = () => {
         });
         if (success) {
           setSuccessMessage("Phone verified and logged in successfully!");
-          checkAuthSession();
+          await checkAuthSession();
+          if (onClose) onClose();
           return;
         }
       } catch (fbConfirmErr: any) {
@@ -225,7 +240,8 @@ export const LoginView: React.FC = () => {
       const success = await registerDirectUser(formattedPhone, password, displayName);
       if (success) {
         setSuccessMessage("Account created successfully! Welcome to your 15-Day Pro Trial.");
-        checkAuthSession();
+        await checkAuthSession();
+        if (onClose) onClose();
       }
     } else {
       // Login mode
@@ -236,7 +252,8 @@ export const LoginView: React.FC = () => {
         }
         const success = await loginUser(formattedPhone, password, undefined);
         if (success) {
-          checkAuthSession();
+          await checkAuthSession();
+          if (onClose) onClose();
         }
       } else {
         if (!otp) {
@@ -245,7 +262,8 @@ export const LoginView: React.FC = () => {
         }
         const success = await loginUser(formattedPhone, undefined, otp);
         if (success) {
-          checkAuthSession();
+          await checkAuthSession();
+          if (onClose) onClose();
         }
       }
     }
@@ -673,32 +691,49 @@ export const LoginView: React.FC = () => {
     );
   }
 
+  if (isModal && !isOpen) return null;
+
   // RENDER ORIGINAL AUTH/PORTAL VIEW
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
-      {/* Abstract Glowing Background Orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-accentBrand/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-greenBrand/5 rounded-full blur-[120px] pointer-events-none" />
+    <div className={isModal ? "fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto animate-fadeIn font-sans" : "min-h-screen bg-gray-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans"}>
+      {!isModal && (
+        <>
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-accentBrand/10 rounded-full blur-[120px] pointer-events-none" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-greenBrand/5 rounded-full blur-[120px] pointer-events-none" />
+        </>
+      )}
 
       {/* Main Form container */}
-      <div className="w-full max-w-md bg-cardBg/85 border border-borderClr/60 rounded-2xl p-8 backdrop-blur-md shadow-2xl relative z-10">
+      <div className={`w-full max-w-md bg-gray-950/95 border ${isModal ? 'border-emerald-500/40 shadow-emerald-500/10' : 'border-borderClr/60'} rounded-2xl p-6 sm:p-8 backdrop-blur-md shadow-2xl relative z-10 my-auto`}>
         
+        {/* Close button */}
+        {isModal && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-lg bg-gray-900 border border-borderClr/40 text-gray-400 hover:text-white hover:border-gray-500 transition-all"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+
         {/* Back Link to Landing */}
-        <button
-          onClick={() => setView('landing')}
-          className="text-gray-500 hover:text-white text-[11px] font-bold uppercase tracking-wider mb-6 flex items-center gap-1 transition-all"
-        >
-          <span>← Back to Homepage</span>
-        </button>
+        {!isModal && (
+          <button
+            onClick={() => setView('landing')}
+            className="text-gray-500 hover:text-white text-[11px] font-bold uppercase tracking-wider mb-6 flex items-center gap-1 transition-all"
+          >
+            <span>← Back to Homepage</span>
+          </button>
+        )}
 
         {/* Logo and Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-accentBrand/10 border border-accentBrand/20 text-accentBrand text-xs font-bold mb-4 animate-pulse">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-accentBrand/10 border border-accentBrand/20 text-accentBrand text-xs font-bold mb-3 animate-pulse">
             <Sparkles className="w-3.5 h-3.5" />
             <span>optionchief.in Secure Portal</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">optionchief.in</h1>
-          <p className="text-xs text-gray-400 mt-1">Real-time Options Analytics & Execution Desk</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">optionchief.in</h1>
+          <p className="text-xs text-gray-400 mt-1">Instant 15-Day Free Trial • No Credit Card Required</p>
         </div>
 
         {/* Google 1-Click Sign-In */}

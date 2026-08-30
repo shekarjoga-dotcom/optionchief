@@ -17,6 +17,7 @@ import RsiScannerPanel from './components/RsiScannerPanel';
 import { AdminPanel } from './components/AdminPanel';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { ProFeatureGate } from './components/ProFeatureGate';
+import { TrialReminderModal } from './components/TrialReminderModal';
 import {
   TrendingUp,
   Layers,
@@ -34,7 +35,8 @@ import {
   X,
   RefreshCw,
   ExternalLink,
-  Lock
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -77,11 +79,54 @@ const App: React.FC = () => {
     }
     const hash = window.location.hash.replace('#', '');
     const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin'];
-    return validTabs.includes(hash) ? (hash as any) : 'chain';
+    return validTabs.includes(hash) ? (hash as any) : 'scanner';
   };
 
   const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>(getInitialTab);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showTrialReminderModal, setShowTrialReminderModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // Set default hash on first load to scanner
+  useEffect(() => {
+    if (!window.location.hash && !window.location.pathname.startsWith('/s/')) {
+      window.location.hash = 'scanner';
+    }
+  }, []);
+
+  // 10-minute exploration timer for guests / new visitors
+  useEffect(() => {
+    const isGuest = !token || !user || user.role === 'guest';
+    if (!isGuest) return;
+
+    const storageKeyFirstSeen = 'optionchief_visitor_first_active';
+    const storageKeySnooze = 'optionchief_trial_snooze_until';
+
+    let firstSeen = parseInt(localStorage.getItem(storageKeyFirstSeen) || '0', 10);
+    if (!firstSeen) {
+      firstSeen = Date.now();
+      localStorage.setItem(storageKeyFirstSeen, firstSeen.toString());
+    }
+
+    const check10Minutes = () => {
+      const now = Date.now();
+      const snoozeUntil = parseInt(localStorage.getItem(storageKeySnooze) || '0', 10);
+      if (snoozeUntil && now < snoozeUntil) {
+        return;
+      }
+
+      const elapsed = now - firstSeen;
+      const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 minutes = 600,000ms
+
+      if (elapsed >= TEN_MINUTES_MS) {
+        setShowTrialReminderModal(true);
+      }
+    };
+
+    check10Minutes();
+    const interval = setInterval(check10Minutes, 15000);
+    return () => clearInterval(interval);
+  }, [token, user]);
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -540,11 +585,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Guard the application view with Login/Register screen
-  if (!token || !user) {
-    return <LoginView />;
-  }
-
   return (
     <div className="min-h-screen bg-darkBg text-gray-200 pb-12">
       {/* Top Navigation Bar */}
@@ -572,8 +612,8 @@ const App: React.FC = () => {
               <span>Paper Trading Book</span>
             </button>
 
-            {/* Subscription Tier Pill Button */}
-            {user && (
+            {/* Subscription Tier Pill Button / Free Trial CTA */}
+            {user && user.role !== 'guest' ? (
               <button
                 onClick={() => setShowSubscriptionModal(true)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-extrabold transition-all shadow-sm ${
@@ -598,39 +638,60 @@ const App: React.FC = () => {
                     : '🔒 UPGRADE TO PRO'}
                 </span>
               </button>
+            ) : (
+              <button
+                onClick={() => setShowAuthModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-black font-extrabold text-xs shadow-md transition-all transform hover:scale-105"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>15-Day Free Trial</span>
+              </button>
             )}
 
-            <button
-              onClick={() => {
-                setDhanClientIdInput(user.dhan_client_id || '');
-                setDhanAccessTokenInput(user.dhan_access_token || '');
-                setShowProfileModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold transition-all"
-            >
-              <Key className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Profile & Keys</span>
-            </button>
-            
-            <div className="flex items-center gap-3 border-l border-borderClr/60 pl-4">
-              <div className="flex flex-col items-end">
-                <span className="text-[11px] text-white font-semibold flex items-center gap-1.5" title={user.email || user.display_name || user.phone_number}>
-                  <User className="w-3 h-3 text-emerald-400" />
-                  {user.email || user.display_name || (user.phone_number?.startsWith('fb_') ? 'Account' : user.phone_number)}
-                </span>
-                <span className={`text-[9px] uppercase tracking-wider font-extrabold ${
-                  user.role?.toLowerCase() === 'owner' || user.subscription_tier === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
-                }`}>
-                  {user.role?.toLowerCase() === 'owner' ? 'Owner Account' : (user.plan_name || `${user.role} Account`)}
-                </span>
-              </div>
+            {user && user.role !== 'guest' && (
               <button
-                onClick={logout}
-                className="px-3 py-1.5 rounded-lg bg-redBrand/10 border border-redBrand/20 hover:bg-redBrand/30 text-redBrand font-extrabold transition-all"
+                onClick={() => {
+                  setDhanClientIdInput(user.dhan_client_id || '');
+                  setDhanAccessTokenInput(user.dhan_access_token || '');
+                  setShowProfileModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold transition-all"
               >
-                Sign Out
+                <Key className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Profile & Keys</span>
               </button>
-            </div>
+            )}
+            
+            {user && user.role !== 'guest' ? (
+              <div className="flex items-center gap-3 border-l border-borderClr/60 pl-4">
+                <div className="flex flex-col items-end">
+                  <span className="text-[11px] text-white font-semibold flex items-center gap-1.5" title={user.email || user.display_name || user.phone_number}>
+                    <User className="w-3 h-3 text-emerald-400" />
+                    {user.email || user.display_name || (user.phone_number?.startsWith('fb_') ? 'Account' : user.phone_number)}
+                  </span>
+                  <span className={`text-[9px] uppercase tracking-wider font-extrabold ${
+                    user.role?.toLowerCase() === 'owner' || user.subscription_tier === 'owner' ? 'text-greenBrand' : 'text-accentCyan'
+                  }`}>
+                    {user.role?.toLowerCase() === 'owner' ? 'Owner Account' : (user.plan_name || `${user.role} Account`)}
+                  </span>
+                </div>
+                <button
+                  onClick={logout}
+                  className="px-3 py-1.5 rounded-lg bg-redBrand/10 border border-redBrand/20 hover:bg-redBrand/30 text-redBrand font-extrabold transition-all"
+                >
+                  Sign Out
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 border-l border-borderClr/60 pl-4">
+                <button
+                  onClick={() => setShowAuthModal(true)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition-all shadow-md"
+                >
+                  Register / Sign In
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -652,11 +713,11 @@ const App: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">
-                    {user.email ? 'Account Email / ID' : 'Account Phone / ID'}
+                    {user?.email ? 'Account Email / ID' : 'Account Phone / ID'}
                   </label>
                   <input 
                     type="text" 
-                    value={user.display_name ? `${user.display_name} (${user.email || user.phone_number})` : (user.email || user.phone_number)} 
+                    value={user?.display_name ? `${user.display_name} (${user.email || user.phone_number})` : (user?.email || user?.phone_number || 'Guest User')} 
                     disabled 
                     className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-400 cursor-not-allowed" 
                   />
@@ -665,7 +726,7 @@ const App: React.FC = () => {
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Platform Role</label>
                   <span className="inline-block px-2.5 py-1 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase">
-                    {user.role} Account
+                    {user?.role || 'Guest'} Account
                   </span>
                 </div>
 
@@ -937,6 +998,25 @@ const App: React.FC = () => {
         <SubscriptionModal 
           isOpen={showSubscriptionModal} 
           onClose={() => setShowSubscriptionModal(false)} 
+        />
+
+        {/* 10-Minute Exploration Free Trial Reminder Modal */}
+        <TrialReminderModal
+          isOpen={showTrialReminderModal}
+          onClose={() => {
+            setShowTrialReminderModal(false);
+            const snoozeUntil = Date.now() + 15 * 60 * 1000;
+            localStorage.setItem('optionchief_trial_snooze_until', snoozeUntil.toString());
+          }}
+          onOpenAuth={() => setShowAuthModal(true)}
+        />
+
+        {/* 1-Click Login & Registration Modal */}
+        <LoginView
+          isModal={true}
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          initialMode="register"
         />
       </main>
     </div>
