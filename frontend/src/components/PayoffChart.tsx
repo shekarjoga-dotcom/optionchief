@@ -12,7 +12,9 @@ import {
   Area,
   CartesianGrid
 } from 'recharts';
-import { Clock, TrendingUp, HelpCircle } from 'lucide-react';
+import { Clock, TrendingUp, HelpCircle, Share2 } from 'lucide-react';
+import { SocialShareModal } from './SocialShareModal';
+import type { SocialShareData } from './SocialShareModal';
 
 const getRiskRewardRatio = (maxProfit: number | string, maxLoss: number | string): string => {
   if (typeof maxProfit !== 'number' || typeof maxLoss !== 'number') {
@@ -66,6 +68,38 @@ export const PayoffChart: React.FC<PayoffChartProps> = ({
     return projectStrategy(legs, spot, daysPassed, ivOffset, 0.05, symbol);
   }, [legs, spot, daysPassed, ivOffset, symbol]);
 
+  // Social Share State
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareData, setShareData] = useState<SocialShareData | null>(null);
+
+  const handleOpenShareModal = () => {
+    if (!metrics) return;
+    const stratName = legs.length === 1 
+      ? `Single Leg ${legs[0].optionType === 'C' ? 'Call' : legs[0].optionType === 'P' ? 'Put' : 'Future'}` 
+      : `${symbol} Multi-Leg Strategy (${legs.length} Legs)`;
+
+    setShareData({
+      title: stratName,
+      symbol: symbol,
+      spot: spot,
+      expiry: selectedExpiry,
+      legs: legs,
+      metrics: {
+        maxProfit: metrics.maxProfit,
+        maxLoss: metrics.maxLoss,
+        pop: metrics.pop,
+        marginRequirement: metrics.marginRequirement,
+        netDebitCredit: metrics.netDebitCredit,
+        breakEvens: metrics.breakEvens,
+        delta: metrics.delta,
+        gamma: metrics.gamma,
+        theta: metrics.theta
+      },
+      payoffPoints: payoff
+    });
+    setShareModalOpen(true);
+  };
+
   if (legs.length === 0) {
     return (
       <div className="bg-cardBg rounded-xl p-8 border border-borderClr/40 text-center text-gray-500 min-h-[300px] flex items-center justify-center">
@@ -97,9 +131,19 @@ export const PayoffChart: React.FC<PayoffChartProps> = ({
       <div className="xl:col-span-3 flex flex-col gap-4">
         <div className="flex justify-between items-center px-1">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider">Strategy Payoff Curve</h3>
-          <div className="flex gap-4 text-[10px] text-gray-400 font-semibold">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-accentCyan rounded-full" /> T+{daysPassed} PnL</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-purple-500 rounded-full" /> Expiry PnL</span>
+          <div className="flex items-center gap-3">
+            <div className="flex gap-4 text-[10px] text-gray-400 font-semibold">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-accentCyan rounded-full" /> T+{daysPassed} PnL</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-purple-500 rounded-full" /> Expiry PnL</span>
+            </div>
+            <button
+              onClick={handleOpenShareModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan border border-accentCyan/30 rounded-lg text-xs font-bold transition-all shadow-sm transform hover:scale-[1.02]"
+              title="Share Payoff Chart on WhatsApp, Twitter, Telegram or Download PNG Card"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share Chart</span>
+            </button>
           </div>
         </div>
 
@@ -326,10 +370,26 @@ export const PayoffChart: React.FC<PayoffChartProps> = ({
                   {metrics.theta >= 0 ? "+" : ""}{metrics.theta.toFixed(2)}
                 </span>
               </div>
+
+              {/* Share Button in Sidebar */}
+              <button
+                onClick={handleOpenShareModal}
+                className="w-full mt-3 py-2 bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan border border-accentCyan/30 text-xs font-extrabold rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share to Social Networks</span>
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Social Share Modal */}
+      <SocialShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        data={shareData}
+      />
     </div>
   );
 };

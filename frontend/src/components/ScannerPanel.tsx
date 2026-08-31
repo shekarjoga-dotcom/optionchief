@@ -35,8 +35,11 @@ import {
   ChevronDown,
   SlidersHorizontal,
   XCircle,
-  Zap
+  Zap,
+  Share2
 } from 'lucide-react';
+import { SocialShareModal } from './SocialShareModal';
+import type { SocialShareData } from './SocialShareModal';
 
 
 interface SubCategoryOption {
@@ -359,6 +362,34 @@ export const ScannerPanel: React.FC = () => {
   const [strategySearch, setStrategySearch] = useState<string>("");
   const [scannedResults, setScannedResults] = useState<ScannedStrategy[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+
+  // Social Share Modal State
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareData, setShareData] = useState<SocialShareData | null>(null);
+
+  const handleOpenShareModal = (strategy: ScannedStrategy, projection: any) => {
+    if (!strategy || !projection) return;
+    setShareData({
+      title: strategy.name,
+      symbol: symbol,
+      spot: strategySpot,
+      expiry: strategy.expiry,
+      legs: strategy.legs,
+      metrics: {
+        maxProfit: projection.metrics.maxProfit,
+        maxLoss: projection.metrics.maxLoss,
+        pop: projection.metrics.pop,
+        marginRequirement: projection.metrics.marginRequirement,
+        netDebitCredit: projection.metrics.netDebitCredit,
+        breakEvens: projection.metrics.breakEvens,
+        delta: projection.metrics.delta,
+        gamma: projection.metrics.gamma,
+        theta: projection.metrics.theta
+      },
+      payoffPoints: projection.payoff
+    });
+    setShareModalOpen(true);
+  };
 
   const currentSubCategories = useMemo(() => {
     const list = SUB_CATEGORIES_MAP[category] || [];
@@ -1920,9 +1951,19 @@ export const ScannerPanel: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="flex gap-4 text-[10px] text-gray-400 font-semibold">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-accentCyan rounded-full" /> T+{payoffDaysPassed} PnL</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-purple-500 rounded-full" /> Expiry PnL</span>
+            <div className="flex items-center gap-3">
+              <div className="flex gap-4 text-[10px] text-gray-400 font-semibold">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-accentCyan rounded-full" /> T+{payoffDaysPassed} PnL</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-purple-500 rounded-full" /> Expiry PnL</span>
+              </div>
+              <button
+                onClick={() => handleOpenShareModal(selectedStrategy, selectedProjection)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan border border-accentCyan/30 rounded-lg text-xs font-bold transition-all shadow-sm transform hover:scale-[1.02]"
+                title="Share Payoff Chart on WhatsApp, Twitter, Telegram or Download PNG Card"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share Chart</span>
+              </button>
             </div>
           </div>
 
@@ -2102,6 +2143,13 @@ export const ScannerPanel: React.FC = () => {
                   <Play className="w-3.5 h-3.5 fill-white text-white" />
                   <span>Send to Sandbox</span>
                 </button>
+                <button
+                  onClick={() => handleOpenShareModal(selectedStrategy, selectedProjection)}
+                  className="w-full py-2 bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan border border-accentCyan/30 text-xs font-extrabold rounded-lg transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Share to Social Networks</span>
+                </button>
                 {user?.role !== 'viewer' && (
                   <button
                     onClick={() => handleOpenTradeModal(selectedStrategy)}
@@ -2243,6 +2291,13 @@ export const ScannerPanel: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Social Share Modal */}
+      <SocialShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        data={shareData}
+      />
 
     </div>
   );
