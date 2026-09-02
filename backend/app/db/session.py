@@ -11,11 +11,22 @@ db_path = os.path.join(db_dir, "options_oracle.db")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
 
 # Normalize PostgreSQL URLs for async SQLAlchemy (Render environment variables provide postgresql:// or postgres://)
-if DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://"):
+if DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql+asyncpg://"):
     import urllib.parse
+    
+    # Safe password encoding for passwords with '@', '!', '#', etc.
+    scheme, rest = DATABASE_URL.split("://", 1)
+    if "@" in rest:
+        userinfo, hostinfo = rest.rsplit("@", 1)
+        if ":" in userinfo:
+            username, password = userinfo.split(":", 1)
+            unquoted_pw = urllib.parse.unquote(password)
+            encoded_pw = urllib.parse.quote(unquoted_pw, safe="")
+            DATABASE_URL = f"{scheme}://{username}:{encoded_pw}@{hostinfo}"
+
     if DATABASE_URL.startswith("postgresql://"):
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-    else:
+    elif DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
     parsed = urllib.parse.urlparse(DATABASE_URL)
