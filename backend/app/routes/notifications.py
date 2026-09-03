@@ -100,24 +100,28 @@ async def send_alert_telegram(bot_token: Optional[str], chat_id: Optional[str], 
         return False
         
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat,
-        "text": message_text,
-        "parse_mode": "HTML"
-    }
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, timeout=10.0)
-            if response.status_code == 200:
-                print(f"[Telegram Alert] Sent successfully to chat {chat}")
-                return True
-            else:
-                print(f"[Telegram Alert] Error: Status {response.status_code}, Body: {response.text}")
-                return False
-    except Exception as e:
-        print(f"[Telegram Alert] Exception: {str(e)}")
-        return False
+    chats = [c.strip() for c in str(chat).split(",") if c.strip()]
+    overall_success = False
+
+    async with httpx.AsyncClient() as client:
+        for target_chat in chats:
+            payload = {
+                "chat_id": target_chat,
+                "text": message_text,
+                "parse_mode": "HTML"
+            }
+            try:
+                response = await client.post(url, json=payload, timeout=10.0)
+                if response.status_code == 200:
+                    print(f"[Telegram Alert] Sent successfully to chat {target_chat}")
+                    overall_success = True
+                else:
+                    print(f"[Telegram Alert] Error sending to {target_chat}: Status {response.status_code}, Body: {response.text}")
+            except Exception as e:
+                print(f"[Telegram Alert] Exception sending to {target_chat}: {str(e)}")
+
+    return overall_success
+
 
 def send_alert_email(recipient_email: str, subject: str, html_content: str, chart_bytes: bytes = None):
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")

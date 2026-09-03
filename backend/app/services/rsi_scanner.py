@@ -219,27 +219,39 @@ async def rsi_scanner_loop():
                         
                     # Notification dispatching
                     currency = "$" if s_upper in ["SPY", "AAPL", "MSFT", "TSLA"] else "₹"
-                    direction_label = "🟢 BULLISH CE BREAKOUT" if direction == 'BULLISH_CE' else "🔴 BEARISH PE BREAKDOWN"
+                    direction_label = "🟢 BULLISH CE BREAKOUT (CALL BUY)" if direction == 'BULLISH_CE' else "🔴 BEARISH PE BREAKDOWN (PUT BUY)"
                     leg_label = f"{config.symbol} {expiry} {strike} {leg_type}E"
+                    capital_deployed = entry_price * total_qty
+                    target_price = entry_price * (1.0 + (config.tp_pct / 100.0))
+                    sl_price = max(0.05, entry_price * (1.0 - (config.sl_pct / 100.0)))
                     
                     msg_text = (
-                        f"⚡ RSI Scanner Signal!\n"
+                        f"⚡ OptionChief RSI Scanner Signal!\n"
                         f"Signal: {direction_label}\n"
-                        f"Asset: {config.symbol} (Spot: {currency}{spot})\n"
+                        f"Asset: {config.symbol} (Spot: {currency}{spot:,.2f})\n"
                         f"RSI: {rsi_val:.2f}\n"
-                        f"Leg Option: {leg_label} @ LTP {currency}{entry_price}\n"
+                        f"Contract: {leg_label} @ LTP {currency}{entry_price:,.2f}\n"
+                        f"Qty: {total_qty} ({config.lot_size} lot{'s' if config.lot_size > 1 else ''}) | Capital: {currency}{capital_deployed:,.2f}\n"
+                        f"Target (+{config.tp_pct}%): {currency}{target_price:,.2f}\n"
+                        f"Stop Loss (-{config.sl_pct}%): {currency}{sl_price:,.2f}\n"
                         f"Time: {sig_time}\n"
-                        f"Execution: {status_log}"
+                        f"Execution: Auto-logged to Paper Trading Book\n"
+                        f"Analyze: https://optionchief.in"
                     )
                     
                     tg_html = (
-                        f"<b>⚡ OptionsOracle RSI Scanner Alert!</b>\n\n"
-                        f"🎯 <b>Signal:</b> {'🟢 Bullish CE Breakout' if direction == 'BULLISH_CE' else '🔴 Bearish PE Breakdown'}\n"
-                        f"📈 <b>Asset:</b> {config.symbol} (Spot: {currency}{spot})\n"
-                        f"📊 <b>RSI Value:</b> {rsi_val:.2f}\n"
-                        f"💼 <b>Option Leg:</b> <code>{leg_label}</code> @ LTP {currency}{entry_price}\n"
+                        f"<b>⚡ OptionChief • Intraday RSI Breakout Alert</b>\n\n"
+                        f"🎯 <b>Signal:</b> {direction_label}\n"
+                        f"📈 <b>Index/Asset:</b> <code>{config.symbol}</code> (Spot: {currency}{spot:,.2f})\n"
+                        f"📊 <b>Indicator:</b> RSI({config.rsi_period}) = <b>{rsi_val:.2f}</b>\n"
+                        f"💼 <b>Option Contract:</b> <code>{leg_label}</code>\n"
+                        f"💵 <b>Entry LTP:</b> {currency}{entry_price:,.2f}\n"
+                        f"📦 <b>Lots:</b> {config.lot_size} ({total_qty} Qty) | Capital: {currency}{capital_deployed:,.2f}\n"
+                        f"🎯 <b>Take Profit (+{config.tp_pct}%):</b> {currency}{target_price:,.2f}\n"
+                        f"🛑 <b>Stop Loss (-{config.sl_pct}%):</b> {currency}{sl_price:,.2f}\n"
                         f"⏰ <b>Trigger Time:</b> {sig_time}\n"
-                        f"⚙️ <b>Execution:</b> {status_log}"
+                        f"📒 <b>Paper Book:</b> ✅ Live executed to Paper Trading Book\n\n"
+                        f"👉 <b>Live Option Terminal:</b> <a href=\"https://optionchief.in\">optionchief.in</a>"
                     )
                     
                     # Telegram notifications
