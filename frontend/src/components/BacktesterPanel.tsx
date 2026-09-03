@@ -1066,14 +1066,19 @@ export const BacktesterPanel: React.FC = () => {
         payload.trailingSLStep = trailingSLStep !== "" ? parseFloat(trailingSLStep) : null;
       }
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
       const response = await fetch(`${BACKEND_URL}/api/backtest/run`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       const data = await response.json();
       if (response.ok) {
@@ -1086,7 +1091,11 @@ export const BacktesterPanel: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Connection failed.");
+      if (err.name === 'AbortError') {
+        setError("Backtest request timed out after 60s. The server is downloading historical candles or waking up. Please try clicking Run again.");
+      } else {
+        setError(err.message || "Connection failed.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1147,14 +1156,19 @@ export const BacktesterPanel: React.FC = () => {
         };
       }
 
+      const optController = new AbortController();
+      const optTimeoutId = setTimeout(() => optController.abort(), 120000); // 120s timeout
+
       const response = await fetch(`${BACKEND_URL}/api/backtest/optimize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: optController.signal
       });
+      clearTimeout(optTimeoutId);
 
       const data = await response.json();
       if (response.ok) {
@@ -1166,7 +1180,11 @@ export const BacktesterPanel: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Optimization connection failed.");
+      if (err.name === 'AbortError') {
+        setError("Optimization sweep timed out after 120s. Try sweeping fewer parameters or a smaller date range.");
+      } else {
+        setError(err.message || "Optimization connection failed.");
+      }
     } finally {
       setIsOptimizing(false);
     }
@@ -1991,6 +2009,13 @@ export const BacktesterPanel: React.FC = () => {
           <div className="glass-panel rounded-xl p-12 border border-borderClr/30 flex flex-col items-center justify-center text-gray-500 text-xs min-h-[550px] bg-gray-950/40 gap-3">
             <div className="w-10 h-10 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
             <span className="font-bold text-white uppercase tracking-widest text-[10px]">Processing Historical Data...</span>
+            <span className="text-[10px] text-gray-400">Fetching 5m candles and simulating options price action...</span>
+            <button
+              onClick={() => setIsLoading(false)}
+              className="mt-1 text-[10px] text-gray-400 hover:text-red-400 underline cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
         )}
 

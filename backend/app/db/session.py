@@ -32,17 +32,8 @@ if DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres
     parsed = urllib.parse.urlparse(DATABASE_URL)
     if parsed.query:
         qs = urllib.parse.parse_qs(parsed.query)
-        clean_params = {}
-        for k, v in qs.items():
-            if k == 'sslmode':
-                val = v[0] if v else ''
-                if val in ['require', 'prefer']:
-                    clean_params['ssl'] = ['require']
-                elif val == 'no-verify':
-                    clean_params['ssl'] = ['no-verify']
-            elif k in ['ssl', 'timeout', 'command_timeout', 'server_settings']:
-                clean_params[k] = v
-
+        # Remove sslmode/ssl from query parameters as asyncpg requires ssl via connect_args
+        clean_params = {k: v for k, v in qs.items() if k not in ['sslmode', 'ssl']}
         new_query = urllib.parse.urlencode(clean_params, doseq=True)
         DATABASE_URL = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
@@ -77,7 +68,23 @@ if "sqlite" in DATABASE_URL:
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 else:
-    engine = create_async_engine(DATABASE_URL, echo=False)
+    import ssl
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_timeout=10,
+        connect_args={
+            "ssl": ssl_ctx,
+            "timeout": 10,
+            "command_timeout": 10
+        }
+    )
 
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()

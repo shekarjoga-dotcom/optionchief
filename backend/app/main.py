@@ -54,7 +54,7 @@ async def on_startup():
     import asyncio
     
     async def init_background_tasks():
-        try:
+        async def run_db_setup():
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
                 
@@ -146,8 +146,10 @@ async def on_startup():
                             existing.email = None
                 await session.commit()
 
+        try:
+            await asyncio.wait_for(run_db_setup(), timeout=15.0)
         except Exception as e:
-            print(f"[Startup DB Init Warning] {e}")
+            print(f"[Startup DB Init Warning/Timeout] {e}")
 
         try:
             from app.services.alert_scanner import active_alerts_scanner_loop
@@ -192,3 +194,8 @@ def read_root():
         "service": "optionchief.in API",
         "description": "Calculations and option chain scraper server."
     }
+
+@app.get("/health")
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "service": "optionchief-backend"}
