@@ -1,11 +1,52 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
-import { Briefcase, Play, Trash2, XCircle, Clock, Coins, TrendingUp, Link as LinkIcon, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  Briefcase, 
+  Play, 
+  Trash2, 
+  XCircle, 
+  Clock, 
+  Coins, 
+  TrendingUp, 
+  Link as LinkIcon, 
+  Download, 
+  Search, 
+  ChevronLeft, 
+  ChevronRight
+} from 'lucide-react';
 import type { SavedPortfolio, StrategyLeg, TriggeredAlert } from '../types';
-import { projectStrategy, projectLegPnL, getLotSizeForSymbol, normalizeLegQuantities, getCurrencySymbol } from '../utils/optionsMath';
+import { 
+  projectStrategy, 
+  projectLegPnL, 
+  getLotSizeForSymbol, 
+  normalizeLegQuantities, 
+  getCurrencySymbol,
+  isContractExpired,
+  calculateSettledLegPnL
+} from '../utils/optionsMath';
 import { PayoffChart } from './PayoffChart';
 
 import { BACKEND_URL } from '../config';
+
+export interface UnifiedClosedTrade {
+  id: string;
+  source: 'portfolio' | 'alert';
+  symbol: string;
+  strategyName: string;
+  expiry: string;
+  entryDate: string;
+  exitDate: string;
+  exitReason: 'EXPIRED' | 'TARGET_HIT' | 'SL_HIT' | 'MANUAL';
+  exitReasonLabel: string;
+  legs: StrategyLeg[];
+  realizedPnL: number;
+  maxProfit?: number | string;
+  maxLoss?: number | string;
+  pop?: number;
+  rrRatio?: number;
+  rawPortfolio?: SavedPortfolio;
+  rawAlert?: TriggeredAlert;
+}
 
 export const PortfolioManager: React.FC = () => {
   const { portfolios, fetchPortfolios, loadLegs, deletePortfolio, setSymbol, symbol, underlying, user, updatePortfolio, squareOffPortfolio, triggeredAlerts, fetchTriggeredAlerts, clearTriggeredAlerts, deleteTriggeredAlert } = useStore();
@@ -21,6 +62,16 @@ export const PortfolioManager: React.FC = () => {
       return {};
     }
   });
+
+  // Closed Trades History Filtering & Pagination states
+  const [closedFilterType, setClosedFilterType] = useState<'ALL' | 'EXPIRED' | 'TARGET_HIT' | 'SL_HIT' | 'MANUAL'>('ALL');
+  const [closedFilterSource, setClosedFilterSource] = useState<'ALL' | 'portfolio' | 'alert'>('ALL');
+  const [closedSearchQuery, setClosedSearchQuery] = useState("");
+  const [closedPage, setClosedPage] = useState(1);
+  const [closedPageSize, setClosedPageSize] = useState<number | 'ALL'>(50);
+
+  // Auto-Scanner Alerts View mode: 'active' (non-expired/alive) vs 'all' (entire historical backlog)
+  const [alertStatusMode, setAlertStatusMode] = useState<'active' | 'all'>('active');
 
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareData, setShareData] = useState<any>(null);
@@ -283,23 +334,263 @@ export const PortfolioManager: React.FC = () => {
     fetchPortfolios();
   }, []);
 
-  // Classify portfolios into open and closed positions
-  const { open: openPositions, closed: closedHistory } = useMemo(() => {
-    const open: SavedPortfolio[] = [];
-    const closed: SavedPortfolio[] = [];
+  // Helper to calculate live stats for a portfolio card
+  const getPortfolioStats = (p: SavedPortfolio) => {
+    const activeSpot = (underlying && p.symbol.toUpperCase() === symbol.toUpperCase()) 
+      ? underlying.spot 
+      : (p.legs[0]?.strike || 100);
 
-    portfolios.forEach((p) => {
-      // If portfolio has realizedPnL or status is squared off in legs, it is closed
-      const isClosed = (p.realizedPnL ?? 0) !== 0 || p.legs.some(l => l.status === "SQUARED_OFF");
-      if (isClosed) {
-        closed.push(p);
+    let totalUnrealizedPnL = 0;
+    for (const leg of p.legs) {
+      const pnlData = projectLegPnL(leg, activeSpot, 0, 0);
+      totalUnrealizedPnL += pnlData.pnl;
+    }
+
+    const { metrics } = projectStrategy(p.legs, activeSpot, 0, 0, 0.05, p.symbol);
+    const unrealizedPnL = Math.round(totalUnrealizedPnL * 100) / 100;
+
+    // Peak Profit and Max Drawdown tracking
+    let peakProfit = p.peakProfit ?? 0.0;
+    let maxDrawdown = p.maxDrawdown ?? 0.0;
+    let needsUpdate = false;
+
+    if (unrealizedPnL > peakProfit) {
+      peakProfit = unrealizedPnL;
+      needsUpdate = true;
+    }
+    if (unrealizedPnL < maxDrawdown) {
+      maxDrawdown = unrealizedPnL;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate && user?.role !== 'viewer') {
+      p.peakProfit = peakProfit;
+      p.maxDrawdown = maxDrawdown;
+      updatePortfolio(p).catch(err => console.error("Failed to update peak/drawdown MTM", err));
+    }
+
+    return {
+      spotPrice: activeSpot,
+      unrealizedPnL,
+      margin: metrics.marginRequirement,
+      delta: metrics.delta,
+      theta: metrics.theta,
+      peakProfit,
+      maxDrawdown,
+      metrics
+    };
+  };
+
+  // Helper to evaluate if an alert is closed (expired, target hit, or SL hit)
+  const evaluateAlertStatus = (trig: TriggeredAlert) => {
+    const activeSpot = alertSpotPrices[trig.symbol.toUpperCase()] || trig.spotPrice || (trig.legs[0]?.strike || 100);
+    const currentPnl = getAlertCurrentPnL(trig);
+    const peak = alertPeakMetrics[trig.id]?.maxProfit ?? trig.peakProfit ?? Math.max(0, currentPnl);
+    const drawdown = alertPeakMetrics[trig.id]?.maxLoss ?? trig.maxDrawdown ?? Math.min(0, currentPnl);
+
+    const maxProfitNum = typeof trig.maxProfit === 'number' 
+      ? trig.maxProfit 
+      : parseFloat(String(trig.maxProfit).replace(/[^0-9.-]/g, '')) || 0;
+    const maxLossNum = typeof trig.maxLoss === 'number' 
+      ? Math.abs(trig.maxLoss) 
+      : Math.abs(parseFloat(String(trig.maxLoss).replace(/[^0-9.-]/g, '')) || 0);
+
+    // 1. Check Expiry (contract date passed or today after 15:30 IST)
+    const isExpired = isContractExpired(trig.expiry) || (trig.legs && trig.legs.some((l: any) => isContractExpired(l.expiry)));
+
+    // 2. Check Target Hit (Target profit reached)
+    const isTargetHit = maxProfitNum > 0 && (currentPnl >= maxProfitNum * 0.85 || peak >= maxProfitNum * 0.95);
+
+    // 3. Check Stop Loss Hit (Max loss or drawdown reached)
+    const isSLHit = maxLossNum > 0 && (currentPnl <= -maxLossNum * 0.9 || drawdown <= -maxLossNum * 0.95);
+
+    if (isTargetHit) {
+      const finalPnL = Math.round(Math.max(currentPnl, maxProfitNum * 0.85) * 100) / 100;
+      return {
+        isClosed: true,
+        exitReason: 'TARGET_HIT' as const,
+        exitReasonLabel: '🎯 Target Hit',
+        exitDate: trig.timestamp || 'Target Reached',
+        realizedPnL: finalPnL
+      };
+    }
+
+    if (isSLHit) {
+      const finalPnL = Math.round(Math.min(currentPnl, -maxLossNum) * 100) / 100;
+      return {
+        isClosed: true,
+        exitReason: 'SL_HIT' as const,
+        exitReasonLabel: '🛑 Stop Loss Hit',
+        exitDate: trig.timestamp || 'SL Reached',
+        realizedPnL: finalPnL
+      };
+    }
+
+    if (isExpired) {
+      // Settled intrinsic value at expiry
+      let settledPnL = 0;
+      for (const leg of trig.legs) {
+        settledPnL += calculateSettledLegPnL(leg, activeSpot);
+      }
+      return {
+        isClosed: true,
+        exitReason: 'EXPIRED' as const,
+        exitReasonLabel: '🏁 Contract Expired',
+        exitDate: trig.expiry || 'Settled',
+        realizedPnL: Math.round(settledPnL * 100) / 100
+      };
+    }
+
+    return {
+      isClosed: false,
+      exitReason: null,
+      exitReasonLabel: '',
+      exitDate: '',
+      realizedPnL: currentPnl
+    };
+  };
+
+  // Helper to evaluate if a portfolio is closed (manual squareoff, expired, or target/SL hit)
+  const evaluatePortfolioStatus = (p: SavedPortfolio) => {
+    const isManuallySquaredOff = (p.realizedPnL ?? 0) !== 0 || p.legs.some(l => l.status === "SQUARED_OFF");
+    if (isManuallySquaredOff) {
+      return {
+        isClosed: true,
+        exitReason: 'MANUAL' as const,
+        exitReasonLabel: '⏹️ Squared Off',
+        exitDate: p.createdAt || 'Closed',
+        realizedPnL: p.realizedPnL ?? 0
+      };
+    }
+
+    const stats = getPortfolioStats(p);
+    const pnl = stats.unrealizedPnL;
+    const metrics = stats.metrics;
+    const activeSpot = stats.spotPrice;
+
+    // Check Expiry
+    const isExpired = p.legs.some(l => isContractExpired(l.expiry));
+
+    // Check Target Profit
+    const tpVal = p.takeProfit ?? 20.0;
+    let tpTrigger = 0;
+    if (metrics.maxProfit === 'Unlimited') {
+      const maxLossNum = typeof metrics.maxLoss === 'number' ? Math.abs(metrics.maxLoss) : 0;
+      tpTrigger = maxLossNum * (tpVal / 100.0);
+    } else if (typeof metrics.maxProfit === 'number') {
+      tpTrigger = metrics.maxProfit * (tpVal / 100.0);
+    }
+    const isTargetHit = tpVal > 0 && tpTrigger > 0 && pnl >= tpTrigger;
+
+    // Check Stop Loss
+    const slVal = p.stopLoss ?? 0.0;
+    let slTrigger = 0;
+    if (typeof metrics.maxLoss === 'number') {
+      slTrigger = -Math.abs(metrics.maxLoss) * (slVal / 100.0);
+    }
+    const isSLHit = slVal > 0 && slTrigger < 0 && pnl <= slTrigger;
+
+    if (isTargetHit) {
+      return {
+        isClosed: true,
+        exitReason: 'TARGET_HIT' as const,
+        exitReasonLabel: '🎯 Target Hit',
+        exitDate: 'Auto Target',
+        realizedPnL: pnl
+      };
+    }
+
+    if (isSLHit) {
+      return {
+        isClosed: true,
+        exitReason: 'SL_HIT' as const,
+        exitReasonLabel: '🛑 Stop Loss Hit',
+        exitDate: 'Auto SL',
+        realizedPnL: pnl
+      };
+    }
+
+    if (isExpired) {
+      let settledPnL = 0;
+      for (const leg of p.legs) {
+        settledPnL += calculateSettledLegPnL(leg, activeSpot);
+      }
+      return {
+        isClosed: true,
+        exitReason: 'EXPIRED' as const,
+        exitReasonLabel: '🏁 Contract Expired',
+        exitDate: p.legs[0]?.expiry || 'Expired',
+        realizedPnL: Math.round(settledPnL * 100) / 100
+      };
+    }
+
+    return {
+      isClosed: false,
+      exitReason: null,
+      exitReasonLabel: '',
+      exitDate: '',
+      realizedPnL: pnl
+    };
+  };
+
+  // Classify into open positions, unified closed history, and active alerts
+  const { openPositions, allClosedHistory, activeAlerts } = useMemo(() => {
+    const open: SavedPortfolio[] = [];
+    const closed: UnifiedClosedTrade[] = [];
+
+    // 1. Process portfolios
+    portfolios.forEach(p => {
+      const status = evaluatePortfolioStatus(p);
+      if (status.isClosed) {
+        closed.push({
+          id: p.id,
+          source: 'portfolio',
+          symbol: p.symbol,
+          strategyName: p.name,
+          expiry: p.legs[0]?.expiry || '',
+          entryDate: p.createdAt || 'Recent',
+          exitDate: status.exitDate,
+          exitReason: status.exitReason || 'MANUAL',
+          exitReasonLabel: status.exitReasonLabel,
+          legs: p.legs,
+          realizedPnL: status.realizedPnL,
+          rawPortfolio: p
+        });
       } else {
         open.push(p);
       }
     });
 
-    return { open, closed };
-  }, [portfolios]);
+    // 2. Process triggered alerts
+    const activeAl: TriggeredAlert[] = [];
+    triggeredAlerts.forEach(trig => {
+      const status = evaluateAlertStatus(trig);
+      if (status.isClosed) {
+        closed.push({
+          id: trig.id,
+          source: 'alert',
+          symbol: trig.symbol,
+          strategyName: trig.strategyName,
+          expiry: trig.expiry,
+          entryDate: trig.timestamp,
+          exitDate: status.exitDate,
+          exitReason: status.exitReason || 'EXPIRED',
+          exitReasonLabel: status.exitReasonLabel,
+          legs: trig.legs,
+          realizedPnL: status.realizedPnL,
+          maxProfit: trig.maxProfit,
+          maxLoss: trig.maxLoss,
+          pop: trig.pop,
+          rrRatio: trig.rrRatio,
+          rawAlert: trig
+        });
+      } else {
+        activeAl.push(trig);
+      }
+    });
+
+    return { openPositions: open, allClosedHistory: closed, activeAlerts: activeAl };
+  }, [portfolios, triggeredAlerts, alertSpotPrices, alertPeakMetrics, underlying, symbol]);
 
   const sortedOpenPositions = useMemo(() => {
     const copy = [...openPositions];
@@ -338,8 +629,31 @@ export const PortfolioManager: React.FC = () => {
     return copy;
   }, [openPositions, openSortKey, openSortOrder]);
 
+  // Filter Closed Trades
+  const filteredClosedHistory = useMemo(() => {
+    return allClosedHistory.filter((item) => {
+      if (closedFilterType !== 'ALL' && item.exitReason !== closedFilterType) {
+        return false;
+      }
+      if (closedFilterSource !== 'ALL' && item.source !== closedFilterSource) {
+        return false;
+      }
+      if (closedSearchQuery.trim()) {
+        const q = closedSearchQuery.toLowerCase();
+        const sym = item.symbol.toLowerCase();
+        const name = item.strategyName.toLowerCase();
+        const exp = (item.expiry || "").toLowerCase();
+        const legs = (item.legs || []).map(l => `${l.strike}${l.optionType}`).join(" ").toLowerCase();
+        if (!sym.includes(q) && !name.includes(q) && !exp.includes(q) && !legs.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [allClosedHistory, closedFilterType, closedFilterSource, closedSearchQuery]);
+
   const sortedClosedHistory = useMemo(() => {
-    const copy = [...closedHistory];
+    const copy = [...filteredClosedHistory];
     copy.sort((a, b) => {
       let valA: any = "";
       let valB: any = "";
@@ -348,14 +662,14 @@ export const PortfolioManager: React.FC = () => {
         valA = a.symbol.toUpperCase();
         valB = b.symbol.toUpperCase();
       } else if (closedSortKey === "name") {
-        valA = a.name.toUpperCase();
-        valB = b.name.toUpperCase();
+        valA = a.strategyName.toUpperCase();
+        valB = b.strategyName.toUpperCase();
       } else if (closedSortKey === "date") {
-        valA = a.createdAt || "";
-        valB = b.createdAt || "";
+        valA = a.exitDate || a.entryDate || "";
+        valB = b.exitDate || b.entryDate || "";
       } else if (closedSortKey === "pnl") {
-        valA = a.realizedPnL ?? 0;
-        valB = b.realizedPnL ?? 0;
+        valA = a.realizedPnL;
+        valB = b.realizedPnL;
       }
       
       if (valA < valB) return closedSortOrder === "asc" ? -1 : 1;
@@ -363,10 +677,98 @@ export const PortfolioManager: React.FC = () => {
       return 0;
     });
     return copy;
-  }, [closedHistory, closedSortKey, closedSortOrder]);
+  }, [filteredClosedHistory, closedSortKey, closedSortOrder]);
+
+  const totalClosedPages = useMemo(() => {
+    if (closedPageSize === 'ALL') return 1;
+    return Math.max(1, Math.ceil(sortedClosedHistory.length / closedPageSize));
+  }, [sortedClosedHistory.length, closedPageSize]);
+
+  const paginatedClosedHistory = useMemo(() => {
+    if (closedPageSize === 'ALL') return sortedClosedHistory;
+    const start = (closedPage - 1) * closedPageSize;
+    return sortedClosedHistory.slice(start, start + closedPageSize);
+  }, [sortedClosedHistory, closedPage, closedPageSize]);
+
+  // Handle Export Closed Trades CSV
+  const handleExportClosedCSV = () => {
+    if (filteredClosedHistory.length === 0) {
+      alert("No closed trades to export.");
+      return;
+    }
+    const headers = [
+      "Trade ID",
+      "Source",
+      "Symbol",
+      "Strategy Name",
+      "Expiry",
+      "Entry Date",
+      "Exit Date",
+      "Exit Reason",
+      "Contract Legs",
+      "Realized P&L (₹)"
+    ];
+
+    const rows = filteredClosedHistory.map((item) => {
+      const compactLegs = formatLegsCompact(item.legs, item.symbol);
+      return [
+        `"${item.id}"`,
+        `"${item.source === 'portfolio' ? 'Paper Position' : 'Auto-Scanner Alert'}"`,
+        `"${item.symbol}"`,
+        `"${(item.strategyName || '').replace(/"/g, '""')}"`,
+        `"${item.expiry || ''}"`,
+        `"${item.entryDate || ''}"`,
+        `"${item.exitDate || ''}"`,
+        `"${item.exitReasonLabel}"`,
+        `"${compactLegs.replace(/"/g, '""')}"`,
+        item.realizedPnL
+      ].join(",");
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `OptionChief_Closed_Trades_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleClearClosedTrades = async () => {
+    if (!confirm("Are you sure you want to clear all closed trade history records?")) return;
+    for (const item of allClosedHistory) {
+      if (item.source === 'portfolio') {
+        await deletePortfolio(item.id).catch(() => {});
+      } else {
+        deleteTriggeredAlert(item.id);
+      }
+    }
+  };
+
+  const handleDeleteClosedTrade = async (item: UnifiedClosedTrade, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm(`Are you sure you want to delete this closed trade (${item.strategyName})?`)) {
+      if (item.source === 'portfolio') {
+        await deletePortfolio(item.id);
+      } else {
+        deleteTriggeredAlert(item.id);
+      }
+    }
+  };
+
+  const handleLoadClosedTrade = (item: UnifiedClosedTrade) => {
+    setSymbol(item.symbol);
+    loadLegs(normalizeLegQuantities(item.legs, item.symbol));
+    alert(`Loaded strategy: ${item.strategyName} (${item.symbol}) into Sandbox`);
+  };
+
+  const alertSourceList = useMemo(() => {
+    return alertStatusMode === 'active' ? activeAlerts : triggeredAlerts;
+  }, [alertStatusMode, activeAlerts, triggeredAlerts]);
 
   const sortedTriggeredAlerts = useMemo(() => {
-    const copy = [...triggeredAlerts];
+    const copy = [...alertSourceList];
     copy.sort((a, b) => {
       let valA: any = "";
       let valB: any = "";
@@ -404,7 +806,7 @@ export const PortfolioManager: React.FC = () => {
       return 0;
     });
     return copy;
-  }, [triggeredAlerts, alertSortKey, alertSortOrder]);
+  }, [alertSourceList, alertSortKey, alertSortOrder]);
 
   const availableAlertSymbols = useMemo(() => {
     const syms = new Set<string>();
@@ -550,13 +952,6 @@ export const PortfolioManager: React.FC = () => {
     alert(`Loaded strategy: ${p.name} (${p.symbol})`);
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm("Are you sure you want to delete this trade record?")) {
-      await deletePortfolio(id);
-    }
-  };
-
   const handleSquareOff = async (p: SavedPortfolio, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm(`Are you sure you want to square off ${p.name}?`)) return;
@@ -568,53 +963,6 @@ export const PortfolioManager: React.FC = () => {
 
     await squareOffPortfolio(p.id, realizedPnL);
     alert(`Position squared off! Realized PnL: ${curSym}${realizedPnL.toLocaleString()}`);
-  };
-
-  // Helper to calculate live stats for a portfolio card
-  const getPortfolioStats = (p: SavedPortfolio) => {
-    const activeSpot = (underlying && p.symbol.toUpperCase() === symbol.toUpperCase()) 
-      ? underlying.spot 
-      : (p.legs[0]?.strike || 100);
-
-    let totalUnrealizedPnL = 0;
-    for (const leg of p.legs) {
-      const pnlData = projectLegPnL(leg, activeSpot, 0, 0);
-      totalUnrealizedPnL += pnlData.pnl;
-    }
-
-    const { metrics } = projectStrategy(p.legs, activeSpot, 0, 0, 0.05, p.symbol);
-    const unrealizedPnL = Math.round(totalUnrealizedPnL * 100) / 100;
-
-    // Peak Profit and Max Drawdown tracking
-    let peakProfit = p.peakProfit ?? 0.0;
-    let maxDrawdown = p.maxDrawdown ?? 0.0;
-    let needsUpdate = false;
-
-    if (unrealizedPnL > peakProfit) {
-      peakProfit = unrealizedPnL;
-      needsUpdate = true;
-    }
-    if (unrealizedPnL < maxDrawdown) {
-      maxDrawdown = unrealizedPnL;
-      needsUpdate = true;
-    }
-
-    if (needsUpdate && user?.role !== 'viewer') {
-      p.peakProfit = peakProfit;
-      p.maxDrawdown = maxDrawdown;
-      updatePortfolio(p).catch(err => console.error("Failed to update peak/drawdown MTM", err));
-    }
-
-    return {
-      spotPrice: activeSpot,
-      unrealizedPnL,
-      margin: metrics.marginRequirement,
-      delta: metrics.delta,
-      theta: metrics.theta,
-      peakProfit,
-      maxDrawdown,
-      metrics
-    };
   };
 
   return (
@@ -646,7 +994,7 @@ export const PortfolioManager: React.FC = () => {
                 : "bg-gray-950 border-borderClr/60 text-gray-400 hover:text-white"
             }`}
           >
-            Closed Trades History ({closedHistory.length})
+            Closed Trades History ({allClosedHistory.length})
           </button>
           <button
             onClick={() => setViewMode('alerts')}
@@ -656,8 +1004,16 @@ export const PortfolioManager: React.FC = () => {
                 : "bg-gray-950 border-borderClr/60 text-gray-400 hover:text-white"
             }`}
           >
-            Auto-Scanner Alerts ({triggeredAlerts.length})
+            Auto-Scanner Alerts ({activeAlerts.length})
           </button>
+          {viewMode === 'closed' && allClosedHistory.length > 0 && (
+            <button
+              onClick={handleClearClosedTrades}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border border-red-500/20 bg-red-950/40 text-red-400 hover:text-red-300 hover:border-red-500/50 cursor-pointer ml-1 animate-fadeIn"
+            >
+              Clear History
+            </button>
+          )}
           {viewMode === 'alerts' && triggeredAlerts.length > 0 && (
             <button
               onClick={handleClearAllAlerts}
@@ -923,56 +1279,339 @@ export const PortfolioManager: React.FC = () => {
 
         {/* Render Closed History */}
         {viewMode === 'closed' && (
-          closedHistory.length === 0 ? (
+          allClosedHistory.length === 0 ? (
             <div className="text-center py-12 text-xs text-gray-500 flex flex-col items-center gap-2">
               <Clock className="w-8 h-8 text-gray-600" />
-              <span>No closed trades in history. Square off an open position to log results.</span>
+              <span>No closed trades in history. Expired contracts, target hit, and SL hit trades will automatically appear here.</span>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-borderClr/30 bg-gray-950/40">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-borderClr bg-gray-900 text-gray-400 font-bold uppercase tracking-wider text-[10px]">
-                    {renderSortHeader("Symbol", "symbol", closedSortKey, closedSortOrder, setClosedSortKey, setClosedSortOrder)}
-                    {renderSortHeader("Strategy Name", "name", closedSortKey, closedSortOrder, setClosedSortKey, setClosedSortOrder)}
-                    {renderSortHeader("Date Executed", "date", closedSortKey, closedSortOrder, setClosedSortKey, setClosedSortOrder)}
-                    <th className="py-3 px-3">Contract Legs</th>
-                    {renderSortHeader("Realized Profit / Loss", "pnl", closedSortKey, closedSortOrder, setClosedSortKey, setClosedSortOrder)}
-                    <th className="py-3 px-4 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedClosedHistory.map((p: SavedPortfolio) => {
-                    const cur = getCurrencySymbol(p.symbol);
+            <div className="flex flex-col gap-3">
+              {/* Closed Trades Summary Metrics Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                <div className="bg-gray-950/60 border border-borderClr/30 rounded-xl p-2.5 flex flex-col">
+                  <span className="text-[10px] text-gray-400 font-semibold uppercase">Total Closed</span>
+                  <span className="text-base font-extrabold text-white mt-0.5">{allClosedHistory.length}</span>
+                </div>
+                <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-2.5 flex flex-col">
+                  <span className="text-[10px] text-amber-400 font-semibold uppercase flex items-center gap-1">
+                    🏁 Expired Contracts
+                  </span>
+                  <span className="text-base font-extrabold text-amber-300 mt-0.5">
+                    {allClosedHistory.filter(c => c.exitReason === 'EXPIRED').length}
+                  </span>
+                </div>
+                <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-2.5 flex flex-col">
+                  <span className="text-[10px] text-emerald-400 font-semibold uppercase flex items-center gap-1">
+                    🎯 Target Hit
+                  </span>
+                  <span className="text-base font-extrabold text-emerald-300 mt-0.5">
+                    {allClosedHistory.filter(c => c.exitReason === 'TARGET_HIT').length}
+                  </span>
+                </div>
+                <div className="bg-red-950/20 border border-red-500/30 rounded-xl p-2.5 flex flex-col">
+                  <span className="text-[10px] text-red-400 font-semibold uppercase flex items-center gap-1">
+                    🛑 Stop Loss Hit
+                  </span>
+                  <span className="text-base font-extrabold text-red-300 mt-0.5">
+                    {allClosedHistory.filter(c => c.exitReason === 'SL_HIT').length}
+                  </span>
+                </div>
+                <div className="col-span-2 sm:col-span-1 bg-gray-950/60 border border-borderClr/30 rounded-xl p-2.5 flex flex-col">
+                  <span className="text-[10px] text-gray-400 font-semibold uppercase">Net Realized P&L</span>
+                  {(() => {
+                    const totalPnl = allClosedHistory.reduce((sum, item) => sum + item.realizedPnL, 0);
                     return (
-                      <tr key={p.id} className="border-b border-borderClr/10 hover:bg-gray-800/10 transition-all">
-                        <td className="py-3.5 px-4 font-extrabold text-white">
-                          <span className="px-2 py-0.5 rounded bg-gray-900 border border-borderClr/40">
-                            {p.symbol}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 font-bold text-white">{p.name}</td>
-                        <td className="py-3.5 px-3 text-gray-400">{p.createdAt || "Recently"}</td>
-                        <td className="py-3.5 px-3 text-gray-400">{p.legs.length} Option/Future leg(s)</td>
-                        <td className={`py-3.5 px-3 font-extrabold text-sm ${(p.realizedPnL ?? 0) >= 0 ? "text-greenBrand" : "text-redBrand"}`}>
-                          {(p.realizedPnL ?? 0) >= 0 ? "+" : ""}{cur}{(p.realizedPnL ?? 0).toLocaleString()}
-                        </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {user?.role !== 'viewer' && (
-                          <button
-                            onClick={(e) => handleDelete(p.id, e)}
-                            className="p-1.5 bg-redBrand/10 hover:bg-redBrand/20 text-redBrand rounded-lg transition-all"
-                            title="Delete Closed Record"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </td>
+                      <span className={`text-base font-extrabold mt-0.5 ${totalPnl >= 0 ? "text-greenBrand" : "text-redBrand"}`}>
+                        {totalPnl >= 0 ? "+" : ""}₹{Math.round(totalPnl).toLocaleString()}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Filter and Search Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 bg-gray-950/60 p-2.5 rounded-xl border border-borderClr/30 text-xs">
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+                  {/* Search bar */}
+                  <div className="relative flex-1 min-w-[180px] max-w-sm">
+                    <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search closed symbol, strategy, legs..."
+                      value={closedSearchQuery}
+                      onChange={(e) => {
+                        setClosedSearchQuery(e.target.value);
+                        setClosedPage(1);
+                      }}
+                      className="w-full bg-gray-900 border border-borderClr/50 rounded-lg pl-8 pr-3 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-accentBrand text-xs"
+                    />
+                    {closedSearchQuery && (
+                      <button
+                        onClick={() => {
+                          setClosedSearchQuery("");
+                          setClosedPage(1);
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Reason Filter Buttons */}
+                  <div className="flex items-center gap-1 bg-gray-900 border border-borderClr/50 rounded-lg p-0.5 text-[11px]">
+                    <button
+                      onClick={() => { setClosedFilterType('ALL'); setClosedPage(1); }}
+                      className={`px-2 py-1 rounded font-bold transition-all ${
+                        closedFilterType === 'ALL'
+                          ? "bg-accentBrand text-white"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      All ({allClosedHistory.length})
+                    </button>
+                    <button
+                      onClick={() => { setClosedFilterType('EXPIRED'); setClosedPage(1); }}
+                      className={`px-2 py-1 rounded font-bold transition-all ${
+                        closedFilterType === 'EXPIRED'
+                          ? "bg-amber-500/30 text-amber-300 border border-amber-500/40"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      🏁 Expired
+                    </button>
+                    <button
+                      onClick={() => { setClosedFilterType('TARGET_HIT'); setClosedPage(1); }}
+                      className={`px-2 py-1 rounded font-bold transition-all ${
+                        closedFilterType === 'TARGET_HIT'
+                          ? "bg-emerald-500/30 text-emerald-300 border border-emerald-500/40"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      🎯 Target
+                    </button>
+                    <button
+                      onClick={() => { setClosedFilterType('SL_HIT'); setClosedPage(1); }}
+                      className={`px-2 py-1 rounded font-bold transition-all ${
+                        closedFilterType === 'SL_HIT'
+                          ? "bg-red-500/30 text-red-300 border border-red-500/40"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      🛑 SL Hit
+                    </button>
+                    <button
+                      onClick={() => { setClosedFilterType('MANUAL'); setClosedPage(1); }}
+                      className={`px-2 py-1 rounded font-bold transition-all ${
+                        closedFilterType === 'MANUAL'
+                          ? "bg-blue-500/30 text-blue-300 border border-blue-500/40"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      ⏹️ Manual
+                    </button>
+                  </div>
+
+                  {/* Source Filter Dropdown */}
+                  <select
+                    value={closedFilterSource}
+                    onChange={(e) => {
+                      setClosedFilterSource(e.target.value as any);
+                      setClosedPage(1);
+                    }}
+                    className="bg-gray-900 border border-borderClr/50 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-accentBrand"
+                  >
+                    <option value="ALL">All Sources</option>
+                    <option value="portfolio">💼 Paper Positions</option>
+                    <option value="alert">⚡ Auto-Scanner Trades</option>
+                  </select>
+                </div>
+
+                {/* Right controls: Page Size & CSV Export */}
+                <div className="flex items-center gap-2 ml-auto">
+                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                    <span>Show:</span>
+                    <select
+                      value={closedPageSize}
+                      onChange={(e) => {
+                        const val = e.target.value === 'ALL' ? 'ALL' : parseInt(e.target.value);
+                        setClosedPageSize(val);
+                        setClosedPage(1);
+                      }}
+                      className="bg-gray-900 border border-borderClr/50 rounded px-2 py-1 text-white text-[11px] focus:outline-none"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value="ALL">All ({filteredClosedHistory.length})</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={handleExportClosedCSV}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-700/50 text-emerald-300 font-bold text-xs transition-all shadow-sm cursor-pointer"
+                    title="Export realized closed trades to CSV spreadsheet"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Closed Trades Table */}
+              <div className="overflow-x-auto rounded-xl border border-borderClr/30 bg-gray-950/40">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-borderClr bg-gray-900 text-gray-400 font-bold uppercase tracking-wider text-[10px]">
+                      {renderSortHeader("Symbol / Expiry", "symbol", closedSortKey, closedSortOrder, setClosedSortKey, setClosedSortOrder)}
+                      {renderSortHeader("Strategy Name", "name", closedSortKey, closedSortOrder, setClosedSortKey, setClosedSortOrder)}
+                      <th className="py-3 px-3">Source</th>
+                      <th className="py-3 px-3">Exit Status & Date</th>
+                      <th className="py-3 px-3">Contract Legs</th>
+                      {renderSortHeader("Realized P&L", "pnl", closedSortKey, closedSortOrder, setClosedSortKey, setClosedSortOrder)}
+                      <th className="py-3 px-4 text-center">Action</th>
                     </tr>
-                  );
-                })}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {paginatedClosedHistory.map((item: UnifiedClosedTrade) => {
+                      const cur = getCurrencySymbol(item.symbol);
+                      return (
+                        <tr key={item.id} className="border-b border-borderClr/10 hover:bg-gray-800/10 transition-all">
+                          <td className="py-3.5 px-4 font-extrabold text-white">
+                            <div className="flex flex-col gap-1">
+                              <span className="px-2 py-0.5 rounded bg-gray-900 border border-borderClr/40 w-fit font-bold">
+                                {item.symbol}
+                              </span>
+                              {item.expiry && (
+                                <span className="text-[10px] text-gray-400 font-mono">
+                                  Exp: {item.expiry}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-white">{item.strategyName}</span>
+                              <span className="text-[10px] text-gray-500">{item.entryDate}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3">
+                            {item.source === 'portfolio' ? (
+                              <span className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-600/40 text-purple-300 text-[10px] font-bold">
+                                💼 Paper Trade
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-600/40 text-cyan-300 text-[10px] font-bold">
+                                ⚡ Auto-Scanner
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <div className="flex flex-col gap-1">
+                              <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] w-fit ${
+                                item.exitReason === 'EXPIRED'
+                                  ? "bg-amber-950/60 text-amber-300 border border-amber-500/40"
+                                  : item.exitReason === 'TARGET_HIT'
+                                  ? "bg-emerald-950/60 text-emerald-300 border border-emerald-500/40"
+                                  : item.exitReason === 'SL_HIT'
+                                  ? "bg-red-950/60 text-red-300 border border-red-500/40"
+                                  : "bg-blue-950/60 text-blue-300 border border-blue-500/40"
+                              }`}>
+                                {item.exitReasonLabel}
+                              </span>
+                              {item.exitDate && (
+                                <span className="text-[9px] text-gray-500">
+                                  {item.exitDate}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3 text-gray-300 font-mono text-[11px]">
+                            {formatLegsCompact(item.legs, item.symbol)}
+                          </td>
+                          <td className={`py-3.5 px-3 font-extrabold text-sm ${item.realizedPnL >= 0 ? "text-greenBrand" : "text-redBrand"}`}>
+                            {item.realizedPnL >= 0 ? "+" : ""}{cur}{item.realizedPnL.toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => handleLoadClosedTrade(item)}
+                                className="p-1.5 bg-accentBrand/10 hover:bg-accentBrand/20 text-accentBrand rounded-lg transition-all cursor-pointer"
+                                title="Send to Sandbox Strategy Analyzer"
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (item.rawAlert) {
+                                    handleGenerateAlertShareLink(item.rawAlert);
+                                  } else {
+                                    handleGenerateAlertShareLink({
+                                      id: item.id,
+                                      symbol: item.symbol,
+                                      strategyName: item.strategyName,
+                                      expiry: item.expiry,
+                                      pop: item.pop || 50,
+                                      maxProfit: item.maxProfit || 0,
+                                      maxLoss: item.maxLoss || 0,
+                                      rrRatio: item.rrRatio || 1,
+                                      timestamp: item.entryDate,
+                                      spotPrice: alertSpotPrices[item.symbol.toUpperCase()] || item.legs[0]?.strike || 100,
+                                      legs: item.legs,
+                                      ruleId: ''
+                                    });
+                                  }
+                                }}
+                                className="p-1.5 bg-purple-950/50 hover:bg-purple-900/60 text-purple-300 rounded-lg transition-all cursor-pointer"
+                                title="Share Trade Link"
+                              >
+                                <LinkIcon className="w-3.5 h-3.5" />
+                              </button>
+                              {user?.role !== 'viewer' && (
+                                <button
+                                  onClick={(e) => handleDeleteClosedTrade(item, e)}
+                                  className="p-1.5 bg-redBrand/10 hover:bg-redBrand/20 text-redBrand rounded-lg transition-all cursor-pointer"
+                                  title="Delete Closed Record"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalClosedPages > 1 && (
+                <div className="flex items-center justify-between px-2 text-xs text-gray-400">
+                  <span>
+                    Showing {((closedPage - 1) * (closedPageSize === 'ALL' ? sortedClosedHistory.length : closedPageSize)) + 1} to {Math.min(closedPage * (closedPageSize === 'ALL' ? sortedClosedHistory.length : closedPageSize), sortedClosedHistory.length)} of {sortedClosedHistory.length} closed trades
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setClosedPage(p => Math.max(1, p - 1))}
+                      disabled={closedPage === 1}
+                      className="px-2.5 py-1 rounded bg-gray-900 border border-borderClr/40 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-800"
+                    >
+                      Previous
+                    </button>
+                    <span className="font-mono text-white">
+                      Page {closedPage} of {totalClosedPages}
+                    </span>
+                    <button
+                      onClick={() => setClosedPage(p => Math.min(totalClosedPages, p + 1))}
+                      disabled={closedPage === totalClosedPages}
+                      className="px-2.5 py-1 rounded bg-gray-900 border border-borderClr/40 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-800"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )
         )}
@@ -989,6 +1628,29 @@ export const PortfolioManager: React.FC = () => {
               {/* Filter and Search Toolbar */}
               <div className="flex flex-wrap items-center justify-between gap-2.5 bg-gray-950/60 p-2.5 rounded-xl border border-borderClr/30 text-xs">
                 <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+                  {/* Status mode toggle: Active vs All */}
+                  <div className="flex bg-gray-900 border border-borderClr/60 rounded-lg p-0.5 text-xs">
+                    <button
+                      onClick={() => { setAlertStatusMode('active'); setAlertPage(1); }}
+                      className={`px-2.5 py-1 rounded font-bold transition-all ${
+                        alertStatusMode === 'active'
+                          ? "bg-accentBrand text-white shadow"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      ⚡ Active ({activeAlerts.length})
+                    </button>
+                    <button
+                      onClick={() => { setAlertStatusMode('all'); setAlertPage(1); }}
+                      className={`px-2.5 py-1 rounded font-bold transition-all ${
+                        alertStatusMode === 'all'
+                          ? "bg-accentBrand text-white shadow"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      📜 All ({triggeredAlerts.length})
+                    </button>
+                  </div>
                   {/* Search bar */}
                   <div className="relative flex-1 min-w-[180px] max-w-sm">
                     <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />

@@ -1314,8 +1314,19 @@ async def active_alerts_scanner_loop():
                         sl_trigger = round(-max_loss_num * (sl_val / 100.0), 2)
                         is_sl_triggered = sl_val > 0.0 and unrealized_pnl <= sl_trigger and metrics["maxLoss"] != 'Unlimited'
                         
-                        if is_tp_triggered or is_sl_triggered:
-                            trigger_reason = "Take Profit" if is_tp_triggered else "Stop Loss"
+                        # Check contract expiry (expiry date passed or today after 15:30 IST)
+                        is_contract_expired = False
+                        for leg in legs_list:
+                            try:
+                                expiry_dt = datetime.strptime(leg["expiry"], "%Y-%m-%d")
+                                if today.date() > expiry_dt.date() or (today.date() == expiry_dt.date() and (today.hour > 15 or (today.hour == 15 and today.minute >= 30))):
+                                    is_contract_expired = True
+                                    break
+                            except Exception:
+                                continue
+                        
+                        if is_tp_triggered or is_sl_triggered or is_contract_expired:
+                            trigger_reason = "Take Profit" if is_tp_triggered else ("Stop Loss" if is_sl_triggered else "Contract Expiry")
                             cur = get_currency_symbol_py(p.symbol)
                             cur_log = "INR" if cur == "₹" else cur
                             print(f"[Alert Scanner] Auto-squaring off open portfolio '{p.name}' ({p.id}) due to {trigger_reason} trigger! MTM: {cur_log}{unrealized_pnl}")

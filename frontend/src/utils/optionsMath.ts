@@ -48,6 +48,30 @@ export function parseExpiryDate(dateStr: string): Date {
   return new Date();
 }
 
+export function isContractExpired(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const d = parseExpiryDate(dateStr);
+  const now = new Date();
+  // Expiry cutoff is 15:30 IST on the expiry day
+  const cutoff = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 15, 30, 0);
+  return now.getTime() > cutoff.getTime();
+}
+
+export function calculateSettledLegPnL(leg: any, spotPrice: number): number {
+  if (!leg) return 0;
+  let intrinsic = 0;
+  if (leg.optionType === 'C') {
+    intrinsic = Math.max(0, spotPrice - leg.strike);
+  } else if (leg.optionType === 'P') {
+    intrinsic = Math.max(0, leg.strike - spotPrice);
+  } else {
+    // Future
+    const diff = spotPrice - leg.entryPrice;
+    return leg.action === 'BUY' ? diff * leg.quantity : -diff * leg.quantity;
+  }
+  const diff = intrinsic - leg.entryPrice;
+  return leg.action === 'BUY' ? diff * leg.quantity : -diff * leg.quantity;
+}
 
 /**
  * Calculates theoretical option price using BSM.
