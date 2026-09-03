@@ -230,10 +230,15 @@ const STRATEGY_PRESETS: Record<string, StrategyPreset> = {
       { action: "SELL", optionType: "P", strikeOffset: -300, quantity: 1 },
       { action: "SELL", optionType: "C", strikeOffset: 200, quantity: 1 }
     ]
+  },
+  "rsi_scanner": {
+    name: "⚡ RSI Momentum Scalper (Price Action Breakout)",
+    legs: []
   }
 };
 
 const OPTIMIZATION_PROMPTS: Record<string, string> = {
+  "rsi_scanner": "Optimize the RSI Momentum Scalper by sweeping RSI Periods (2 to 14), threshold levels (80/20 to 60/40), Moneyness (ATM/OTM), and TP/SL. Goal: Maximize Win Rate and Net Return.",
   "protective_put": "Optimize Protective Put by sweeping Stop Loss / Max Loss Caps (₹5k to ₹20k) and Entry Days. Goal: Minimize Max Drawdown while keeping upside returns.",
   "protective_call": "Optimize Protective Call by sweeping Stop Loss / Max Loss Caps (₹5k to ₹20k) and Entry Days. Goal: Minimize Max Drawdown.",
   "straddle_short": "Optimize the Short Straddle by sweeping Stop Loss from 10% to 50% (increments of 10%) and Entry Times from 09:20 to 10:15. Goal: Maximize win rate and minimize Max Drawdown.",
@@ -460,6 +465,57 @@ export const BacktesterPanel: React.FC = () => {
   const [exitTime, setExitTime] = useState<string>("15:15");
   const [intradayInterval, setIntradayInterval] = useState<number>(5);
   const [expiryType, setExpiryType] = useState<string>("weekly");
+
+  // RSI Scanner Strategy States
+  const [strategyType, setStrategyType] = useState<'STANDARD' | 'RSI_SCANNER'>('STANDARD');
+  const [rsiPeriod, setRsiPeriod] = useState<number>(3);
+  const [rsiUpper, setRsiUpper] = useState<number>(80);
+  const [rsiLower, setRsiLower] = useState<number>(20);
+  const [rsiMoneyness, setRsiMoneyness] = useState<string>("ATM");
+  const [rsiLots, setRsiLots] = useState<number>(1);
+  const [rsiTpPct, setRsiTpPct] = useState<number>(30);
+  const [rsiSlPct, setRsiSlPct] = useState<number>(15);
+
+  // RSI Optimizer Sweep States
+  const [optRsiPeriodRange, setOptRsiPeriodRange] = useState<number[]>([2, 3, 5, 7, 14]);
+  const [optRsiLevelsRange, setOptRsiLevelsRange] = useState<string[]>(["85/15", "80/20", "75/25", "70/30", "60/40"]);
+  const [optRsiMoneynessRange, setOptRsiMoneynessRange] = useState<string[]>(["ATM", "OTM1", "OTM2"]);
+
+  // Listen for pre-fill requests from RSI Scanner panel
+  const checkRsiPrefill = () => {
+    const saved = localStorage.getItem('OC_RSI_BACKTEST_CONFIG');
+    if (saved) {
+      try {
+        const p = JSON.parse(saved);
+        if (p.symbol) setBacktestSymbol(p.symbol);
+        if (p.rsi_period) setRsiPeriod(p.rsi_period);
+        if (p.rsi_upper) setRsiUpper(p.rsi_upper);
+        if (p.rsi_lower) setRsiLower(p.rsi_lower);
+        if (p.moneyness) setRsiMoneyness(p.moneyness);
+        if (p.tp_pct) setRsiTpPct(p.tp_pct);
+        if (p.sl_pct) setRsiSlPct(p.sl_pct);
+        if (p.lot_size) setRsiLots(p.lot_size);
+        setStrategyType('RSI_SCANNER');
+        setBacktestType('INTRADAY');
+        setOptimizerActivePreset('rsi_scanner');
+        localStorage.removeItem('OC_RSI_BACKTEST_CONFIG');
+      } catch (e) {
+        console.error("Error loading pre-filled RSI config:", e);
+      }
+    }
+  };
+
+  useEffect(() => {
+    checkRsiPrefill();
+    window.addEventListener('storage', checkRsiPrefill);
+    window.addEventListener('hashchange', checkRsiPrefill);
+    window.addEventListener('rsi_backtest_load', checkRsiPrefill);
+    return () => {
+      window.removeEventListener('storage', checkRsiPrefill);
+      window.removeEventListener('hashchange', checkRsiPrefill);
+      window.removeEventListener('rsi_backtest_load', checkRsiPrefill);
+    };
+  }, []);
 
   // Validate and adjust expiry cycle when underlying symbol changes
   useEffect(() => {
@@ -902,6 +958,16 @@ export const BacktesterPanel: React.FC = () => {
   };
 
   const handleApplyPreset = (key: string) => {
+    if (key === "rsi_scanner") {
+      setStrategyType("RSI_SCANNER");
+      setBacktestType("INTRADAY");
+      setLegs([]);
+      setOptimizerActivePreset("rsi_scanner");
+      const pr = OPTIMIZATION_PROMPTS["rsi_scanner"] || "";
+      parseAndApplyPrompt(pr);
+      return;
+    }
+    setStrategyType("STANDARD");
     const preset = STRATEGY_PRESETS[key];
     if (preset) {
       const newLegs = preset.legs.map((l, index) => ({
@@ -951,48 +1017,62 @@ export const BacktesterPanel: React.FC = () => {
 
   // Run backtest request
   const handleRunBacktest = async () => {
-    if (legs.length === 0) {
+    if (strategyType !== 'RSI_SCANNER' && legs.length === 0) {
       alert("Please add at least one strategy leg to backtest.");
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
+      const payload: any = {
+        symbol: backtestSymbol,
+        startDate,
+        endDate,
+        strategyType,
+        slippagePerLeg: slippage,
+        initialCapital,
+        backtestType: strategyType === 'RSI_SCANNER' ? 'INTRADAY' : backtestType,
+        intradayInterval,
+        expiryType,
+        legs: legs.map(({ action, optionType, strikeOffset, quantity }) => ({
+          action,
+          optionType,
+          strikeOffset,
+          quantity
+        }))
+      };
+
+      if (strategyType === 'RSI_SCANNER') {
+        payload.rsiPeriod = rsiPeriod;
+        payload.rsiUpper = rsiUpper;
+        payload.rsiLower = rsiLower;
+        payload.moneyness = rsiMoneyness;
+        payload.lots = rsiLots;
+        payload.takeProfitPct = rsiTpPct > 0 ? rsiTpPct : null;
+        payload.stopLossPct = rsiSlPct > 0 ? rsiSlPct : null;
+      } else {
+        payload.entryDaysOfWeek = entryDays;
+        payload.entryTime = entryTime;
+        payload.exitTime = exitTime;
+        payload.legStopLossPct = legStopLossPct !== "" ? parseFloat(legStopLossPct) : null;
+        payload.legTakeProfitPct = legTakeProfitPct !== "" ? parseFloat(legTakeProfitPct) : null;
+        payload.portfolioStopLoss = portfolioStopLoss !== "" ? parseFloat(portfolioStopLoss) : null;
+        payload.portfolioTakeProfit = portfolioTakeProfit !== "" ? parseFloat(portfolioTakeProfit) : null;
+        payload.takeProfitPct = takeProfitPct > 0 ? takeProfitPct : null;
+        payload.stopLossPct = stopLossPct > 0 ? stopLossPct : null;
+        payload.stopLossType = stopLossType;
+        payload.trailingSL = trailingSL;
+        payload.trailingSLTrigger = trailingSLTrigger !== "" ? parseFloat(trailingSLTrigger) : null;
+        payload.trailingSLStep = trailingSLStep !== "" ? parseFloat(trailingSLStep) : null;
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/backtest/run`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({
-          symbol: backtestSymbol,
-          startDate,
-          endDate,
-          legs: legs.map(({ action, optionType, strikeOffset, quantity }) => ({
-            action,
-            optionType,
-            strikeOffset,
-            quantity
-          })),
-          entryDaysOfWeek: entryDays,
-          slippagePerLeg: slippage,
-          initialCapital,
-          backtestType,
-          entryTime,
-          exitTime,
-          legStopLossPct: legStopLossPct !== "" ? parseFloat(legStopLossPct) : null,
-          legTakeProfitPct: legTakeProfitPct !== "" ? parseFloat(legTakeProfitPct) : null,
-          portfolioStopLoss: portfolioStopLoss !== "" ? parseFloat(portfolioStopLoss) : null,
-          portfolioTakeProfit: portfolioTakeProfit !== "" ? parseFloat(portfolioTakeProfit) : null,
-          takeProfitPct: takeProfitPct > 0 ? takeProfitPct : null,
-          stopLossPct: stopLossPct > 0 ? stopLossPct : null,
-          stopLossType,
-          trailingSL,
-          trailingSLTrigger: trailingSLTrigger !== "" ? parseFloat(trailingSLTrigger) : null,
-          trailingSLStep: trailingSLStep !== "" ? parseFloat(trailingSLStep) : null,
-          intradayInterval,
-          expiryType
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
@@ -1014,37 +1094,58 @@ export const BacktesterPanel: React.FC = () => {
 
   // Run strategy parameter optimization
   const handleRunOptimization = async () => {
-    if (legs.length === 0) {
+    if (strategyType !== 'RSI_SCANNER' && legs.length === 0) {
       alert("Please add at least one strategy leg to optimize.");
       return;
     }
     setIsOptimizing(true);
     setError(null);
     try {
-      const entryDaysRange = optEntryDaysRange.map(day => [day]);
-      const payload = {
-        symbol: backtestSymbol,
-        startDate,
-        endDate,
-        prompt: optimizationPrompt,
-        legs: legs.map(({ action, optionType, strikeOffset, quantity }) => ({
-          action,
-          optionType,
-          strikeOffset,
-          quantity
-        })),
-        initialCapital,
-        backtestType,
-        slippagePerLeg: slippage,
-        takeProfitPctRange: optTakeProfitRange.length > 0 ? [...optTakeProfitRange, null] : [null],
-        stopLossPctRange: optStopLossRange.length > 0 ? [...optStopLossRange, null] : [null],
-        entryTimeRange: backtestType === 'INTRADAY' ? optEntryTimeRange : null,
-        entryDaysRange: entryDaysRange.length > 0 ? entryDaysRange : null,
-        strikeWidthRange: optStrikeWidthRange.length > 0 ? optStrikeWidthRange : null,
-        directionOffsetRange: optDirectionOffsetRange.length > 0 ? optDirectionOffsetRange : [0],
-        objective: optObjective,
-        expiryType
-      };
+      let payload: any;
+      if (strategyType === 'RSI_SCANNER') {
+        payload = {
+          symbol: backtestSymbol,
+          startDate,
+          endDate,
+          strategyType: 'RSI_SCANNER',
+          rsiPeriodRange: optRsiPeriodRange,
+          rsiUpperRange: optRsiLevelsRange.map(l => parseFloat(l.split('/')[0])),
+          rsiLowerRange: optRsiLevelsRange.map(l => parseFloat(l.split('/')[1])),
+          takeProfitPctRange: optTakeProfitRange,
+          stopLossPctRange: optStopLossRange,
+          moneynessRange: optRsiMoneynessRange,
+          lots: rsiLots,
+          slippagePerLeg: slippage,
+          initialCapital,
+          objective: optObjective,
+          legs: []
+        };
+      } else {
+        const entryDaysRange = optEntryDaysRange.map(day => [day]);
+        payload = {
+          symbol: backtestSymbol,
+          startDate,
+          endDate,
+          prompt: optimizationPrompt,
+          legs: legs.map(({ action, optionType, strikeOffset, quantity }) => ({
+            action,
+            optionType,
+            strikeOffset,
+            quantity
+          })),
+          initialCapital,
+          backtestType,
+          slippagePerLeg: slippage,
+          takeProfitPctRange: optTakeProfitRange.length > 0 ? [...optTakeProfitRange, null] : [null],
+          stopLossPctRange: optStopLossRange.length > 0 ? [...optStopLossRange, null] : [null],
+          entryTimeRange: backtestType === 'INTRADAY' ? optEntryTimeRange : null,
+          entryDaysRange: entryDaysRange.length > 0 ? entryDaysRange : null,
+          strikeWidthRange: optStrikeWidthRange.length > 0 ? optStrikeWidthRange : null,
+          directionOffsetRange: optDirectionOffsetRange.length > 0 ? optDirectionOffsetRange : [0],
+          objective: optObjective,
+          expiryType
+        };
+      }
 
       const response = await fetch(`${BACKEND_URL}/api/backtest/optimize`, {
         method: "POST",
@@ -1073,6 +1174,18 @@ export const BacktesterPanel: React.FC = () => {
 
   const handleApplyOptimalConfig = (result: any) => {
     const p = result.parameters;
+    if (strategyType === 'RSI_SCANNER') {
+      if (p.rsiPeriod) setRsiPeriod(p.rsiPeriod);
+      if (p.rsiUpper) setRsiUpper(p.rsiUpper);
+      if (p.rsiLower) setRsiLower(p.rsiLower);
+      if (p.moneyness) setRsiMoneyness(p.moneyness);
+      if (p.takeProfitPct !== undefined && p.takeProfitPct !== null) setRsiTpPct(p.takeProfitPct);
+      if (p.stopLossPct !== undefined && p.stopLossPct !== null) setRsiSlPct(p.stopLossPct);
+      setResultsSubTab('backtest');
+      alert(`Applied optimal RSI parameters:\nRSI Period: ${p.rsiPeriod}\nLevels: ${p.rsiLower}/${p.rsiUpper}\nMoneyness: ${p.moneyness}\nTarget: +${p.takeProfitPct}%\nStop Loss: -${p.stopLossPct}%`);
+      return;
+    }
+
     if (p.takeProfitPct !== null) {
       setTakeProfitPct(p.takeProfitPct);
     } else {
@@ -1591,115 +1704,245 @@ export const BacktesterPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* Strategy Leg Builder */}
-        <div className="glass-panel rounded-xl p-5 border border-borderClr/30 flex flex-col gap-4 bg-gray-950/40">
-          <div className="flex items-center justify-between border-b border-borderClr/20 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white uppercase tracking-wider">
-                Strategy Legs ({legs.length})
+        {/* Strategy Leg Builder / RSI Configuration */}
+        {strategyType === 'RSI_SCANNER' ? (
+          <div className="glass-panel rounded-xl p-5 border border-emerald-500/30 flex flex-col gap-4 bg-emerald-950/10 text-left">
+            <div className="flex items-center justify-between border-b border-borderClr/20 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  ⚡ RSI Momentum Scalper Settings
+                </span>
+              </div>
+              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-bold uppercase">
+                Intraday Breakout
               </span>
-              {portfolioStopLoss ? (
-                <span className="text-[10px] bg-red-950/60 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded font-mono font-bold">
-                  🛡️ Max Loss Cap: ₹{parseFloat(portfolioStopLoss).toLocaleString()}
-                </span>
-              ) : (
-                <span className="text-[10px] bg-amber-950/40 border border-amber-500/30 text-amber-400 px-1.5 py-0.5 rounded font-mono">
-                  ⚠️ No SL (Hold to Expiry)
-                </span>
-              )}
             </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">RSI Period</span>
+                <input
+                  type="number"
+                  min="2"
+                  max="50"
+                  value={rsiPeriod}
+                  onChange={(e) => setRsiPeriod(parseInt(e.target.value) || 3)}
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs font-bold focus:border-emerald-400 outline-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Bullish Over</span>
+                <input
+                  type="number"
+                  min="50"
+                  max="95"
+                  value={rsiUpper}
+                  onChange={(e) => setRsiUpper(parseFloat(e.target.value) || 80)}
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-emerald-400 text-xs font-bold focus:border-emerald-400 outline-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Bearish Under</span>
+                <input
+                  type="number"
+                  min="5"
+                  max="50"
+                  value={rsiLower}
+                  onChange={(e) => setRsiLower(parseFloat(e.target.value) || 20)}
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-red-400 text-xs font-bold focus:border-emerald-400 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Option Strike</span>
+                <select
+                  value={rsiMoneyness}
+                  onChange={(e) => setRsiMoneyness(e.target.value)}
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs font-bold focus:border-emerald-400 outline-none"
+                >
+                  <option value="ATM">ATM (At The Money)</option>
+                  <option value="OTM1">OTM +1 Strike</option>
+                  <option value="OTM2">OTM +2 Strikes</option>
+                  <option value="ITM">ITM -1 Strike</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Lots</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={rsiLots}
+                  onChange={(e) => setRsiLots(parseInt(e.target.value) || 1)}
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-white text-xs font-bold focus:border-emerald-400 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Take Profit (TP %)</span>
+                <input
+                  type="number"
+                  min="5"
+                  max="200"
+                  value={rsiTpPct}
+                  onChange={(e) => setRsiTpPct(parseFloat(e.target.value) || 30)}
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-emerald-400 text-xs font-bold focus:border-emerald-400 outline-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Stop Loss (SL %)</span>
+                <input
+                  type="number"
+                  min="5"
+                  max="100"
+                  value={rsiSlPct}
+                  onChange={(e) => setRsiSlPct(parseFloat(e.target.value) || 15)}
+                  className="bg-gray-900 border border-borderClr rounded px-2.5 py-1.5 text-red-400 text-xs font-bold focus:border-emerald-400 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="text-[10px] text-gray-400 bg-gray-950/40 p-2.5 rounded-lg border border-borderClr/20 space-y-1">
+              <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                <span>🟢</span>
+                <span>RSI &gt;= {rsiUpper}: Buys Call on candle breakout.</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-red-400 font-medium">
+                <span>🔴</span>
+                <span>RSI &lt;= {rsiLower}: Buys Put on candle breakdown.</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-gray-400 font-medium">
+                <span>⏱️</span>
+                <span>Exits at <strong>+{rsiTpPct}% TP</strong>, <strong>-{rsiSlPct}% SL</strong>, or 15:20 IST EOD.</span>
+              </div>
+            </div>
+
             <button
-              onClick={handleAddLeg}
-              className="px-2 py-1 rounded bg-gray-900 border border-borderClr/60 hover:text-white text-xs font-bold flex items-center gap-1 transition-all"
+              onClick={handleRunBacktest}
+              disabled={isLoading}
+              className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:from-gray-800 disabled:to-gray-900 disabled:text-gray-600 text-black font-extrabold rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Plus className="w-3 h-3" />
-              Add Leg
+              {isLoading ? (
+                <Activity className="w-4 h-4 animate-spin text-black" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-black text-black stroke-[3px]" />
+              )}
+              {isLoading ? "Backtesting RSI Strategy..." : "Run RSI Strategy Backtest"}
             </button>
           </div>
-
-          <div className="flex flex-col gap-3 max-h-64 overflow-y-auto pr-1">
-            {legs.length === 0 ? (
-              <div className="text-center py-8 text-xs text-gray-500 border border-dashed border-borderClr/20 rounded-xl bg-gray-950/10">
-                No active legs. Apply a preset or add a leg above.
+        ) : (
+          <div className="glass-panel rounded-xl p-5 border border-borderClr/30 flex flex-col gap-4 bg-gray-950/40">
+            <div className="flex items-center justify-between border-b border-borderClr/20 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Strategy Legs ({legs.length})
+                </span>
+                {portfolioStopLoss ? (
+                  <span className="text-[10px] bg-red-950/60 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded font-mono font-bold">
+                    🛡️ Max Loss Cap: ₹{parseFloat(portfolioStopLoss).toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-amber-950/40 border border-amber-500/30 text-amber-400 px-1.5 py-0.5 rounded font-mono">
+                    ⚠️ No SL (Hold to Expiry)
+                  </span>
+                )}
               </div>
-            ) : (
-              legs.map((leg) => (
-                <div key={leg.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-gray-950/60 border border-borderClr/40 text-xs">
-                  <select
-                    value={leg.action}
-                    onChange={(e) => handleUpdateLeg(leg.id, { action: e.target.value as any })}
-                    className={`bg-gray-900 border rounded px-1 py-1 font-bold ${
-                      leg.action === "BUY" ? "text-greenBrand border-greenBrand/40" : "text-redBrand border-redBrand/40"
-                    }`}
-                  >
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
-                  </select>
+              <button
+                onClick={handleAddLeg}
+                className="px-2 py-1 rounded bg-gray-900 border border-borderClr/60 hover:text-white text-xs font-bold flex items-center gap-1 transition-all"
+              >
+                <Plus className="w-3 h-3" />
+                Add Leg
+              </button>
+            </div>
 
-                  <select
-                    value={leg.optionType}
-                    onChange={(e) => handleUpdateLeg(leg.id, { optionType: e.target.value as any })}
-                    className="bg-gray-900 border border-borderClr/60 rounded px-1.5 py-1 text-white"
-                  >
-                    <option value="C">CE</option>
-                    <option value="P">PE</option>
-                    <option value="F">FUT</option>
-                  </select>
-
-                  <div className="flex flex-col gap-0.5 flex-1">
-                    <span className="text-[9px] text-gray-500 uppercase font-bold text-left">Offset</span>
-                    <select
-                      value={leg.optionType === 'F' ? 0 : leg.strikeOffset}
-                      disabled={leg.optionType === 'F'}
-                      onChange={(e) => handleUpdateLeg(leg.id, { strikeOffset: parseFloat(e.target.value) || 0 })}
-                      className="w-full bg-gray-900 border border-borderClr/60 rounded px-1 py-1.5 text-white text-xs outline-none focus:border-amber-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {leg.optionType === 'F' ? (
-                        <option value="0">0 (N/A)</option>
-                      ) : (
-                        getOffsetOptionsForSymbol(backtestSymbol, leg.strikeOffset).map((val) => (
-                          <option key={val} value={val}>
-                            {val === 0 ? "0 (ATM)" : val > 0 ? `+${val}` : `${val}`}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-0.5 w-12">
-                    <span className="text-[9px] text-gray-500 uppercase font-bold text-left">Qty</span>
-                    <input
-                      type="number"
-                      value={leg.quantity}
-                      onChange={(e) => handleUpdateLeg(leg.id, { quantity: parseInt(e.target.value) || 1 })}
-                      className="w-full bg-gray-900 border border-borderClr/60 rounded px-1.5 py-1 text-white"
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => handleRemoveLeg(leg.id)}
-                    className="p-1.5 text-gray-500 hover:text-redBrand hover:bg-gray-900 rounded transition-all self-end"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+            <div className="flex flex-col gap-3 max-h-64 overflow-y-auto pr-1">
+              {legs.length === 0 ? (
+                <div className="text-center py-8 text-xs text-gray-500 border border-dashed border-borderClr/20 rounded-xl bg-gray-950/10">
+                  No active legs. Apply a preset or add a leg above.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                legs.map((leg) => (
+                  <div key={leg.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-gray-950/60 border border-borderClr/40 text-xs">
+                    <select
+                      value={leg.action}
+                      onChange={(e) => handleUpdateLeg(leg.id, { action: e.target.value as any })}
+                      className={`bg-gray-900 border rounded px-1 py-1 font-bold ${
+                        leg.action === "BUY" ? "text-greenBrand border-greenBrand/40" : "text-redBrand border-redBrand/40"
+                      }`}
+                    >
+                      <option value="BUY">BUY</option>
+                      <option value="SELL">SELL</option>
+                    </select>
 
-          <button
-            onClick={handleRunBacktest}
-            disabled={isLoading}
-            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-500/20 disabled:text-gray-600 text-black font-extrabold rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-1.5"
-          >
-            {isLoading ? (
-              <Activity className="w-4 h-4 animate-spin" />
-            ) : (
-              <Play className="w-3.5 h-3.5 fill-black text-black stroke-[3px]" />
-            )}
-            {isLoading ? "Running Backtest..." : backtestType === 'EOD' ? "Run EOD Backtest" : "Run Intraday Backtest"}
-          </button>
-        </div>
+                    <select
+                      value={leg.optionType}
+                      onChange={(e) => handleUpdateLeg(leg.id, { optionType: e.target.value as any })}
+                      className="bg-gray-900 border border-borderClr/60 rounded px-1.5 py-1 text-white"
+                    >
+                      <option value="C">CE</option>
+                      <option value="P">PE</option>
+                      <option value="F">FUT</option>
+                    </select>
+
+                    <div className="flex flex-col gap-0.5 flex-1">
+                      <span className="text-[9px] text-gray-500 uppercase font-bold text-left">Offset</span>
+                      <select
+                        value={leg.optionType === 'F' ? 0 : leg.strikeOffset}
+                        disabled={leg.optionType === 'F'}
+                        onChange={(e) => handleUpdateLeg(leg.id, { strikeOffset: parseFloat(e.target.value) || 0 })}
+                        className="w-full bg-gray-900 border border-borderClr/60 rounded px-1 py-1.5 text-white text-xs outline-none focus:border-amber-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {leg.optionType === 'F' ? (
+                          <option value="0">0 (N/A)</option>
+                        ) : (
+                          getOffsetOptionsForSymbol(backtestSymbol, leg.strikeOffset).map((val) => (
+                            <option key={val} value={val}>
+                              {val === 0 ? "0 (ATM)" : val > 0 ? `+${val}` : `${val}`}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5 w-12">
+                      <span className="text-[9px] text-gray-500 uppercase font-bold text-left">Qty</span>
+                      <input
+                        type="number"
+                        value={leg.quantity}
+                        onChange={(e) => handleUpdateLeg(leg.id, { quantity: parseInt(e.target.value) || 1 })}
+                        className="w-full bg-gray-900 border border-borderClr/60 rounded px-1.5 py-1 text-white"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => handleRemoveLeg(leg.id)}
+                      className="p-1.5 text-gray-500 hover:text-redBrand hover:bg-gray-900 rounded transition-all self-end"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              onClick={handleRunBacktest}
+              disabled={isLoading}
+              className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-500/20 disabled:text-gray-600 text-black font-extrabold rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              {isLoading ? (
+                <Activity className="w-4 h-4 animate-spin" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-black text-black stroke-[3px]" />
+              )}
+              {isLoading ? "Running Backtest..." : backtestType === 'EOD' ? "Run EOD Backtest" : "Run Intraday Backtest"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* RIGHT COLUMN: Results, Graphs & Tables */}
@@ -1988,115 +2231,268 @@ export const BacktesterPanel: React.FC = () => {
               </div>
 
               {/* Sweep checkboxes grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1 border-t border-borderClr/15 pt-4">
-                {/* Take Profit & Stop Loss Ranges */}
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Take Profit Sweeps (%)</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[10, 20, 30, 40, 50, 80].map((val) => {
-                        const isChecked = optTakeProfitRange.includes(val);
-                        return (
-                          <button
-                            key={val}
-                            onClick={() => {
-                              setOptTakeProfitRange(prev =>
-                                prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort((a,b)=>a-b)
-                              );
-                            }}
-                            className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
-                              isChecked ? "bg-greenBrand/15 border-greenBrand/40 text-greenBrand" : "bg-gray-900 border-borderClr/60 text-gray-500"
-                            }`}
-                          >
-                            {val}%
-                          </button>
-                        );
-                      })}
+              {strategyType === 'RSI_SCANNER' ? (
+                <div className="flex flex-col gap-4 mt-1 border-t border-borderClr/15 pt-4 text-left">
+                  {/* RSI Periods & Levels */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">RSI Periods to Sweep</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[2, 3, 5, 7, 10, 14].map((p) => {
+                          const isChecked = optRsiPeriodRange.includes(p);
+                          return (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => {
+                                setOptRsiPeriodRange(prev =>
+                                  prev.includes(p) ? prev.filter(v => v !== p) : [...prev, p].sort((a,b)=>a-b)
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                isChecked ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              Period {p}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">RSI Levels (Overbought / Oversold)</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {["85/15", "80/20", "75/25", "70/30", "60/40"].map((lvl) => {
+                          const isChecked = optRsiLevelsRange.includes(lvl);
+                          return (
+                            <button
+                              key={lvl}
+                              type="button"
+                              onClick={() => {
+                                setOptRsiLevelsRange(prev =>
+                                  prev.includes(lvl) ? prev.filter(v => v !== lvl) : [...prev, lvl]
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                isChecked ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              {lvl}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Stop Loss Sweeps (%)</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[10, 20, 30, 40, 50, 80].map((val) => {
-                        const isChecked = optStopLossRange.includes(val);
-                        return (
-                          <button
-                            key={val}
-                            onClick={() => {
-                              setOptStopLossRange(prev =>
-                                prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort((a,b)=>a-b)
-                              );
-                            }}
-                            className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
-                              isChecked ? "bg-redBrand/15 border-redBrand/40 text-redBrand" : "bg-gray-900 border-borderClr/60 text-gray-500"
-                            }`}
-                          >
-                            {val}%
-                          </button>
-                        );
-                      })}
+                  {/* Strike Moneyness & Target Goal */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">Strike Moneyness to Sweep</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {["ATM", "OTM1", "OTM2"].map((m) => {
+                          const isChecked = optRsiMoneynessRange.includes(m);
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                setOptRsiMoneynessRange(prev =>
+                                  prev.includes(m) ? prev.filter(v => v !== m) : [...prev, m]
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                isChecked ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Optimization Target Goal</span>
+                      <select
+                        value={optObjective}
+                        onChange={(e) => setOptObjective(e.target.value)}
+                        className="bg-gray-900 border border-borderClr rounded px-2.5 py-1 text-white text-xs outline-none focus:border-amber-400 cursor-pointer"
+                      >
+                        <option value="netPnL">Maximize Net Return</option>
+                        <option value="winRate">Maximize Win Rate (%)</option>
+                        <option value="sharpeRatio">Maximize Sharpe Ratio</option>
+                        <option value="profitFactor">Maximize Profit Factor</option>
+                        <option value="maxDrawdown">Minimize Max Drawdown (%)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* TP & SL Sweeps */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-greenBrand font-bold uppercase tracking-wider">Take Profit Sweeps (%)</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[15, 20, 30, 40, 50, 80].map((val) => {
+                          const isChecked = optTakeProfitRange.includes(val);
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => {
+                                setOptTakeProfitRange(prev =>
+                                  prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort((a,b)=>a-b)
+                                );
+                              }}
+                              className={`px-2 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                isChecked ? "bg-greenBrand/15 border-greenBrand/40 text-greenBrand" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              {val}%
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-redBrand font-bold uppercase tracking-wider">Stop Loss Sweeps (%)</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[10, 15, 20, 25, 30].map((val) => {
+                          const isChecked = optStopLossRange.includes(val);
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => {
+                                setOptStopLossRange(prev =>
+                                  prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort((a,b)=>a-b)
+                                );
+                              }}
+                              className={`px-2 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                isChecked ? "bg-redBrand/15 border-redBrand/40 text-redBrand" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              {val}%
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1 border-t border-borderClr/15 pt-4">
+                  {/* Take Profit & Stop Loss Ranges */}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Take Profit Sweeps (%)</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[10, 20, 30, 40, 50, 80].map((val) => {
+                          const isChecked = optTakeProfitRange.includes(val);
+                          return (
+                            <button
+                              key={val}
+                              onClick={() => {
+                                setOptTakeProfitRange(prev =>
+                                  prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort((a,b)=>a-b)
+                                );
+                              }}
+                              className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
+                                isChecked ? "bg-greenBrand/15 border-greenBrand/40 text-greenBrand" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              {val}%
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                {/* Entry Days & Objective selection */}
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Entry Days to Test</span>
-                    <div className="flex gap-1.5">
-                      {[
-                        { label: "Mon", val: 0 },
-                        { label: "Tue", val: 1 },
-                        { label: "Wed", val: 2 },
-                        { label: "Thu", val: 3 },
-                        { label: "Fri", val: 4 }
-                      ].map((d) => {
-                        const isChecked = optEntryDaysRange.includes(d.val);
-                        return (
-                          <button
-                            key={d.val}
-                            onClick={() => {
-                              setOptEntryDaysRange(prev =>
-                                prev.includes(d.val) ? prev.filter(v => v !== d.val) : [...prev, d.val].sort()
-                              );
-                            }}
-                            className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
-                              isChecked ? "bg-amber-500/15 border-amber-500/40 text-amber-400" : "bg-gray-900 border-borderClr/60 text-gray-500"
-                            }`}
-                          >
-                            {d.label}
-                          </button>
-                        );
-                      })}
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Stop Loss Sweeps (%)</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[10, 20, 30, 40, 50, 80].map((val) => {
+                          const isChecked = optStopLossRange.includes(val);
+                          return (
+                            <button
+                              key={val}
+                              onClick={() => {
+                                setOptStopLossRange(prev =>
+                                  prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort((a,b)=>a-b)
+                                );
+                              }}
+                              className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
+                                isChecked ? "bg-redBrand/15 border-redBrand/40 text-redBrand" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              {val}%
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Optimization Target Goal</span>
-                    <select
-                      value={optObjective}
-                      onChange={(e) => setOptObjective(e.target.value)}
-                      className="bg-gray-900 border border-borderClr rounded px-2.5 py-1 text-white text-xs outline-none focus:border-amber-400"
-                    >
-                      {(() => {
-                        const cur = getCurrencySymbol(backtestSymbol);
-                        return (
-                          <>
-                            <option value="netPnL">Maximize Net Return ({cur})</option>
-                            <option value="winRate">Maximize Win Rate (%)</option>
-                            <option value="sharpeRatio">Maximize Sharpe Ratio</option>
-                            <option value="profitFactor">Maximize Profit Factor</option>
-                            <option value="maxDrawdown">Minimize Max Drawdown (%)</option>
-                          </>
-                        );
-                      })()}
-                    </select>
+                  {/* Entry Days & Objective selection */}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Entry Days to Test</span>
+                      <div className="flex gap-1.5">
+                        {[
+                          { label: "Mon", val: 0 },
+                          { label: "Tue", val: 1 },
+                          { label: "Wed", val: 2 },
+                          { label: "Thu", val: 3 },
+                          { label: "Fri", val: 4 }
+                        ].map((d) => {
+                          const isChecked = optEntryDaysRange.includes(d.val);
+                          return (
+                            <button
+                              key={d.val}
+                              onClick={() => {
+                                setOptEntryDaysRange(prev =>
+                                  prev.includes(d.val) ? prev.filter(v => v !== d.val) : [...prev, d.val].sort()
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
+                                isChecked ? "bg-amber-500/15 border-amber-500/40 text-amber-400" : "bg-gray-900 border-borderClr/60 text-gray-500"
+                              }`}
+                            >
+                              {d.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Optimization Target Goal</span>
+                      <select
+                        value={optObjective}
+                        onChange={(e) => setOptObjective(e.target.value)}
+                        className="bg-gray-900 border border-borderClr rounded px-2.5 py-1 text-white text-xs outline-none focus:border-amber-400"
+                      >
+                        {(() => {
+                          const cur = getCurrencySymbol(backtestSymbol);
+                          return (
+                            <>
+                              <option value="netPnL">Maximize Net Return ({cur})</option>
+                              <option value="winRate">Maximize Win Rate (%)</option>
+                              <option value="sharpeRatio">Maximize Sharpe Ratio</option>
+                              <option value="profitFactor">Maximize Profit Factor</option>
+                              <option value="maxDrawdown">Minimize Max Drawdown (%)</option>
+                            </>
+                          );
+                        })()}
+                      </select>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {backtestType === "INTRADAY" && (
+              {backtestType === "INTRADAY" && strategyType !== "RSI_SCANNER" && (
                 <div className="flex flex-col gap-1.5 mt-1 border-t border-borderClr/15 pt-3">
                   <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Intraday Entry Times Sweep</span>
                   <div className="flex flex-wrap gap-1.5">
@@ -2123,71 +2519,75 @@ export const BacktesterPanel: React.FC = () => {
               )}
 
               {/* Strike Width Sweep */}
-              <div className="flex flex-col gap-1.5 mt-1 border-t border-borderClr/15 pt-3">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Strike Distance Sweeps (Points)</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {(DEFAULT_STRIKE_WIDTHS[backtestSymbol.toUpperCase()] || [50, 100, 150, 200]).map((width) => {
-                    const isChecked = optStrikeWidthRange.includes(width);
-                    return (
-                      <button
-                        key={width}
-                        type="button"
-                        onClick={() => {
-                          setOptStrikeWidthRange(prev =>
-                            prev.includes(width) ? prev.filter(w => w !== width) : [...prev, width].sort((a,b)=>a-b)
-                          );
-                        }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
-                          isChecked ? "bg-amber-500/15 border-amber-500/40 text-amber-400" : "bg-gray-900 border-borderClr/60 text-gray-500 hover:text-gray-300"
-                        }`}
-                      >
-                        {width}
-                      </button>
-                    );
-                  })}
+              {strategyType !== 'RSI_SCANNER' && (
+                <div className="flex flex-col gap-1.5 mt-1 border-t border-borderClr/15 pt-3">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Strike Distance Sweeps (Points)</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(DEFAULT_STRIKE_WIDTHS[backtestSymbol.toUpperCase()] || [50, 100, 150, 200]).map((width) => {
+                      const isChecked = optStrikeWidthRange.includes(width);
+                      return (
+                        <button
+                          key={width}
+                          type="button"
+                          onClick={() => {
+                            setOptStrikeWidthRange(prev =>
+                              prev.includes(width) ? prev.filter(w => w !== width) : [...prev, width].sort((a,b)=>a-b)
+                            );
+                          }}
+                          className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
+                            isChecked ? "bg-amber-500/15 border-amber-500/40 text-amber-400" : "bg-gray-900 border-borderClr/60 text-gray-500 hover:text-gray-300"
+                          }`}
+                        >
+                          {width}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Direction & OTM Placement Sweep */}
-              <div className="flex flex-col gap-1.5 mt-1 border-t border-borderClr/15 pt-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">Direction & OTM Placement Sweeps (Points from ATM)</span>
-                  <span className="text-[9px] text-amber-400 font-medium">Test Bullish / Bearish / OTM Ratio Wings</span>
+              {strategyType !== 'RSI_SCANNER' && (
+                <div className="flex flex-col gap-1.5 mt-1 border-t border-borderClr/15 pt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">Direction & OTM Placement Sweeps (Points from ATM)</span>
+                    <span className="text-[9px] text-amber-400 font-medium">Test Bullish / Bearish / OTM Ratio Wings</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(DEFAULT_DIRECTION_OFFSETS[backtestSymbol.toUpperCase()] || [
+                      { label: "-200 P-OTM", offset: -200 },
+                      { label: "-100 P-OTM", offset: -100 },
+                      { label: "ATM (0)", offset: 0 },
+                      { label: "+100 C-OTM", offset: 100 },
+                      { label: "+200 C-OTM", offset: 200 }
+                    ]).map((item) => {
+                      const isChecked = optDirectionOffsetRange.includes(item.offset);
+                      return (
+                        <button
+                          key={item.offset}
+                          type="button"
+                          onClick={() => {
+                            setOptDirectionOffsetRange(prev =>
+                              prev.includes(item.offset) ? prev.filter(o => o !== item.offset) : [...prev, item.offset].sort((a,b)=>a-b)
+                            );
+                          }}
+                          className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
+                            isChecked ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-sm" : "bg-gray-900 border-borderClr/60 text-gray-500 hover:text-gray-300"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {(DEFAULT_DIRECTION_OFFSETS[backtestSymbol.toUpperCase()] || [
-                    { label: "-200 P-OTM", offset: -200 },
-                    { label: "-100 P-OTM", offset: -100 },
-                    { label: "ATM (0)", offset: 0 },
-                    { label: "+100 C-OTM", offset: 100 },
-                    { label: "+200 C-OTM", offset: 200 }
-                  ]).map((item) => {
-                    const isChecked = optDirectionOffsetRange.includes(item.offset);
-                    return (
-                      <button
-                        key={item.offset}
-                        type="button"
-                        onClick={() => {
-                          setOptDirectionOffsetRange(prev =>
-                            prev.includes(item.offset) ? prev.filter(o => o !== item.offset) : [...prev, item.offset].sort((a,b)=>a-b)
-                          );
-                        }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all ${
-                          isChecked ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-sm" : "bg-gray-900 border-borderClr/60 text-gray-500 hover:text-gray-300"
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              )}
 
               {/* Start Sweep Button */}
               <button
                 onClick={handleRunOptimization}
                 disabled={isOptimizing}
-                className="w-full py-2.5 mt-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-gray-900 disabled:to-gray-950 disabled:text-gray-600 text-black font-extrabold rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 mt-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-gray-900 disabled:to-gray-950 disabled:text-gray-600 text-black font-extrabold rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {isOptimizing ? (
                   <Activity className="w-4 h-4 animate-spin text-amber-500" />
@@ -2210,7 +2610,7 @@ export const BacktesterPanel: React.FC = () => {
                   </div>
                   <button
                     onClick={handleExportOptimizerCSV}
-                    className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/30 text-amber-400 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                    className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/30 text-amber-400 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
                     title="Download Permutations as CSV Spreadsheet"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -2225,19 +2625,31 @@ export const BacktesterPanel: React.FC = () => {
                         <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('rank')}>
                           Rank {renderSortIndicator('rank')}
                         </th>
-                        <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('directionOffset')}>
-                          OTM / Direction {renderSortIndicator('directionOffset')}
-                        </th>
-                        <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('stopLoss')}>
-                          Stop Loss {renderSortIndicator('stopLoss')}
-                        </th>
-                        <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('takeProfit')}>
-                          Take Profit {renderSortIndicator('takeProfit')}
-                        </th>
-                        <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('strikeWidth')}>
-                          Spread {renderSortIndicator('strikeWidth')}
-                        </th>
-                        <th className="py-2">Days / Time</th>
+                        {strategyType === 'RSI_SCANNER' ? (
+                          <>
+                            <th className="py-2 text-emerald-400">RSI Period</th>
+                            <th className="py-2 text-emerald-400">Levels (OB/OS)</th>
+                            <th className="py-2 text-cyan-400">Strike</th>
+                            <th className="py-2 text-greenBrand">Take Profit</th>
+                            <th className="py-2 text-redBrand">Stop Loss</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('directionOffset')}>
+                              OTM / Direction {renderSortIndicator('directionOffset')}
+                            </th>
+                            <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('stopLoss')}>
+                              Stop Loss {renderSortIndicator('stopLoss')}
+                            </th>
+                            <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('takeProfit')}>
+                              Take Profit {renderSortIndicator('takeProfit')}
+                            </th>
+                            <th className="py-2 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('strikeWidth')}>
+                              Spread {renderSortIndicator('strikeWidth')}
+                            </th>
+                            <th className="py-2">Days / Time</th>
+                          </>
+                        )}
                         <th className="py-2 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('netReturn')}>
                           Net Return {renderSortIndicator('netReturn')}
                         </th>
@@ -2250,9 +2662,6 @@ export const BacktesterPanel: React.FC = () => {
                         <th className="py-2 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('profitFactor')}>
                           Prof Factor {renderSortIndicator('profitFactor')}
                         </th>
-                        <th className="py-2 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('avgTimeToTarget')}>
-                          Avg Target Time {renderSortIndicator('avgTimeToTarget')}
-                        </th>
                         <th className="py-2 text-center">Action</th>
                       </tr>
                     </thead>
@@ -2264,7 +2673,7 @@ export const BacktesterPanel: React.FC = () => {
                         const isBest = originalRank === 1;
 
                         const daysMap = ["M", "T", "W", "Th", "F"];
-                        const daysStr = p.entryDays.map((d: number) => daysMap[d]).join(",");
+                        const daysStr = p.entryDays ? p.entryDays.map((d: number) => daysMap[d]).join(",") : "";
 
                         return (
                           <tr key={originalRank} className={`border-b border-borderClr/10 text-gray-300 hover:bg-gray-900/40 ${isBest ? 'bg-amber-500/5' : ''}`}>
@@ -2272,40 +2681,52 @@ export const BacktesterPanel: React.FC = () => {
                               {isBest && <span className="text-amber-500 text-[10px]">★</span>}
                               #{originalRank}
                             </td>
-                            <td className="py-2.5 font-semibold">
-                              {p.directionOffset !== null && p.directionOffset !== undefined && p.directionOffset !== 0 ? (
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${p.directionOffset > 0 ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' : 'bg-pink-500/10 text-pink-400 border-pink-500/30'}`}>
-                                  {p.directionOffset > 0 ? `+${p.directionOffset} C-OTM` : `${p.directionOffset} P-OTM`}
-                                </span>
-                              ) : (
-                                <span className="text-gray-500 font-mono text-[10px]">ATM (0)</span>
-                              )}
-                            </td>
-                            <td className="py-2.5">
-                              {p.stopLossPct !== null ? (
-                                <span className="text-redBrand font-semibold">{p.stopLossPct}%</span>
-                              ) : (
-                                <span className="text-gray-500">None</span>
-                              )}
-                            </td>
-                            <td className="py-2.5">
-                              {p.takeProfitPct !== null ? (
-                                <span className="text-greenBrand font-semibold">{p.takeProfitPct}%</span>
-                              ) : (
-                                <span className="text-gray-500">None</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 font-semibold text-white">
-                              {p.strikeWidth !== null && p.strikeWidth !== undefined ? (
-                                <span>{p.strikeWidth}</span>
-                              ) : (
-                                <span className="text-gray-500">Original</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 text-gray-400">
-                              <span>{daysStr}</span>
-                              {p.entryTime && <span className="text-[10px] ml-1 bg-gray-900 px-1 py-0.5 rounded text-gray-400">{p.entryTime}</span>}
-                            </td>
+                            {strategyType === 'RSI_SCANNER' ? (
+                              <>
+                                <td className="py-2.5 font-bold text-emerald-400">RSI({p.rsiPeriod})</td>
+                                <td className="py-2.5 font-semibold text-gray-300">{p.rsiLower}/{p.rsiUpper}</td>
+                                <td className="py-2.5 font-bold text-cyan-300">{p.moneyness}</td>
+                                <td className="py-2.5 font-semibold text-greenBrand">+{p.takeProfitPct}%</td>
+                                <td className="py-2.5 font-semibold text-redBrand">-{p.stopLossPct}%</td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="py-2.5 font-semibold">
+                                  {p.directionOffset !== null && p.directionOffset !== undefined && p.directionOffset !== 0 ? (
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${p.directionOffset > 0 ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' : 'bg-pink-500/10 text-pink-400 border-pink-500/30'}`}>
+                                      {p.directionOffset > 0 ? `+${p.directionOffset} C-OTM` : `${p.directionOffset} P-OTM`}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-500 font-mono text-[10px]">ATM (0)</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5">
+                                  {p.stopLossPct !== null ? (
+                                    <span className="text-redBrand font-semibold">{p.stopLossPct}%</span>
+                                  ) : (
+                                    <span className="text-gray-500">None</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5">
+                                  {p.takeProfitPct !== null ? (
+                                    <span className="text-greenBrand font-semibold">{p.takeProfitPct}%</span>
+                                  ) : (
+                                    <span className="text-gray-500">None</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 font-semibold text-white">
+                                  {p.strikeWidth !== null && p.strikeWidth !== undefined ? (
+                                    <span>{p.strikeWidth}</span>
+                                  ) : (
+                                    <span className="text-gray-500">Original</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 text-gray-400">
+                                  <span>{daysStr}</span>
+                                  {p.entryTime && <span className="text-[10px] ml-1 bg-gray-900 px-1 py-0.5 rounded text-gray-400">{p.entryTime}</span>}
+                                </td>
+                              </>
+                            )}
                             <td className={`py-2.5 text-right font-bold ${m.netPnL >= 0 ? "text-greenBrand" : "text-redBrand"}`}>
                               {(() => {
                                 const cur = getCurrencySymbol(backtestSymbol);
@@ -2315,15 +2736,12 @@ export const BacktesterPanel: React.FC = () => {
                             <td className="py-2.5 text-right text-greenBrand font-semibold">{m.winRate}%</td>
                             <td className="py-2.5 text-right text-redBrand font-semibold">{m.maxDrawdown}%</td>
                             <td className="py-2.5 text-right text-white font-semibold">{m.profitFactor}</td>
-                            <td className="py-2.5 text-right font-bold text-cyan-300 font-mono">
-                              {m.avgTimeToTarget || "-"}
-                            </td>
                             <td className="py-2.5 text-center">
                               <button
                                 onClick={() => handleApplyOptimalConfig(row)}
-                                className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500 hover:text-black text-amber-500 text-[9px] font-bold rounded transition-all"
+                                className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/30 text-amber-400 rounded text-[10px] font-bold transition-all cursor-pointer"
                               >
-                                Apply Config
+                                Apply
                               </button>
                             </td>
                           </tr>

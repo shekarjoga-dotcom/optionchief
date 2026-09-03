@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from app.quant.black_scholes import bs_pricing
 import math
 from app.services.market_data import MarketDataService
+from app.quant.indicators import detect_price_action_signals
 
 router = APIRouter()
 market_service = MarketDataService()
@@ -91,7 +92,7 @@ class BacktestRequest(BaseModel):
     symbol: str
     startDate: str
     endDate: str
-    legs: List[OptionLegSchema]
+    legs: List[OptionLegSchema] = []
     entryDaysOfWeek: List[int] = [1]  # 1 = Tuesday (standard weekly entry day)
     exitDaysBeforeExpiry: int = 0
     slippagePerLeg: float = 0.0
@@ -111,12 +112,19 @@ class BacktestRequest(BaseModel):
     trailingSLStep: Optional[float] = None
     intradayInterval: Optional[int] = 5
     expiryType: str = "weekly"
+    # RSI Scanner parameters
+    strategyType: Optional[str] = "STANDARD"  # "STANDARD" or "RSI_SCANNER"
+    rsiPeriod: Optional[int] = 3
+    rsiUpper: Optional[float] = 80.0
+    rsiLower: Optional[float] = 20.0
+    moneyness: Optional[str] = "ATM"
+    lots: Optional[int] = 1
 
 class OptimizationRequest(BaseModel):
     symbol: str
     startDate: str
     endDate: str
-    legs: List[OptionLegSchema]
+    legs: List[OptionLegSchema] = []
     initialCapital: float = 100000.0
     backtestType: str = "EOD"  # "EOD" or "INTRADAY"
     slippagePerLeg: float = 50.0
@@ -131,9 +139,18 @@ class OptimizationRequest(BaseModel):
     strikeWidthRange: Optional[List[float]] = None
     directionOffsetRange: Optional[List[float]] = None
     
+    # RSI Scanner Optimization parameters
+    strategyType: Optional[str] = "STANDARD"  # "STANDARD" or "RSI_SCANNER"
+    rsiPeriodRange: Optional[List[int]] = None
+    rsiUpperRange: Optional[List[float]] = None
+    rsiLowerRange: Optional[List[float]] = None
+    moneynessRange: Optional[List[str]] = None
+    lots: Optional[int] = 1
+    
     # Goal parameter: "netPnL", "winRate", "maxDrawdown", "sharpeRatio", "profitFactor"
     objective: str = "netPnL"
     prompt: Optional[str] = None
+
 
 
 LOT_SIZES = {
@@ -738,6 +755,338 @@ def run_in_memory_intraday_backtest(
         "targetHitRate": round((len(target_min_list) / total_trades) * 100.0, 1) if total_trades > 0 else 0.0
     }
 
+
+def run_in_memory_rsi_backtest(
+    all_candles: list,
+    vix_series: pd.Series,
+    symbol: str,
+    rsi_period: int = 3,
+    rsi_upper: float = 80.0,
+    rsi_lower: float = 20.0,
+    moneyness: str = "ATM",
+    take_profit_pct: Optional[float] = 30.0,
+    stop_loss_pct: Optional[float] = 15.0,
+    initial_capital: float = 100000.0,
+    slippage: float = 0.0,
+    lot_multiplier: int = 25,
+    strike_round: int = 50,
+    expiry_type: str = "weekly",
+    lots: int = 1,
+    return_full: bool = False
+) -> dict:
+    capital = initial_capital
+    r = 0.065
+    trades_log = []
+    equity_curve = []
+    monthly_pnl = {}
+    
+    all_candles_sorted = sorted(all_candles, key=lambda x: x["timestamp"])
+    
+    if len(all_candles_sorted) < rsi_period + 5:
+        empty_metrics = {
+            "initialCapital": initial_capital,
+            "finalCapital": initial_capital,
+            "netPnL": 0.0,
+            "netReturnPct": 0.0,
+            "winRate": 0.0,
+            "profitFactor": 0.0,
+            "maxDrawdown": 0.0,
+            "sharpeRatio": 0.0,
+            "totalTrades": 0,
+            "winningTrades": 0,
+            "losingTrades": 0,
+            "targetHits": 0,
+            "targetHitRate": 0.0,
+            "avgTimeToTarget": "-",
+            "avgHoldingTime": "-"
+        }
+        return {"metrics": empty_metrics, "equityCurve": [], "monthlyGrid": [], "trades": []} if return_full else empty_metrics
+
+    # Detect all breakout signals across candle stream
+    signals = detect_price_action_signals(
+        all_candles_sorted,
+        rsi_period=rsi_period,
+        rsi_upper=rsi_upper,
+        rsi_lower=rsi_lower
+    )
+    signals_map = {s["timestamp"]: s for s in signals}
+
+    current_trade = None
+    target_hits = 0
+    holding_mins = []
+
+    def get_dte_years(candle_dt_str: str, expiry_date: datetime) -> float:
+        cdt = datetime.strptime(candle_dt_str, "%Y-%m-%d %H:%M:%S")
+        days_diff = (expiry_date.date() - cdt.date()).days
+        close_time = cdt.replace(hour=15, minute=30, second=0)
+        seconds_left_today = max(0, (close_time - cdt).total_seconds())
+        fractional_day = seconds_left_today / (24 * 3600)
+        return max(0.0001, (days_diff - 1 + fractional_day) / 365.0) if days_diff > 0 else max(0.0, seconds_left_today / (365 * 24 * 3600))
+
+    total_qty = max(1, lots) * lot_multiplier
+
+    for i, c in enumerate(all_candles_sorted):
+        ts = c["timestamp"]
+        spot = float(c["close"])
+        dt_obj = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        date_str = ts.split(" ")[0]
+        time_part = ts.split(" ")[1]
+        h, m = map(int, time_part.split(":")[:2])
+        time_mins = h * 60 + m
+
+        # 1. Manage Active Trade
+        if current_trade is not None:
+            expiry_dt = current_trade["expiryDate"]
+            T_years = get_dte_years(ts, expiry_dt)
+            dist_pct = (current_trade["strike"] - spot) / spot
+            try:
+                vix_val = float(vix_series.loc[pd.to_datetime(date_str)])
+            except:
+                vix_val = 15.0
+            base_iv = vix_val / 100.0
+            leg_iv = base_iv - 0.50 * dist_pct + 0.30 * (dist_pct ** 2)
+            leg_iv = max(0.05, min(1.0, leg_iv))
+
+            if T_years <= 0:
+                current_prem = max(0.0, spot - current_trade["strike"]) if current_trade["optionType"] == "C" else max(0.0, current_trade["strike"] - spot)
+            else:
+                current_prem = bs_pricing(spot, current_trade["strike"], T_years, r, leg_iv, current_trade["optionType"])
+
+            trade_pnl = (current_prem - current_trade["entryPremium"]) * total_qty
+            entry_cost = current_trade["entryPremium"] * total_qty
+            
+            exit_reason = None
+            if take_profit_pct and entry_cost > 0 and (trade_pnl >= entry_cost * (take_profit_pct / 100.0)):
+                exit_reason = f"Target Hit (+{take_profit_pct}%)"
+                target_hits += 1
+            elif stop_loss_pct and entry_cost > 0 and (trade_pnl <= -entry_cost * (stop_loss_pct / 100.0)):
+                exit_reason = f"Stop Loss (-{stop_loss_pct}%)"
+            elif time_mins >= (15 * 60 + 20):
+                exit_reason = "Intraday EOD Squareoff"
+            elif ts in signals_map and signals_map[ts]["direction"] != current_trade["direction"]:
+                exit_reason = "Opposite Reversal Signal"
+
+            if exit_reason is not None:
+                net_trade_pnl = float(trade_pnl - (slippage * 2))
+                capital = float(capital + net_trade_pnl)
+                
+                ent_dt = datetime.strptime(current_trade["entryTime"], "%Y-%m-%d %H:%M:%S")
+                dur_mins = max(5, int((dt_obj - ent_dt).total_seconds() / 60))
+                holding_mins.append(dur_mins)
+
+                ym = dt_obj.strftime("%Y-%m")
+                monthly_pnl[ym] = float(monthly_pnl.get(ym, 0.0) + net_trade_pnl)
+
+                trades_log.append({
+                    "tradeId": len(trades_log) + 1,
+                    "symbol": symbol,
+                    "direction": current_trade["direction"],
+                    "strategyName": f"RSI Scalp ({current_trade['direction']})",
+                    "entryDate": current_trade["entryTime"],
+                    "exitDate": ts,
+                    "entrySpot": round(float(current_trade["entrySpot"]), 2),
+                    "exitSpot": round(float(spot), 2),
+                    "strike": int(current_trade["strike"]),
+                    "optionType": current_trade["optionType"],
+                    "entryPrice": round(float(current_trade["entryPremium"]), 2),
+                    "exitPrice": round(float(current_prem), 2),
+                    "exitReason": exit_reason,
+                    "duration": f"{dur_mins} mins",
+                    "netPnL": round(float(net_trade_pnl), 2),
+                    "runningCapital": round(float(capital), 2)
+                })
+                current_trade = None
+
+        # 2. Check for New Signal Entry (Only during market hours 09:20 - 15:00)
+        if current_trade is None and (9 * 60 + 20) <= time_mins <= (15 * 60 + 0):
+            if ts in signals_map:
+                sig = signals_map[ts]
+                direction = sig["direction"]
+                atm_strike = round(spot / strike_round) * strike_round
+                m_upper = moneyness.upper()
+
+                if direction == "BULLISH_CE":
+                    leg_type = "C"
+                    if m_upper == "OTM1":
+                        strike = atm_strike + strike_round
+                    elif m_upper == "OTM2":
+                        strike = atm_strike + (strike_round * 2)
+                    elif m_upper == "ITM":
+                        strike = atm_strike - strike_round
+                    else:
+                        strike = atm_strike
+                else:
+                    leg_type = "P"
+                    if m_upper == "OTM1":
+                        strike = atm_strike - strike_round
+                    elif m_upper == "OTM2":
+                        strike = atm_strike - (strike_round * 2)
+                    elif m_upper == "ITM":
+                        strike = atm_strike + strike_round
+                    else:
+                        strike = atm_strike
+
+                expiry_dt = get_expiry_date(dt_obj, symbol, expiry_type)
+                T_years = get_dte_years(ts, expiry_dt)
+                dist_pct = (strike - spot) / spot
+                try:
+                    vix_val = float(vix_series.loc[pd.to_datetime(date_str)])
+                except:
+                    vix_val = 15.0
+                base_iv = vix_val / 100.0
+                leg_iv = base_iv - 0.50 * dist_pct + 0.30 * (dist_pct ** 2)
+                leg_iv = max(0.05, min(1.0, leg_iv))
+
+                entry_prem = float(bs_pricing(spot, strike, T_years, r, leg_iv, leg_type))
+                entry_prem += (slippage / total_qty) if total_qty > 0 else 0
+
+                current_trade = {
+                    "entryTime": ts,
+                    "direction": direction,
+                    "entrySpot": float(spot),
+                    "strike": strike,
+                    "optionType": leg_type,
+                    "entryPremium": max(1.0, float(entry_prem)),
+                    "expiryDate": expiry_dt,
+                    "rsi": float(sig.get("rsi_value", 50.0))
+                }
+
+        # Track equity curve
+        if time_mins >= (15 * 60 + 25) or i == len(all_candles_sorted) - 1:
+            if not equity_curve or equity_curve[-1]["date"] != date_str:
+                equity_curve.append({
+                    "date": date_str,
+                    "equity": round(float(capital), 2),
+                    "spot": round(float(spot), 2)
+                })
+
+    # Performance calculations
+    total_trades = len(trades_log)
+    winning_trades = [t for t in trades_log if t["netPnL"] > 0]
+    losing_trades = [t for t in trades_log if t["netPnL"] <= 0]
+    win_rate = (len(winning_trades) / total_trades) * 100.0 if total_trades > 0 else 0.0
+    total_profit = sum(t["netPnL"] for t in winning_trades)
+    total_loss = abs(sum(t["netPnL"] for t in losing_trades))
+    profit_factor = round(float(total_profit / total_loss), 2) if total_loss > 0 else ("Unlimited" if total_profit > 0 else 0.0)
+    net_return = float(capital - initial_capital)
+    net_return_pct = float((net_return / initial_capital) * 100.0)
+
+    peak = initial_capital
+    max_dd = 0.0
+    for eq in equity_curve:
+        val = eq["equity"]
+        if val > peak:
+            peak = val
+        dd = (peak - val) / peak * 100.0
+        if dd > max_dd:
+            max_dd = dd
+
+    daily_returns = []
+    for j in range(1, len(equity_curve)):
+        ret = (equity_curve[j]["equity"] - equity_curve[j-1]["equity"]) / equity_curve[j-1]["equity"]
+        daily_returns.append(ret)
+    sharpe = round((float(np.mean(daily_returns)) / float(np.std(daily_returns))) * math.sqrt(252), 2) if len(daily_returns) > 0 and np.std(daily_returns) > 0 else 0.0
+
+    avg_hold = round(float(sum(holding_mins) / len(holding_mins)), 1) if holding_mins else 0.0
+
+    metrics_res = {
+        "initialCapital": float(initial_capital),
+        "finalCapital": round(float(capital), 2),
+        "netPnL": round(float(net_return), 2),
+        "netReturnPct": round(float(net_return_pct), 2),
+        "winRate": round(float(win_rate), 2),
+        "profitFactor": profit_factor,
+        "maxDrawdown": round(float(max_dd), 2),
+        "sharpeRatio": float(sharpe),
+        "totalTrades": int(total_trades),
+        "winningTrades": int(len(winning_trades)),
+        "losingTrades": int(len(losing_trades)),
+        "targetHits": int(target_hits),
+        "targetHitRate": round(float((target_hits / total_trades) * 100.0), 1) if total_trades > 0 else 0.0,
+        "avgHoldingTime": f"{avg_hold} mins"
+    }
+
+    if not return_full:
+        return metrics_res
+
+    monthly_grid = []
+    years_seen = sorted(list(set(datetime.strptime(ym, "%Y-%m").year for ym in monthly_pnl.keys()))) if monthly_pnl else []
+    for yr in years_seen:
+        row = {"year": yr}
+        annual_total = 0.0
+        for m in range(1, 13):
+            key = f"{yr}-{m:02d}"
+            val = monthly_pnl.get(key, 0.0)
+            row[f"m{m}"] = round(float(val), 2)
+            annual_total += val
+        row["total"] = round(float(annual_total), 2)
+        monthly_grid.append(row)
+
+    return {
+        "metrics": metrics_res,
+        "equityCurve": equity_curve,
+        "monthlyGrid": monthly_grid,
+        "trades": trades_log
+    }
+
+
+async def run_rsi_scanner_backtest(req: BacktestRequest):
+    symbol_upper = req.symbol.upper()
+    strike_round = STRIKE_ROUND_INTERVALS.get(symbol_upper, 50)
+    
+    lot_multiplier = LOT_SIZES.get(symbol_upper, 25)
+    if symbol_upper == "NIFTY":
+        lot_multiplier = 25
+    elif symbol_upper == "BANKNIFTY":
+        lot_multiplier = 15
+    elif symbol_upper == "SENSEX":
+        lot_multiplier = 20
+    elif symbol_upper == "FINNIFTY":
+        lot_multiplier = 25
+
+    interval = req.intradayInterval or 5
+    raw_candles = market_service.get_historical_intraday_candles(
+        symbol=symbol_upper,
+        interval=interval,
+        from_date=req.startDate,
+        to_date=req.endDate
+    )
+    if not raw_candles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No intraday candle data found for {symbol_upper}. Note: Intraday backtests on Yahoo Finance are available for up to the last 60 days. Please adjust your date range."
+        )
+
+    vix_ticker = VIX_TICKERS.get(symbol_upper, "^VIX")
+    try:
+        vix_df = safe_download_historical_df(vix_ticker, start_date=req.startDate, end_date=req.endDate)
+        if vix_df.empty:
+            vix_series = pd.Series(15.0, index=pd.to_datetime([c["timestamp"].split(" ")[0] for c in raw_candles]))
+        else:
+            vix_series = vix_df["Close"].dropna()
+    except Exception:
+        vix_series = pd.Series(15.0, index=pd.to_datetime([c["timestamp"].split(" ")[0] for c in raw_candles]))
+
+    return run_in_memory_rsi_backtest(
+        all_candles=raw_candles,
+        vix_series=vix_series,
+        symbol=symbol_upper,
+        rsi_period=req.rsiPeriod or 3,
+        rsi_upper=req.rsiUpper or 80.0,
+        rsi_lower=req.rsiLower or 20.0,
+        moneyness=req.moneyness or "ATM",
+        take_profit_pct=req.takeProfitPct,
+        stop_loss_pct=req.stopLossPct,
+        initial_capital=req.initialCapital,
+        slippage=req.slippagePerLeg,
+        lot_multiplier=lot_multiplier,
+        strike_round=strike_round,
+        expiry_type=req.expiryType,
+        lots=req.lots or 1,
+        return_full=True
+    )
+
+
 async def run_intraday_backtest(req: BacktestRequest):
     symbol_upper = req.symbol.upper()
     lot_size = LOT_SIZES.get(symbol_upper, 100)
@@ -1198,6 +1547,8 @@ async def run_backtest(req: BacktestRequest):
     if req.symbol.upper().endswith("1!"):
         req.symbol = req.symbol[:-2]
     symbol_upper = req.symbol.upper()
+    if req.strategyType and req.strategyType.upper() == "RSI_SCANNER":
+        return await run_rsi_scanner_backtest(req)
     if req.backtestType.upper() == "INTRADAY":
         return await run_intraday_backtest(req)
         
@@ -1577,7 +1928,104 @@ async def optimize_backtest(req: OptimizationRequest):
     symbol_upper = req.symbol.upper()
     lot_size = LOT_SIZES.get(symbol_upper, 100)
     strike_round = STRIKE_ROUND_INTERVALS.get(symbol_upper, 50)
-    
+
+    # 0. Check for RSI Scanner Strategy Optimization
+    if req.strategyType and req.strategyType.upper() == "RSI_SCANNER":
+        interval = 5
+        raw_candles = market_service.get_historical_intraday_candles(
+            symbol=symbol_upper,
+            interval=interval,
+            from_date=req.startDate,
+            to_date=req.endDate
+        )
+        if not raw_candles:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No intraday candle data found for {symbol_upper} to optimize. Note: Intraday data on Yahoo Finance is limited to 60 days."
+            )
+
+        vix_ticker = VIX_TICKERS.get(symbol_upper, "^VIX")
+        try:
+            vix_df = safe_download_historical_df(vix_ticker, start_date=req.startDate, end_date=req.endDate)
+            if vix_df.empty:
+                vix_series = pd.Series(15.0, index=pd.to_datetime([c["timestamp"].split(" ")[0] for c in raw_candles]))
+            else:
+                vix_series = vix_df["Close"].dropna()
+        except Exception:
+            vix_series = pd.Series(15.0, index=pd.to_datetime([c["timestamp"].split(" ")[0] for c in raw_candles]))
+
+        rsi_period_range = req.rsiPeriodRange if req.rsiPeriodRange is not None else [2, 3, 5, 7, 14]
+
+        if req.rsiUpperRange and req.rsiLowerRange:
+            rsi_level_pairs = list(zip(req.rsiUpperRange, req.rsiLowerRange))
+        else:
+            rsi_level_pairs = [(85.0, 15.0), (80.0, 20.0), (75.0, 25.0), (70.0, 30.0), (60.0, 40.0)]
+
+        tp_range = req.takeProfitPctRange if req.takeProfitPctRange is not None else [15.0, 20.0, 30.0, 50.0]
+        sl_range = req.stopLossPctRange if req.stopLossPctRange is not None else [10.0, 15.0, 20.0]
+        moneyness_range = req.moneynessRange if req.moneynessRange is not None else ["ATM", "OTM1", "OTM2"]
+
+        lot_multiplier = LOT_SIZES.get(symbol_upper, 25)
+        if symbol_upper == "NIFTY":
+            lot_multiplier = 25
+        elif symbol_upper == "BANKNIFTY":
+            lot_multiplier = 15
+        elif symbol_upper == "SENSEX":
+            lot_multiplier = 20
+        elif symbol_upper == "FINNIFTY":
+            lot_multiplier = 25
+
+        results = []
+        import itertools
+        param_grid = itertools.product(rsi_period_range, rsi_level_pairs, tp_range, sl_range, moneyness_range)
+
+        for period, (upper, lower), tp, sl, moneyness in param_grid:
+            metrics = run_in_memory_rsi_backtest(
+                all_candles=raw_candles,
+                vix_series=vix_series,
+                symbol=symbol_upper,
+                rsi_period=period,
+                rsi_upper=upper,
+                rsi_lower=lower,
+                moneyness=moneyness,
+                take_profit_pct=tp,
+                stop_loss_pct=sl,
+                initial_capital=req.initialCapital,
+                slippage=req.slippagePerLeg,
+                lot_multiplier=lot_multiplier,
+                strike_round=strike_round,
+                expiry_type=req.expiryType,
+                lots=req.lots or 1,
+                return_full=False
+            )
+            results.append({
+                "parameters": {
+                    "rsiPeriod": period,
+                    "rsiUpper": upper,
+                    "rsiLower": lower,
+                    "takeProfitPct": tp,
+                    "stopLossPct": sl,
+                    "moneyness": moneyness
+                },
+                "metrics": metrics
+            })
+
+        obj = req.objective
+        def sort_key(item):
+            val = item["metrics"].get(obj, 0.0)
+            if val == "Unlimited":
+                return float('inf')
+            if obj == "maxDrawdown":
+                return -val
+            return val
+
+        sorted_results = sorted(results, key=sort_key, reverse=True)
+        return {
+            "objective": obj,
+            "resultsCount": len(sorted_results),
+            "results": sorted_results[:50]
+        }
+
     # 1. Populate search space defaults if ranges are not provided
     tp_range = req.takeProfitPctRange if req.takeProfitPctRange is not None else [None, 10.0, 20.0, 30.0, 50.0]
     sl_range = req.stopLossPctRange if req.stopLossPctRange is not None else [None, 10.0, 20.0, 30.0, 50.0]

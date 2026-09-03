@@ -992,7 +992,7 @@ const App: React.FC = () => {
 
           <div style={{ display: activeTab === 'rsi_scanner' ? 'block' : 'none' }}>
             {user?.is_pro ? (
-              <RsiScannerPanel />
+              <RsiScannerPanel onNavigateToBacktest={() => setActiveTab('backtest')} />
             ) : (
               <ProFeatureGate 
                 title="RSI Options Momentum Scalper" 

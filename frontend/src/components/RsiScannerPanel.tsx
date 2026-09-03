@@ -43,7 +43,7 @@ interface RSIScannerLog {
   realized_pnl: number;
 }
 
-export default function RsiScannerPanel() {
+export default function RsiScannerPanel({ onNavigateToBacktest }: { onNavigateToBacktest?: () => void } = {}) {
   const { token, user } = useStore();
   
   // State
@@ -255,6 +255,26 @@ export default function RsiScannerPanel() {
       }
     } catch (e) {
       console.error("Error toggling auto execute:", e);
+    }
+  };
+
+  // Open this rule in Strategy Backtester / Optimizer
+  const handleBacktestConfig = (cfg: RSIScannerConfig) => {
+    localStorage.setItem('OC_RSI_BACKTEST_CONFIG', JSON.stringify({
+      symbol: cfg.symbol,
+      rsi_period: cfg.rsi_period,
+      rsi_upper: cfg.rsi_upper,
+      rsi_lower: cfg.rsi_lower,
+      moneyness: cfg.moneyness,
+      lot_size: cfg.lot_size,
+      tp_pct: cfg.tp_pct,
+      sl_pct: cfg.sl_pct,
+      timeframe: cfg.timeframe
+    }));
+    window.dispatchEvent(new Event('rsi_backtest_load'));
+    window.location.hash = 'backtest';
+    if (onNavigateToBacktest) {
+      onNavigateToBacktest();
     }
   };
 
@@ -512,6 +532,14 @@ export default function RsiScannerPanel() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleBacktestConfig(config)}
+                        title="Backtest and optimize this RSI rule in Backtester"
+                        className="text-xs px-2 py-1 rounded-md font-semibold bg-amber-500/15 hover:bg-amber-500 hover:text-black border border-amber-500/30 text-amber-400 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                      >
+                        <span>🧪</span>
+                        <span>Backtest</span>
+                      </button>
                       <button 
                         onClick={() => handleToggleAutoExecute(config)}
                         disabled={user?.role === 'viewer'}
