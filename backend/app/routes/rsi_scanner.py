@@ -184,16 +184,15 @@ async def trigger_manual_scan(
     if current_user.role == "viewer":
         raise HTTPException(status_code=403, detail="Forbidden: Viewers cannot trigger scans.")
 
-    # Import locally to avoid circular dependencies
-    from app.services.rsi_scanner import rsi_scanner_loop
-    # Run one iteration of the scan service asynchronously in background
-    # (Since rsi_scanner_loop is infinite, we just execute a single scanner cycle logic)
-    print(f"[RSI Scanner] Manual scan triggered by user {current_user.id}")
-    
-    # We can just schedule a quick trigger tasks internally or run it in background
-    # As a mock response or async task:
-    # Here we just respond that scan was queued
-    return {"status": "success", "message": "Background scanning cycle triggered."}
+    from app.services.rsi_scanner import run_single_scan_cycle
+    print(f"[RSI Scanner] Manual scan initiated by user {current_user.id}")
+    summary = await run_single_scan_cycle(user_id=current_user.id)
+    return {
+        "status": "success",
+        "message": f"Scan completed: {summary['scanned_configs']} rule(s) checked, {summary['signals_triggered']} new signal(s), {summary['executed_trades']} trade(s) executed.",
+        "summary": summary
+    }
+
 
 
 @router.get("/chart-data")

@@ -1407,20 +1407,26 @@ class MarketDataService:
         """
         symbol_clean = self._clean_symbol(symbol)
 
-        # 1. Check local cache first
+        # 1. Check local cache first (60-second TTL for live today data, permanent for past dates)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        is_past_range = bool(to_date and to_date < today_str)
+        
         cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "db")
         os.makedirs(cache_dir, exist_ok=True)
         cache_file = os.path.join(cache_dir, f"intraday_cache_{symbol_clean}_{interval}_{from_date}_{to_date}.json")
         
         if os.path.exists(cache_file):
-            try:
-                import json
-                with open(cache_file, "r") as f:
-                    cached_data = json.load(f)
-                print(f"[Intraday Cache] Loaded {len(cached_data)} candles from cache for {symbol_clean}")
-                return cached_data
-            except Exception as e:
-                print(f"[Intraday Cache] Failed to load cache: {e}")
+            import time
+            file_age = time.time() - os.path.getmtime(cache_file)
+            # Use cache if it's a past historical range OR younger than 60s for live data
+            if is_past_range or file_age < 60:
+                try:
+                    import json
+                    with open(cache_file, "r") as f:
+                        cached_data = json.load(f)
+                    return cached_data
+                except Exception as e:
+                    print(f"[Intraday Cache] Failed to load cache: {e}")
 
         candles = []
 

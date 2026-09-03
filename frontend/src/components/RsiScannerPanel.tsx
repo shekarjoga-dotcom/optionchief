@@ -64,7 +64,7 @@ export default function RsiScannerPanel() {
   const [formRsiLower, setFormRsiLower] = useState<number>(20);
   const [formLotSize, setFormLotSize] = useState<number>(1);
   const [formMoneyness, setFormMoneyness] = useState<string>("ATM");
-  const [formAutoExecute, setFormAutoExecute] = useState<boolean>(false);
+  const [formAutoExecute, setFormAutoExecute] = useState<boolean>(true);
   const [formTpPct, setFormTpPct] = useState<number>(30);
   const [formSlPct, setFormSlPct] = useState<number>(15);
 
@@ -225,6 +225,39 @@ export default function RsiScannerPanel() {
     }
   };
 
+  // Toggle config auto_execute status
+  const handleToggleAutoExecute = async (config: RSIScannerConfig) => {
+    if (user?.role === 'viewer') return;
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/rsi-scanner/configs?config_id=${config.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          symbol: config.symbol,
+          timeframe: config.timeframe,
+          rsi_period: config.rsi_period,
+          rsi_upper: config.rsi_upper,
+          rsi_lower: config.rsi_lower,
+          lot_size: config.lot_size,
+          moneyness: config.moneyness,
+          auto_execute: !config.auto_execute,
+          tp_pct: config.tp_pct,
+          sl_pct: config.sl_pct,
+          active: config.active
+        })
+      });
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (e) {
+      console.error("Error toggling auto execute:", e);
+    }
+  };
+
   // Trigger manual scan cycle
   const handleManualScan = async () => {
     setIsScanning(true);
@@ -234,8 +267,12 @@ export default function RsiScannerPanel() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
+        const resData = await response.json();
         await fetchData();
         fetchChartData(selectedSymbol, selectedTimeframe);
+        if (resData.message) {
+          alert(resData.message);
+        }
       }
     } catch (e) {
       console.error("Error triggering scan:", e);
@@ -476,16 +513,29 @@ export default function RsiScannerPanel() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button 
+                        onClick={() => handleToggleAutoExecute(config)}
+                        disabled={user?.role === 'viewer'}
+                        title="Toggle Auto Execute to Paper Trading Book"
+                        className={`text-xs px-2 py-1 rounded-md font-semibold border transition-all cursor-pointer ${
+                          config.auto_execute 
+                            ? 'bg-purple-500/20 border-purple-500/40 text-purple-300' 
+                            : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        {config.auto_execute ? '⚡ Auto: ON' : '🔔 Auto: OFF'}
+                      </button>
+                      <button 
                         onClick={() => handleToggleActive(config)}
                         disabled={user?.role === 'viewer'}
-                        className={`text-xs px-2.5 py-1 rounded-md font-semibold border ${config.active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                        className={`text-xs px-2.5 py-1 rounded-md font-semibold border transition-all cursor-pointer ${config.active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
                       >
                         {config.active ? 'Active' : 'Disabled'}
                       </button>
                       <button
                         onClick={() => handleDeleteConfig(config.id)}
                         disabled={user?.role === 'viewer'}
-                        className="p-1.5 bg-slate-900 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800 transition duration-150"
+                        className="p-1.5 bg-slate-900 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800 transition duration-150 cursor-pointer"
+                        title="Delete Rule"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
