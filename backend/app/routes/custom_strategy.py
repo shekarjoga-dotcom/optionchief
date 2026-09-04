@@ -19,6 +19,7 @@ from app.quant.custom_system_engine import (
     run_custom_system_backtest,
     bs_pricing
 )
+from app.quant.stockan_engine import analyze_quant_market
 
 router = APIRouter(prefix="/api/custom-strategy", tags=["Custom Strategy Studio"])
 
@@ -673,3 +674,59 @@ async def delete_saved_strategy(
     await db.delete(existing)
     await db.commit()
     return {"status": "deleted", "id": strategy_id}
+
+
+# ==========================================
+# AI QUANT READ & NIFTYBEES ENGINE (STOCKAN)
+# ==========================================
+
+@router.get("/quant-read")
+def get_quant_market_read(symbol: str = "NIFTY"):
+    """
+    Computes Stockan Quant Engine read, CALL vs PUT structural comparison,
+    NIFTYBEES zero-decay support zones, and defined-risk credit spreads.
+    """
+    sym_upper = symbol.upper()
+    try:
+        underlying = market_service.get_underlying_data(sym_upper)
+        spot = float(underlying.get("spot", 24800.0)) if underlying else 24800.0
+    except Exception:
+        spot = 24800.0 if "NIFTY" in sym_upper else 51000.0
+
+    # Fetch 15m candles
+    try:
+        intraday_15m = market_service.get_historical_intraday_candles(symbol=sym_upper, interval=15)
+    except Exception:
+        intraday_15m = []
+
+    # Fetch daily candles for ATR
+    try:
+        daily_candles = market_service.get_historical_prices(symbol=sym_upper, period="3mo")
+    except Exception:
+        daily_candles = []
+
+    # Fetch option chain
+    try:
+        chain = market_service.get_option_chain(symbol=sym_upper)
+    except Exception:
+        chain = None
+
+    # Fetch NIFTYBEES spot
+    niftybees_cmp = None
+    if "NIFTY" in sym_upper:
+        try:
+            bees_data = market_service.get_underlying_data("NIFTYBEES")
+            niftybees_cmp = float(bees_data.get("spot")) if bees_data and bees_data.get("spot") else None
+        except Exception:
+            niftybees_cmp = None
+
+    result = analyze_quant_market(
+        symbol=sym_upper,
+        spot_price=spot,
+        intraday_15m_candles=intraday_15m,
+        daily_candles=daily_candles,
+        option_chain=chain,
+        niftybees_cmp=niftybees_cmp
+    )
+    return result
+

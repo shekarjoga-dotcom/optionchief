@@ -17,6 +17,8 @@ SYMBOL_MAPPING = {
     "BANK NIFTY": "^NSEBANK",
     "SENSEX": "^BSESN",
     "NIFTYIT": "^CNXIT",
+    "NIFTYBEES": "NIFTYBEES.NS",
+    "BANKBEES": "BANKBEES.NS",
     "NIFTYCPSE": "NIFTY_CPSE.NS", # or custom mock
     "SPY": "SPY",
     "AAPL": "AAPL",

@@ -4,7 +4,8 @@ import { BACKEND_URL } from '../config';
 import { 
   Code2, Play, CheckCircle2, AlertTriangle, RefreshCw, Save, 
   Sliders, Activity, Zap, HelpCircle, FileCode, Check,
-  Trash2, FolderHeart, X
+  Trash2, FolderHeart, X, ShieldCheck, TrendingUp, 
+  ArrowUpRight, Scale, Clock, ShieldAlert
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
@@ -80,7 +81,13 @@ export default function CustomStrategyStudio() {
   const { token } = useStore();
 
   // Sub-tabs
-  const [subTab, setSubTab] = useState<'editor' | 'scanner' | 'backtest' | 'optimizer'>('editor');
+  const [subTab, setSubTab] = useState<'editor' | 'scanner' | 'backtest' | 'optimizer' | 'quant_read'>('editor');
+
+  // AI Quant Read & NIFTYBEES state
+  const [quantSymbol, setQuantSymbol] = useState<'NIFTY' | 'BANKNIFTY'>('NIFTY');
+  const [quantData, setQuantData] = useState<any | null>(null);
+  const [isQuantLoading, setIsQuantLoading] = useState<boolean>(false);
+  const [quantError, setQuantError] = useState<string | null>(null);
 
   // Strategy configuration state
   const [strategyName, setStrategyName] = useState<string>("My Custom Strategy");
@@ -595,6 +602,25 @@ SL = 12%
     alert(`Applied Best Settings: TP +${p.takeProfitPct}%, SL -${p.stopLossPct}%, Moneyness ${p.moneyness}`);
   };
 
+  const fetchQuantRead = async (sym: 'NIFTY' | 'BANKNIFTY' = quantSymbol) => {
+    setIsQuantLoading(true);
+    setQuantError(null);
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/custom-strategy/quant-read?symbol=${sym}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!resp.ok) {
+        throw new Error(`Quant read request failed with status ${resp.status}`);
+      }
+      const data = await resp.json();
+      setQuantData(data);
+    } catch (err: any) {
+      setQuantError(err.message || 'Failed to fetch quant read.');
+    } finally {
+      setIsQuantLoading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6 text-gray-200">
       
@@ -661,6 +687,20 @@ SL = 12%
           >
             <Sliders className="w-3.5 h-3.5" />
             <span>4. Optimizer</span>
+          </button>
+          <button
+            onClick={() => {
+              setSubTab('quant_read');
+              if (!quantData) fetchQuantRead(quantSymbol);
+            }}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              subTab === 'quant_read'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                : 'text-purple-300 hover:text-white hover:bg-purple-500/10'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+            <span>5. 🧠 AI Quant Read & NIFTYBEES</span>
           </button>
         </div>
       </div>
@@ -1552,6 +1592,477 @@ SL = 12%
               </table>
             </div>
           </div>
+
+        </div>
+      )}
+
+      {/* SUB-TAB 5: AI QUANT READ & NIFTYBEES HUB */}
+      {subTab === 'quant_read' && (
+        <div className="flex flex-col gap-6 animate-fade-in">
+          
+          {/* Top Control Bar */}
+          <div className="bg-cardClr border border-borderClr rounded-2xl p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex bg-black/50 border border-borderClr/80 rounded-xl p-1 gap-1">
+                {(['NIFTY', 'BANKNIFTY'] as const).map((sym) => (
+                  <button
+                    key={sym}
+                    onClick={() => {
+                      setQuantSymbol(sym);
+                      fetchQuantRead(sym);
+                    }}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${
+                      quantSymbol === sym
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {sym === 'NIFTY' ? 'NIFTY 50' : 'BANKNIFTY'}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => fetchQuantRead(quantSymbol)}
+                disabled={isQuantLoading}
+                className="flex items-center gap-2 px-4 py-1.5 bg-gray-800/80 hover:bg-gray-700 text-gray-200 border border-borderClr rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isQuantLoading ? 'animate-spin text-purple-400' : 'text-gray-400'}`} />
+                <span>{isQuantLoading ? 'Analyzing...' : 'Re-Analyze Structure'}</span>
+              </button>
+            </div>
+
+            {quantData && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-black/40 border border-borderClr/60 rounded-xl">
+                  <Clock className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-gray-400">{quantData.market_phase}</span>
+                  <span className="text-gray-600">|</span>
+                  <span className="text-blue-300 font-mono font-bold">{quantData.minutes_left}m left</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl font-bold ${
+                  quantData.candle_sufficiency.gate_passed
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                }`}>
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>{quantData.candle_sufficiency.gate_status}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Loading State */}
+          {isQuantLoading && (
+            <div className="bg-cardClr/60 border border-borderClr/80 rounded-2xl p-16 flex flex-col items-center justify-center gap-4 text-center">
+              <RefreshCw className="w-10 h-10 text-purple-400 animate-spin" />
+              <div>
+                <h3 className="text-base font-bold text-white">Running Stockan Quantitative Diagnostics...</h3>
+                <p className="text-xs text-gray-400 mt-1 max-w-md">
+                  Analyzing 15:15 IST reference close, ATR gap classification, institutional option walls, 
+                  and NIFTYBEES zero-decay execution zones.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Error State */}
+          {quantError && !isQuantLoading && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
+              <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+              <h3 className="text-sm font-bold text-red-300">Quant Diagnostic Error</h3>
+              <p className="text-xs text-gray-400 mt-1">{quantError}</p>
+              <button
+                onClick={() => fetchQuantRead(quantSymbol)}
+                className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-200 text-xs font-bold rounded-xl border border-red-500/40 transition-all"
+              >
+                Retry Analysis
+              </button>
+            </div>
+          )}
+
+          {/* Quant Data Dashboard */}
+          {quantData && !isQuantLoading && (
+            <div className="flex flex-col gap-6">
+
+              {/* 4-Card Overview KPI Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                {/* 1. Spot & Reference Close */}
+                <div className="bg-cardClr border border-borderClr rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Spot & Ref Close</span>
+                    <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-md text-[10px] font-bold">
+                      {quantData.gap_profile.gap_class} Gap
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-black text-white font-mono">
+                      ₹{quantData.price_action.spot.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1 flex items-center justify-between">
+                      <span>15:15 Ref Close:</span>
+                      <span className="font-mono text-gray-200">₹{quantData.price_action.reference_close_1515.toLocaleString()}</span>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1 flex items-center justify-between">
+                      <span>Gap Ratio:</span>
+                      <span className="font-mono text-purple-300 font-bold">
+                        {quantData.gap_profile.gap_points} pts ({quantData.gap_profile.gap_ratio}× ATR)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-borderClr/60 text-[11px] text-gray-400 flex items-center justify-between">
+                    <span>Opening Action:</span>
+                    <span className="font-bold text-gray-200">{quantData.gap_profile.opening_behavior}</span>
+                  </div>
+                </div>
+
+                {/* 2. Directional Bias & Probabilities */}
+                <div className="bg-cardClr border border-borderClr rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Directional Read</span>
+                    <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 text-purple-300 rounded-md text-[10px] font-bold">
+                      Conf {quantData.directional_read.confidence}/100
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-base font-black text-white">
+                      {quantData.directional_read.bias}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1 flex items-center justify-between">
+                      <span>Pressure Ratio:</span>
+                      <span className="font-mono text-gray-200">{quantData.directional_read.pressure_ratio}</span>
+                    </div>
+                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-mono font-bold">
+                      <span className="px-2 py-0.5 bg-emerald-500/15 text-emerald-400 rounded">
+                        ⬆ {quantData.directional_read.prob_upside}%
+                      </span>
+                      <span className="px-2 py-0.5 bg-red-500/15 text-red-400 rounded">
+                        ⬇ {quantData.directional_read.prob_downside}%
+                      </span>
+                      <span className="px-2 py-0.5 bg-amber-500/15 text-amber-400 rounded">
+                        ↔ {quantData.directional_read.prob_range}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-borderClr/60 text-[11px] text-gray-400 flex items-center justify-between">
+                    <span>14-Period ATR:</span>
+                    <span className="font-mono font-bold text-gray-200">{quantData.price_action.atr_14} pts</span>
+                  </div>
+                </div>
+
+                {/* 3. Option Walls (Support & Resistance) */}
+                <div className="bg-cardClr border border-borderClr rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Institutional Walls</span>
+                    <span className="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-md text-[10px] font-bold">
+                      Weekly Chain
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2 text-xs">
+                    <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-red-400 font-bold block text-[11px]">CALL WALL (Resistance)</span>
+                        <span className="text-white font-mono font-black text-sm">{quantData.walls.call_wall_strike}</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 bg-red-500/20 text-red-300 rounded font-bold">
+                        {quantData.walls.call_wall_strength}× Mean OI
+                      </span>
+                    </div>
+
+                    <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-emerald-400 font-bold block text-[11px]">PUT WALL (Support)</span>
+                        <span className="text-white font-mono font-black text-sm">{quantData.walls.put_wall_strike}</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded font-bold">
+                        {quantData.walls.put_wall_strength}× Mean OI
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2.5 border-t border-borderClr/60 text-[11px] text-gray-400 flex items-center justify-between">
+                    <span>Wall Stability:</span>
+                    <span className="text-emerald-400 font-bold">Unwind &lt; 5% (Solid)</span>
+                  </div>
+                </div>
+
+                {/* 4. Trader Action Plan */}
+                <div className="bg-cardClr border border-borderClr rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Trader Action Plan</span>
+                    <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-md text-[10px] font-bold">
+                      Disciplined
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1.5 text-xs">
+                    <div>
+                      <span className="text-gray-500 block text-[10px] font-bold uppercase">Seller Mode</span>
+                      <span className="text-purple-300 font-bold">{quantData.action_plan.seller_mode}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-[10px] font-bold uppercase">Avoid Condition</span>
+                      <span className="text-amber-400 text-[11px]">{quantData.action_plan.avoid}</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2.5 border-t border-borderClr/60 text-[11px] text-gray-400">
+                    <span className="text-gray-500 block text-[10px] uppercase font-bold">Invalidation</span>
+                    <span className="text-red-300 font-mono text-[11px]">{quantData.action_plan.invalidation}</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* DUAL TRACK FOR SMALL CAPITAL: TRACK A & TRACK B */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                {/* TRACK A: NIFTYBEES ZERO-DECAY EXECUTION */}
+                <div className="bg-gradient-to-br from-cardClr via-[#131b2e] to-cardClr border border-cyan-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between">
+                  <div className="absolute -top-12 -right-12 w-40 h-40 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+                  
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-cyan-500/20 text-cyan-400 rounded-xl border border-cyan-500/30">
+                          <TrendingUp className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-white flex items-center gap-2">
+                            <span>Track A: NIFTYBEES Index ETF</span>
+                          </h3>
+                          <span className="text-[11px] text-cyan-300/90 font-medium">
+                            Zero Time Decay · Complete Elimination of Theta Drag
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-mono font-bold">
+                        CMP ₹{quantData.niftybees_track.cmp}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-gray-300 leading-relaxed bg-black/30 border border-borderClr/50 rounded-xl p-3 mb-4">
+                      For traders with <strong>₹500 to ₹50,000 capital</strong>, buying NIFTYBEES at deep support 
+                      removes all option expiration and time decay wipeouts. You participate in 100% of index movements 
+                      without Greeks risk.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+                        <span className="text-[10px] uppercase font-bold text-emerald-400 block mb-1">
+                          Support Buy Zone (ETF)
+                        </span>
+                        <div className="text-base font-mono font-black text-white">
+                          {quantData.niftybees_track.buy_zone_str}
+                        </div>
+                        <span className="text-[10px] text-gray-400 mt-0.5 block">
+                          Aligned with Nifty {quantData.walls.put_wall_strike} Wall
+                        </span>
+                      </div>
+
+                      <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3">
+                        <span className="text-[10px] uppercase font-bold text-purple-400 block mb-1">
+                          Target Zone (ETF)
+                        </span>
+                        <div className="text-base font-mono font-black text-white">
+                          {quantData.niftybees_track.target_zone_str}
+                        </div>
+                        <span className="text-[10px] text-gray-400 mt-0.5 block">
+                          Aligned with Nifty {quantData.walls.call_wall_strike} Wall
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-gray-400 flex items-center justify-between p-2.5 bg-black/40 rounded-xl border border-borderClr/40">
+                      <span>Conversion Ratio:</span>
+                      <span className="font-mono text-gray-200">1 Nifty = {quantData.niftybees_track.ratio} NIFTYBEES</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-borderClr/60 flex items-center justify-between">
+                    <span className="text-[11px] text-red-400">
+                      {quantData.niftybees_track.invalidation_str}
+                    </span>
+                    <button
+                      onClick={() => alert(`Placing intraday NIFTYBEES order around ${quantData.niftybees_track.buy_zone_str} on Dhan broker.`)}
+                      className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                    >
+                      <span>1-Click ETF Order</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* TRACK B: DEFINED-RISK CREDIT SPREAD */}
+                <div className="bg-gradient-to-br from-cardClr via-[#1e172a] to-cardClr border border-purple-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between">
+                  <div className="absolute -top-12 -right-12 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+                  
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-purple-500/20 text-purple-400 rounded-xl border border-purple-500/30">
+                          <Scale className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-white flex items-center gap-2">
+                            <span>Track B: Defined-Risk Credit Spread</span>
+                          </h3>
+                          <span className="text-[11px] text-purple-300/90 font-medium">
+                            {quantData.defined_risk_spread.spread_type}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 bg-purple-500/15 border border-purple-500/40 text-purple-300 rounded-lg text-xs font-bold">
+                        {quantData.seller_structural_comparison.seller_view}
+                      </span>
+                    </div>
+
+                    <div className="bg-black/30 border border-borderClr/50 rounded-xl p-3 mb-4 flex flex-col gap-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-emerald-400 font-bold">Sell Leg (Primary):</span>
+                        <span className="font-mono font-bold text-white">{quantData.defined_risk_spread.short_leg}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-blue-400 font-bold">Hedge Leg (Protection):</span>
+                        <span className="font-mono font-bold text-white">{quantData.defined_risk_spread.long_leg}</span>
+                      </div>
+                    </div>
+
+                    {/* Margin Slashed Highlight */}
+                    <div className="bg-gradient-to-r from-emerald-500/15 to-purple-500/15 border border-emerald-500/30 rounded-xl p-3 mb-4">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] font-bold text-gray-300">Capital Required (Margin)</span>
+                        <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded text-[10px] font-bold">
+                          ⚡ Saved {quantData.defined_risk_spread.margin_saved_pct}% Margin
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <div>
+                          <span className="text-xs text-gray-400 line-through mr-2">
+                            ₹{quantData.defined_risk_spread.naked_margin.toLocaleString()} (Naked)
+                          </span>
+                          <span className="text-lg font-mono font-black text-emerald-400">
+                            ₹{quantData.defined_risk_spread.spread_margin.toLocaleString()}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-400 font-mono">Lot Size: {quantData.defined_risk_spread.lot_size}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="p-2.5 bg-black/40 rounded-xl border border-borderClr/40">
+                        <span className="text-gray-500 block text-[10px] uppercase font-bold">Max Profit / Lot</span>
+                        <span className="text-emerald-400 font-mono font-bold text-sm">
+                          +₹{quantData.defined_risk_spread.max_profit_lot}
+                        </span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">
+                          (+{quantData.defined_risk_spread.net_credit_pts} pts net credit)
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 bg-black/40 rounded-xl border border-borderClr/40">
+                        <span className="text-gray-500 block text-[10px] uppercase font-bold">Max Risk / Lot (Capped)</span>
+                        <span className="text-red-400 font-mono font-bold text-sm">
+                          -₹{quantData.defined_risk_spread.max_risk_lot}
+                        </span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">
+                          Ratio: {quantData.defined_risk_spread.risk_reward_ratio}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-borderClr/60 flex items-center justify-between">
+                    <span className="text-[11px] text-gray-400">
+                      Invalidation: <strong className="text-white">{quantData.action_plan.invalidation}</strong>
+                    </span>
+                    <button
+                      onClick={() => alert(`Applying ${quantData.defined_risk_spread.spread_type} to Broker Execution.`)}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                    >
+                      <span>Deploy Spread</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* CALL VS PUT STRUCTURAL SELLER COMPARISON MATRIX */}
+              <div className="bg-cardClr border border-borderClr rounded-2xl p-6 shadow-xl flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-borderClr/60 pb-4">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <Scale className="w-5 h-5 text-purple-400" />
+                      <span>CALL vs PUT Structural Seller Comparison</span>
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Separates market direction from seller-side structure. Evaluates which side provides superior defensive walls and room.
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 bg-purple-500/10 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-bold self-start sm:self-auto">
+                    {quantData.seller_structural_comparison.seller_view}
+                  </span>
+                </div>
+
+                {/* Comparison Table */}
+                <div className="overflow-x-auto border border-borderClr/60 rounded-xl">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-black/40 text-gray-400 font-bold uppercase tracking-wider border-b border-borderClr/60">
+                      <tr>
+                        <th className="p-3.5">Structural Seller Factor</th>
+                        <th className="p-3.5 text-center">CALL SELL STRUCTURE</th>
+                        <th className="p-3.5 text-center">PUT SELL STRUCTURE</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-borderClr/40 font-mono">
+                      {quantData.seller_structural_comparison.factors.map((f: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-white/5 transition-colors">
+                          <td className="p-3.5 font-sans font-bold text-gray-300">
+                            {f.factor}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${
+                                f.call_status === 'green' ? 'bg-emerald-400' : f.call_status === 'red' ? 'bg-red-400' : 'bg-amber-400'
+                              }`} />
+                              <span className="text-gray-200">{f.call}</span>
+                            </div>
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${
+                                f.put_status === 'green' ? 'bg-emerald-400' : f.put_status === 'red' ? 'bg-red-400' : 'bg-amber-400'
+                              }`} />
+                              <span className="text-gray-200">{f.put}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Final Seller View Verdict */}
+                <div className="p-4 bg-black/40 border border-purple-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-0.5">
+                      Official Engine Seller Verdict
+                    </span>
+                    <p className="text-gray-300 font-medium">
+                      {quantData.seller_structural_comparison.reason}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-lg font-bold">
+                      Target Side: {quantData.seller_structural_comparison.preferred_side}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          )}
 
         </div>
       )}
