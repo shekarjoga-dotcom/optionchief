@@ -116,8 +116,9 @@ export default function CustomStrategyStudio() {
     portfolioId?: string;
   } | null>(null);
 
-  // V6 Quant Report modal state
+  // Quant & Selling Report modal state
   const [showRawMarkdown, setShowRawMarkdown] = useState<boolean>(false);
+  const [activeReportTab, setActiveReportTab] = useState<'v14_selling' | 'v6_niftybees'>('v14_selling');
   const [copiedRawReport, setCopiedRawReport] = useState<boolean>(false);
 
   // Strategy configuration state
@@ -1851,13 +1852,27 @@ SL = 12%
                   <span>{quantData.candle_sufficiency.gate_status}</span>
                 </div>
 
-                {/* View Raw v6 Markdown Button */}
+                {/* View v14 Option-Selling Report Button */}
                 <button
-                  onClick={() => setShowRawMarkdown(true)}
+                  onClick={() => {
+                    setActiveReportTab('v14_selling');
+                    setShowRawMarkdown(true);
+                  }}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-purple-600/30 to-indigo-600/30 hover:from-purple-600/40 hover:to-indigo-600/40 text-purple-200 border border-purple-500/40 rounded-xl font-bold transition-all shadow-sm"
                 >
                   <FileCode className="w-3.5 h-3.5 text-purple-400" />
-                  <span>📋 View v6 Quant Prompt Report</span>
+                  <span>⚡ View v14 Option-Selling Report</span>
+                </button>
+
+                {/* View v6 NIFTYBEES Report Button */}
+                <button
+                  onClick={() => {
+                    setActiveReportTab('v6_niftybees');
+                    setShowRawMarkdown(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800/80 hover:bg-gray-700 text-gray-300 border border-borderClr rounded-xl font-bold transition-all shadow-sm"
+                >
+                  <span>📋 v6 NIFTYBEES</span>
                 </button>
               </div>
             )}
@@ -2295,18 +2310,26 @@ SL = 12%
                         <div>
                           <h3 className="text-base font-black text-white flex items-center gap-2">
                             <span>Track B: Defined-Risk Credit Spread</span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded font-bold">
+                              v14 Option-Selling Engine
+                            </span>
                           </h3>
                           <span className="text-[11px] text-purple-300/90 font-medium">
                             {quantData.defined_risk_spread.spread_type}
                           </span>
                         </div>
                       </div>
-                      <span className="px-2.5 py-1 bg-purple-500/15 border border-purple-500/40 text-purple-300 rounded-lg text-xs font-bold">
-                        {quantData.seller_structural_comparison.seller_view}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="px-2.5 py-1 bg-purple-500/15 border border-purple-500/40 text-purple-300 rounded-lg text-xs font-bold">
+                          {quantData.defined_risk_spread.seller_view || quantData.seller_structural_comparison.seller_view}
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 bg-black/40 border border-borderClr/60 text-amber-300 rounded font-bold">
+                          MODE: {quantData.defined_risk_spread.seller_mode || 'NON-DIRECTIONAL'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="bg-black/30 border border-borderClr/50 rounded-xl p-3 mb-4 flex flex-col gap-2">
+                    <div className="bg-black/30 border border-borderClr/50 rounded-xl p-3 mb-3 flex flex-col gap-2">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-emerald-400 font-bold">Sell Leg (Primary):</span>
                         <span className="font-mono font-bold text-white">{quantData.defined_risk_spread.short_leg}</span>
@@ -2314,6 +2337,22 @@ SL = 12%
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-blue-400 font-bold">Hedge Leg (Protection):</span>
                         <span className="font-mono font-bold text-white">{quantData.defined_risk_spread.long_leg}</span>
+                      </div>
+                    </div>
+
+                    {/* v14 ATM-First & E4 Range Metric Strip */}
+                    <div className="flex items-center justify-between text-[11px] px-3 py-2 bg-black/40 rounded-xl border border-borderClr/50 mb-3">
+                      <div>
+                        <span className="text-gray-400 block text-[10px] uppercase font-bold">Strike Selection Logic</span>
+                        <span className="text-purple-300 font-bold font-mono">
+                          {quantData.defined_risk_spread.atm_note || 'ATM-First Guard Passed'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-gray-400 block text-[10px] uppercase font-bold">E4 Range Prob (±0.25×ATR)</span>
+                        <span className="text-cyan-300 font-mono font-bold">
+                          {quantData.defined_risk_spread.e4_prob}% ({quantData.defined_risk_spread.e4_range_str})
+                        </span>
                       </div>
                     </div>
 
@@ -2361,18 +2400,31 @@ SL = 12%
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-borderClr/60 flex items-center justify-between">
-                    <span className="text-[11px] text-gray-400">
+                  <div className="mt-4 pt-3 border-t border-borderClr/60 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-gray-400 truncate max-w-[200px] sm:max-w-none">
                       Invalidation: <strong className="text-white">{quantData.action_plan.invalidation}</strong>
                     </span>
-                    <button
-                      onClick={handleOpenSpreadOrder}
-                      className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-black transition-all shadow-lg flex items-center gap-2"
-                    >
-                      <Briefcase className="w-3.5 h-3.5" />
-                      <span>Paper Trade Spread</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveReportTab('v14_selling');
+                          setShowRawMarkdown(true);
+                        }}
+                        className="px-3 py-2 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                      >
+                        <FileCode className="w-3.5 h-3.5" />
+                        <span>v14 Report</span>
+                      </button>
+                      <button
+                        onClick={handleOpenSpreadOrder}
+                        className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-black transition-all shadow-lg flex items-center gap-2"
+                      >
+                        <Briefcase className="w-3.5 h-3.5" />
+                        <span>Paper Trade Spread</span>
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -2817,7 +2869,7 @@ SL = 12%
         </div>
       )}
 
-      {/* V6 QUANT REPORT MODAL */}
+      {/* QUANT & OPTION-SELLING REPORT MODAL */}
       {showRawMarkdown && quantData && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-[#111827] border border-borderClr rounded-3xl w-full max-w-4xl shadow-2xl p-6 flex flex-col max-h-[90vh]">
@@ -2828,13 +2880,19 @@ SL = 12%
                 </div>
                 <div>
                   <h3 className="text-base font-black text-white flex items-center gap-2">
-                    <span>NIFTY 50 QUANT READ → NIFTYBEES LEVELS (v6)</span>
+                    <span>
+                      {activeReportTab === 'v14_selling'
+                        ? 'NIFTY 50 — INTRADAY OPTION-SELLING ENGINE (v14)'
+                        : 'NIFTY 50 QUANT READ → NIFTYBEES LEVELS (v6)'}
+                    </span>
                     <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-[10px] font-bold font-mono">
                       {quantData.data_quality?.live_count || 8}/9 LIVE
                     </span>
                   </h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    15:15 IST Reference Close · Decision Hierarchy · Heuristic Opening Behaviour Engine · Quantified Heavyweights
+                    {activeReportTab === 'v14_selling'
+                      ? 'Two-Layer Philosophy · ATM-First Strike Selection · 14-Factor Seller Matrix · E4 Range Probability'
+                      : '15:15 IST Reference Close · Decision Hierarchy · Heuristic Opening Behaviour Engine · Quantified Heavyweights'}
                   </p>
                 </div>
               </div>
@@ -2847,36 +2905,69 @@ SL = 12%
               </button>
             </div>
 
-            <div className="flex items-center justify-between py-3 px-1 text-xs text-gray-400">
-              <span>Ready for paste into new chat session or quant execution review</span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (quantData?.raw_v6_markdown) {
-                    navigator.clipboard.writeText(quantData.raw_v6_markdown);
-                    setCopiedRawReport(true);
-                    setTimeout(() => setCopiedRawReport(false), 2500);
-                  }
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all"
-              >
-                {copiedRawReport ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-300" />
-                    <span>Copied to Clipboard!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    <span>Copy v6 Report</span>
-                  </>
-                )}
-              </button>
+            {/* Sub-Tab Switcher & Copy Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 px-1 border-b border-borderClr/40">
+              <div className="flex bg-black/60 p-1 rounded-xl border border-borderClr/60 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveReportTab('v14_selling')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    activeReportTab === 'v14_selling'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <span>⚡ v14 Option-Selling (Spread)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveReportTab('v6_niftybees')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    activeReportTab === 'v6_niftybees'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <span>🧠 v6 NIFTYBEES Read</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-gray-400 hidden sm:inline">1-Click Verbatim Copy:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const reportText = activeReportTab === 'v14_selling'
+                      ? (quantData.raw_v14_selling_markdown || quantData.raw_v6_markdown)
+                      : quantData.raw_v6_markdown;
+                    if (reportText) {
+                      navigator.clipboard.writeText(reportText);
+                      setCopiedRawReport(true);
+                      setTimeout(() => setCopiedRawReport(false), 2500);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all text-xs"
+                >
+                  {copiedRawReport ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      <span>Copied to Clipboard!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy {activeReportTab === 'v14_selling' ? 'v14 Report' : 'v6 Report'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-auto rounded-2xl bg-[#0d1117] border border-borderClr/80 p-5 mt-1">
+            <div className="flex-1 overflow-auto rounded-2xl bg-[#0d1117] border border-borderClr/80 p-5 mt-3">
               <pre className="font-mono text-xs text-gray-200 whitespace-pre-wrap leading-relaxed select-text">
-                {quantData.raw_v6_markdown || "Generating quant report..."}
+                {activeReportTab === 'v14_selling'
+                  ? (quantData.raw_v14_selling_markdown || quantData.raw_v6_markdown || "Generating v14 option selling report...")
+                  : (quantData.raw_v6_markdown || "Generating v6 quant report...")}
               </pre>
             </div>
 
