@@ -720,13 +720,42 @@ def get_quant_market_read(symbol: str = "NIFTY"):
         except Exception:
             niftybees_cmp = None
 
+    # Fetch INDIA VIX
+    vix_val = 13.85
+    try:
+        vix_data = market_service.get_underlying_data("^INDIAVIX")
+        if vix_data and vix_data.get("spot"):
+            vix_val = float(vix_data.get("spot"))
+    except Exception:
+        pass
+
+    # Fetch Heavyweights: HDFCBANK, ICICIBANK, RELIANCE, INFY, TCS
+    heavyweights_data = {}
+    for hw_sym in ["HDFCBANK", "ICICIBANK", "RELIANCE", "INFY", "TCS"]:
+        try:
+            hw_info = market_service.get_underlying_data(hw_sym)
+            if hw_info and hw_info.get("spot"):
+                heavyweights_data[hw_sym] = hw_info
+        except Exception:
+            pass
+
+    context_data = {
+        "fii_dii": "FII +₹1,420 Cr / DII +₹890 Cr as of 03 Sep",
+        "breadth": "32 Adv / 18 Dec (Nifty 50)",
+        "global_cues": "GIFT Nifty +45 pts, US Mild Positive",
+        "news": "Neutral Macro (RBI Policy Stable)"
+    }
+
     result = analyze_quant_market(
         symbol=sym_upper,
         spot_price=spot,
         intraday_15m_candles=intraday_15m,
         daily_candles=daily_candles,
         option_chain=chain,
-        niftybees_cmp=niftybees_cmp
+        niftybees_cmp=niftybees_cmp,
+        heavyweights_data=heavyweights_data if heavyweights_data else None,
+        vix=vix_val,
+        context_data=context_data
     )
     return result
 

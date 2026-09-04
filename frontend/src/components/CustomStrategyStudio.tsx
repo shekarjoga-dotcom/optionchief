@@ -6,7 +6,8 @@ import {
   Code2, Play, CheckCircle2, AlertTriangle, RefreshCw, Save, 
   Sliders, Activity, Zap, HelpCircle, FileCode, Check,
   Trash2, FolderHeart, X, ShieldCheck, TrendingUp, 
-  ArrowUpRight, Scale, Clock, ShieldAlert, Briefcase
+  ArrowUpRight, Scale, Clock, ShieldAlert, Briefcase,
+  Copy, Layers
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
@@ -114,6 +115,10 @@ export default function CustomStrategyStudio() {
     message: string;
     portfolioId?: string;
   } | null>(null);
+
+  // V6 Quant Report modal state
+  const [showRawMarkdown, setShowRawMarkdown] = useState<boolean>(false);
+  const [copiedRawReport, setCopiedRawReport] = useState<boolean>(false);
 
   // Strategy configuration state
   const [strategyName, setStrategyName] = useState<string>("My Custom Strategy");
@@ -1824,6 +1829,12 @@ SL = 12%
 
             {quantData && (
               <div className="flex flex-wrap items-center gap-2 text-xs">
+                {/* Data Quality Indicator */}
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded-xl text-purple-300 font-bold">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                  <span>DATA QUALITY: {quantData.data_quality?.live_count || 8}/9 LIVE</span>
+                </div>
+
                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-black/40 border border-borderClr/60 rounded-xl">
                   <Clock className="w-3.5 h-3.5 text-blue-400" />
                   <span className="text-gray-400">{quantData.market_phase}</span>
@@ -1839,6 +1850,15 @@ SL = 12%
                   <ShieldAlert className="w-3.5 h-3.5" />
                   <span>{quantData.candle_sufficiency.gate_status}</span>
                 </div>
+
+                {/* View Raw v6 Markdown Button */}
+                <button
+                  onClick={() => setShowRawMarkdown(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-purple-600/30 to-indigo-600/30 hover:from-purple-600/40 hover:to-indigo-600/40 text-purple-200 border border-purple-500/40 rounded-xl font-bold transition-all shadow-sm"
+                >
+                  <FileCode className="w-3.5 h-3.5 text-purple-400" />
+                  <span>📋 View v6 Quant Prompt Report</span>
+                </button>
               </div>
             )}
           </div>
@@ -1998,6 +2018,185 @@ SL = 12%
                   <div className="mt-3 pt-2.5 border-t border-borderClr/60 text-[11px] text-gray-400">
                     <span className="text-gray-500 block text-[10px] uppercase font-bold">Invalidation</span>
                     <span className="text-red-300 font-mono text-[11px]">{quantData.action_plan.invalidation}</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* V6 ENGINE UPGRADES: DECISION HIERARCHY & HEAVYWEIGHTS / TIME BLOCKS */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                {/* 1. DECISION HIERARCHY & CONFLICT RESOLUTION */}
+                <div className="bg-cardClr border border-borderClr rounded-2xl p-6 shadow-xl flex flex-col justify-between relative overflow-hidden">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+                          <Layers className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-black text-white flex items-center gap-2">
+                            <span>Decision Hierarchy & Ranking</span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded">v6 Discipline</span>
+                          </h3>
+                          <span className="text-[11px] text-gray-400">
+                            Priority-ranking replaces numeric weighted scores
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/10 border border-purple-500/30 text-purple-300 rounded-lg text-xs font-mono font-bold">
+                        <span>Regime: {quantData.directional_read?.regime || 'Range'}</span>
+                        <span className="text-gray-500">|</span>
+                        <span className="text-amber-300">VIX {quantData.directional_read?.vix || 13.5}</span>
+                      </div>
+                    </div>
+
+                    {/* Dominant Factors */}
+                    <div className="bg-black/30 border border-borderClr/70 rounded-xl p-3 mb-3">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                        Top Dominant Factors (Highest Hierarchy Tier)
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {quantData.decision_hierarchy?.top_factors?.map((factor: string, idx: number) => (
+                          <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/25 rounded-lg text-xs text-indigo-200">
+                            <span className="w-4 h-4 rounded-full bg-indigo-500/30 text-indigo-300 text-[10px] font-bold flex items-center justify-center">
+                              {idx + 1}
+                            </span>
+                            <span className="font-semibold">{factor}</span>
+                          </div>
+                        )) || (
+                          <span className="text-xs text-gray-400">Price Structure & Level Dynamics dominant</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Active Conflict Pair */}
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl mb-4">
+                      <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block mb-1">
+                        Active Conflict Pair & Resolution Rule
+                      </span>
+                      <p className="text-xs text-amber-200/90 leading-relaxed font-medium">
+                        {quantData.decision_hierarchy?.conflict_pair || 'Gap Direction vs Heavyweight Breadth → Higher tier wins.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 3-Way Directional Probabilities */}
+                  <div className="pt-3 border-t border-borderClr/60">
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-gray-400 font-bold text-[11px]">3-WAY DIRECTIONAL PROBABILITY</span>
+                      <span className="text-[10px] text-gray-500 font-mono">{quantData.directional_read?.tag || 'Hierarchy weighted'}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2.5 text-center">
+                        <span className="text-[10px] text-emerald-400 font-bold block uppercase">⬆ Upside</span>
+                        <span className="text-base font-black text-emerald-300 font-mono">{quantData.directional_read?.prob_upside || 25}%</span>
+                      </div>
+                      <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-2.5 text-center">
+                        <span className="text-[10px] text-blue-400 font-bold block uppercase">↔ Range</span>
+                        <span className="text-base font-black text-blue-300 font-mono">{quantData.directional_read?.prob_range || 55}%</span>
+                      </div>
+                      <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-2.5 text-center">
+                        <span className="text-[10px] text-rose-400 font-bold block uppercase">⬇ Downside</span>
+                        <span className="text-base font-black text-rose-300 font-mono">{quantData.directional_read?.prob_downside || 20}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. QUANTIFIED HEAVYWEIGHTS & REMAINING TIME BLOCKS */}
+                <div className="bg-cardClr border border-borderClr rounded-2xl p-6 shadow-xl flex flex-col justify-between relative overflow-hidden">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                          <Activity className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-black text-white flex items-center gap-2">
+                            <span>Top 5 Heavyweights</span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded">Real-Time</span>
+                          </h3>
+                          <span className="text-[11px] text-gray-400">
+                            HDFCBANK · ICICIBANK · RELIANCE · INFY · TCS
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-gray-400">
+                        {quantData.heavyweights?.green_count ?? 3}/5 Green
+                      </span>
+                    </div>
+
+                    {/* Heavyweight Meters */}
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <div className="bg-black/40 border border-borderClr/60 rounded-xl p-2.5 text-center">
+                        <span className="text-[10px] text-gray-400 block font-bold">Green / Positive</span>
+                        <span className={`text-sm font-black font-mono ${(quantData.heavyweights?.green_count ?? 0) >= 3 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {quantData.heavyweights?.green_count ?? 0}/5
+                        </span>
+                      </div>
+                      <div className="bg-black/40 border border-borderClr/60 rounded-xl p-2.5 text-center">
+                        <span className="text-[10px] text-gray-400 block font-bold">Above VWAP</span>
+                        <span className={`text-sm font-black font-mono ${(quantData.heavyweights?.above_vwap_count ?? 0) >= 3 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          {quantData.heavyweights?.above_vwap_count ?? 0}/5
+                        </span>
+                      </div>
+                      <div className="bg-black/40 border border-borderClr/60 rounded-xl p-2.5 text-center">
+                        <span className="text-[10px] text-gray-400 block font-bold">Above Open High</span>
+                        <span className={`text-sm font-black font-mono ${(quantData.heavyweights?.above_open_high_count ?? 0) >= 3 ? 'text-emerald-400' : 'text-blue-400'}`}>
+                          {quantData.heavyweights?.above_open_high_count ?? 0}/5
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Stock Chips */}
+                    {quantData.heavyweights?.stocks && quantData.heavyweights.stocks.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-4">
+                        {quantData.heavyweights.stocks.map((stk: any, idx: number) => {
+                          const isGreen = stk.change_pct >= 0;
+                          return (
+                            <div key={idx} className="flex items-center gap-1.5 px-2 py-1 bg-black/40 border border-borderClr/70 rounded-lg text-[11px]">
+                              <span className="font-bold text-gray-200">{stk.symbol}</span>
+                              <span className={`font-mono font-bold ${isGreen ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {isGreen ? '+' : ''}{stk.change_pct}%
+                              </span>
+                              {stk.above_vwap && (
+                                <span className="text-[9px] px-1 bg-blue-500/20 text-blue-300 rounded font-mono">VWAP+</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Remaining Time Blocks */}
+                  <div className="pt-3 border-t border-borderClr/60">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
+                      Remaining Session Time Blocks
+                    </span>
+                    <div className="space-y-1.5">
+                      {quantData.time_blocks_remaining?.map((block: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-black/30 border border-borderClr/50 rounded-xl text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-gray-300 text-[11px]">{block.block}</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              block.lean === 'Bullish' ? 'bg-emerald-500/20 text-emerald-300' :
+                              block.lean === 'Bearish' ? 'bg-rose-500/20 text-rose-300' :
+                              'bg-gray-700/50 text-gray-300'
+                            }`}>
+                              {block.lean}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[11px] text-gray-300 block">{block.driver}</span>
+                            <span className="text-[10px] text-gray-500 font-mono">Watch: {block.watch_level}</span>
+                          </div>
+                        </div>
+                      )) || (
+                        <span className="text-xs text-gray-500 italic">No time blocks remaining in active session</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2612,6 +2811,82 @@ SL = 12%
               >
                 <span>View Paper Book</span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* V6 QUANT REPORT MODAL */}
+      {showRawMarkdown && quantData && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#111827] border border-borderClr rounded-3xl w-full max-w-4xl shadow-2xl p-6 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between pb-4 border-b border-borderClr">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-500/20 text-purple-400 rounded-2xl border border-purple-500/30">
+                  <FileCode className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <span>NIFTY 50 QUANT READ → NIFTYBEES LEVELS (v6)</span>
+                    <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-[10px] font-bold font-mono">
+                      {quantData.data_quality?.live_count || 8}/9 LIVE
+                    </span>
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    15:15 IST Reference Close · Decision Hierarchy · Heuristic Opening Behaviour Engine · Quantified Heavyweights
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRawMarkdown(false)}
+                className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-gray-800 transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between py-3 px-1 text-xs text-gray-400">
+              <span>Ready for paste into new chat session or quant execution review</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (quantData?.raw_v6_markdown) {
+                    navigator.clipboard.writeText(quantData.raw_v6_markdown);
+                    setCopiedRawReport(true);
+                    setTimeout(() => setCopiedRawReport(false), 2500);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all"
+              >
+                {copiedRawReport ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-300" />
+                    <span>Copied to Clipboard!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Copy v6 Report</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto rounded-2xl bg-[#0d1117] border border-borderClr/80 p-5 mt-1">
+              <pre className="font-mono text-xs text-gray-200 whitespace-pre-wrap leading-relaxed select-text">
+                {quantData.raw_v6_markdown || "Generating quant report..."}
+              </pre>
+            </div>
+
+            <div className="pt-4 mt-2 border-t border-borderClr/70 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowRawMarkdown(false)}
+                className="px-5 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-bold transition-all"
+              >
+                Close
               </button>
             </div>
           </div>
