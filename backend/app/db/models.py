@@ -1,5 +1,4 @@
-import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Boolean, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -163,5 +162,26 @@ class PageVisit(Base):
     path = Column(String, default="/", nullable=False)
     user_agent = Column(String, nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
+
+
+class CustomStrategyConfig(Base):
+    __tablename__ = "custom_strategy_configs"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False, default="My Custom Strategy")
+    description = Column(String, default="")
+    code = Column(Text, nullable=False)
+    symbol = Column(String, default="BANKNIFTY", nullable=False)
+    timeframe = Column(String, default="5m", nullable=False)
+    moneyness = Column(String, default="ATM", nullable=False)
+    lot_size = Column(Integer, default=1, nullable=False)
+    tp_pct = Column(Float, default=25.0, nullable=False)
+    sl_pct = Column(Float, default=15.0, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    user = relationship("User")
+
 
 

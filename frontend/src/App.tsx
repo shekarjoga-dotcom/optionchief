@@ -14,6 +14,7 @@ import { HedgingAdvisor } from './components/HedgingAdvisor';
 import { LoginView } from './components/LoginView';
 import { HelpPanel } from './components/HelpPanel';
 import RsiScannerPanel from './components/RsiScannerPanel';
+import CustomStrategyStudio from './components/CustomStrategyStudio';
 import { AdminPanel } from './components/AdminPanel';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { ProFeatureGate } from './components/ProFeatureGate';
@@ -37,7 +38,8 @@ import {
   ExternalLink,
   Lock,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Code2
 } from 'lucide-react';
 import { scanStrategies } from './utils/scanner';
 import { getLotSizeForSymbol, getCurrencySymbol } from './utils/optionsMath';
@@ -73,17 +75,17 @@ const App: React.FC = () => {
   const symbolRef = useRef(symbol);
   const alertRulesRef = useRef(alertRules);
 
-  const getInitialTab = (): 'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin' => {
+  const getInitialTab = (): 'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin' | 'algo_studio' => {
     const path = window.location.pathname;
     if (path.startsWith('/s/')) {
       return 'builder';
     }
     const hash = window.location.hash.replace('#', '');
-    const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin'];
+    const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin', 'algo_studio'];
     return validTabs.includes(hash) ? (hash as any) : 'scanner';
   };
 
-  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin'>(getInitialTab);
+  const [activeTab, setActiveTab] = useState<'chain' | 'scanner' | 'alerts' | 'backtest' | 'builder' | 'cone' | 'portfolios' | 'help' | 'rsi_scanner' | 'admin' | 'algo_studio'>(getInitialTab);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showTrialReminderModal, setShowTrialReminderModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -165,7 +167,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin'];
+      const validTabs = ['chain', 'scanner', 'alerts', 'backtest', 'builder', 'cone', 'portfolios', 'help', 'rsi_scanner', 'admin', 'algo_studio'];
       if (validTabs.includes(hash)) {
         setActiveTab(hash as any);
       }
@@ -898,6 +900,7 @@ const App: React.FC = () => {
             {[
               { id: 'chain', label: 'Option Chain', icon: Layers, isPro: false },
               { id: 'scanner', label: 'Strategy Scanner', icon: Search, isPro: false },
+              { id: 'algo_studio', label: 'Custom Algo Studio', icon: Code2, isPro: false },
               { id: 'rsi_scanner', label: 'RSI Scanner', icon: Zap, isPro: true },
               { id: 'alerts', label: 'Strategy Alerts', icon: Bell, isPro: true },
               { id: 'backtest', label: 'Backtester', icon: History, isPro: false },
@@ -988,6 +991,10 @@ const App: React.FC = () => {
 
           <div style={{ display: activeTab === 'portfolios' ? 'block' : 'none' }}>
             <PortfolioManager />
+          </div>
+
+          <div style={{ display: activeTab === 'algo_studio' ? 'block' : 'none' }}>
+            <CustomStrategyStudio />
           </div>
 
           <div style={{ display: activeTab === 'rsi_scanner' ? 'block' : 'none' }}>

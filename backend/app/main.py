@@ -172,7 +172,7 @@ async def on_startup():
     # Launch asynchronously so FastAPI finishes startup instantly and Uvicorn binds $PORT immediately
     asyncio.create_task(init_background_tasks())
 
-from app.routes import market, analytics, portfolio, auth, notifications, backtest, alerts, trade, rsi_scanner, admin, strategy
+from app.routes import market, analytics, portfolio, auth, notifications, backtest, alerts, trade, rsi_scanner, admin, strategy, custom_strategy
 
 # Register routers
 app.include_router(auth.router)
@@ -186,6 +186,7 @@ app.include_router(trade.router)
 app.include_router(rsi_scanner.router)
 app.include_router(admin.router)
 app.include_router(strategy.router)
+app.include_router(custom_strategy.router)
 
 @app.get("/")
 def read_root():
