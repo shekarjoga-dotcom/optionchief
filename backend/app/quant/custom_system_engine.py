@@ -152,31 +152,63 @@ class CustomRuleParser:
       - Supertrend(10, 3) == 1
     """
 
+class CustomRuleParser:
+    """
+    Parses and safely executes Chartink-like and Pine-like trading system rules.
+    Supports:
+      - Variable declarations: Macro_ST = Supertrend(Period = 20, Multiplier = 3.0)
+      - Indicator normalization: EMA(Close, 20), RSI(Close, 14), Supertrend(Period=7, Multiplier=1.5)
+      - Flips and crosses: Micro_ST.Direction crosses from Bearish to Bullish
+      - Direction states: Macro_ST.Direction == Bullish, is Bullish / Bearish
+      - Multi-line statements with continuation: 'and (Close > Trend_EMA)'
+      - Standard Chartink: [0] Close > [0] EMA(20), RSI(14) crosses above 50
+    """
+
+    @staticmethod
+    def normalize_indicators(expr: str) -> str:
+        s = expr
+        # Supertrend(Period = 20, Multiplier = 3.0) or Supertrend(20, 3.0)
+        s = re.sub(r'\bSupertrend\s*\(\s*(?:period\s*=\s*)?(\d+)\s*,\s*(?:multiplier\s*=\s*)?([\d\.]+)\s*\)', r'SUPERTREND(\1, \2)', s, flags=re.IGNORECASE)
+        # EMA(Close, 20) or EMA(20)
+        s = re.sub(r'\bEMA\s*\(\s*(?:(?:close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'EMA(\1)', s, flags=re.IGNORECASE)
+        # SMA(Close, 20) or SMA(20)
+        s = re.sub(r'\bSMA\s*\(\s*(?:(?:close|open|high|low|price|volume)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'SMA(\1)', s, flags=re.IGNORECASE)
+        # RSI(Close, 14) or RSI(14)
+        s = re.sub(r'\bRSI\s*\(\s*(?:(?:close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'RSI(\1)', s, flags=re.IGNORECASE)
+        # MACD(12, 26, 9)
+        s = re.sub(r'\bMACD\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)', r'MACD(\1, \2, \3)', s, flags=re.IGNORECASE)
+        # Bollinger Bands
+        s = re.sub(r'\bBB_UPPER\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)', r'BB_UPPER(\1, \2)', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bBB_LOWER\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)', r'BB_LOWER(\1, \2)', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bBB_MIDDLE\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)', r'BB_MIDDLE(\1, \2)', s, flags=re.IGNORECASE)
+        # ATR
+        s = re.sub(r'\bATR\s*\(\s*(?:period\s*=\s*)?(\d+)\s*\)', r'ATR(\1)', s, flags=re.IGNORECASE)
+        return s
+
     @staticmethod
     def extract_indicators_and_params(code: str) -> List[Dict[str, Any]]:
         found = []
         code_upper = code.upper()
 
-        for m in re.finditer(r"RSI\s*\(\s*(\d+)\s*\)", code_upper):
-            found.append({"type": "RSI", "params": {"period": int(m.group(1))}, "raw": m.group(0)})
-        for m in re.finditer(r"EMA\s*\(\s*(\d+)\s*\)", code_upper):
-            found.append({"type": "EMA", "params": {"period": int(m.group(1))}, "raw": m.group(0)})
-        for m in re.finditer(r"SMA\s*\(\s*(\d+)\s*\)", code_upper):
-            found.append({"type": "SMA", "params": {"period": int(m.group(1))}, "raw": m.group(0)})
+        for m in re.finditer(r"RSI\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE)\s*,\s*)?(\d+)\s*\)", code_upper):
+            found.append({"type": "RSI", "params": {"period": int(m.group(1))}, "raw": f"RSI({m.group(1)})"})
+        for m in re.finditer(r"EMA\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE)\s*,\s*)?(\d+)\s*\)", code_upper):
+            found.append({"type": "EMA", "params": {"period": int(m.group(1))}, "raw": f"EMA({m.group(1)})"})
+        for m in re.finditer(r"SMA\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE|VOLUME)\s*,\s*)?(\d+)\s*\)", code_upper):
+            found.append({"type": "SMA", "params": {"period": int(m.group(1))}, "raw": f"SMA({m.group(1)})"})
         if "VWAP" in code_upper:
             found.append({"type": "VWAP", "params": {}, "raw": "VWAP"})
-        for m in re.finditer(r"SUPERTREND\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)", code_upper):
-            found.append({"type": "Supertrend", "params": {"period": int(m.group(1)), "multiplier": float(m.group(2))}, "raw": m.group(0)})
+        for m in re.finditer(r"SUPERTREND\s*\(\s*(?:PERIOD\s*=\s*)?(\d+)\s*,\s*(?:MULTIPLIER\s*=\s*)?([\d\.]+)\s*\)", code_upper):
+            found.append({"type": "Supertrend", "params": {"period": int(m.group(1)), "multiplier": float(m.group(2))}, "raw": f"SUPERTREND({m.group(1)}, {m.group(2)})"})
         for m in re.finditer(r"MACD\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)", code_upper):
-            found.append({"type": "MACD", "params": {"fast": int(m.group(1)), "slow": int(m.group(2)), "signal": int(m.group(3))}, "raw": m.group(0)})
+            found.append({"type": "MACD", "params": {"fast": int(m.group(1)), "slow": int(m.group(2)), "signal": int(m.group(3))}, "raw": f"MACD({m.group(1)}, {m.group(2)}, {m.group(3)})"})
         for m in re.finditer(r"BB_UPPER\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)", code_upper):
-            found.append({"type": "BB_Upper", "params": {"period": int(m.group(1)), "std": float(m.group(2))}, "raw": m.group(0)})
+            found.append({"type": "BB_Upper", "params": {"period": int(m.group(1)), "std": float(m.group(2))}, "raw": f"BB_UPPER({m.group(1)}, {m.group(2)})"})
         for m in re.finditer(r"BB_LOWER\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)", code_upper):
-            found.append({"type": "BB_Lower", "params": {"period": int(m.group(1)), "std": float(m.group(2))}, "raw": m.group(0)})
+            found.append({"type": "BB_Lower", "params": {"period": int(m.group(1)), "std": float(m.group(2))}, "raw": f"BB_LOWER({m.group(1)}, {m.group(2)})"})
         for m in re.finditer(r"ATR\s*\(\s*(\d+)\s*\)", code_upper):
-            found.append({"type": "ATR", "params": {"period": int(m.group(1))}, "raw": m.group(0)})
+            found.append({"type": "ATR", "params": {"period": int(m.group(1))}, "raw": f"ATR({m.group(1)})"})
 
-        # Deduplicate
         unique = []
         seen = set()
         for item in found:
@@ -186,82 +218,124 @@ class CustomRuleParser:
                 unique.append(item)
         return unique
 
-    @staticmethod
-    def preprocess_chartink_syntax(expr: str) -> str:
-        s = expr.strip()
-        # Remove Chartink prefix tags like "[0] 5 minute", "[0]", "[-1] 5 minute"
-        s = re.sub(r"\[\s*0\s*\]\s*(\d+\s*(minute|min|hour|day)\s*)?", "", s, flags=re.IGNORECASE)
-        s = re.sub(r"\[\s*-1\s*\]\s*(\d+\s*(minute|min|hour|day)\s*)?", "PREV_", s, flags=re.IGNORECASE)
-        s = re.sub(r"\[\s*-2\s*\]\s*(\d+\s*(minute|min|hour|day)\s*)?", "PREV2_", s, flags=re.IGNORECASE)
-
-        # Handle crosses above / below
-        cross_above_pattern = re.compile(r"([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)\s+crosses\s+above\s+([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)", re.IGNORECASE)
-        s = cross_above_pattern.sub(r"CROSS_ABOVE(\1, \2)", s)
-
-        cross_below_pattern = re.compile(r"([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)\s+crosses\s+below\s+([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)", re.IGNORECASE)
-        s = cross_below_pattern.sub(r"CROSS_BELOW(\1, \2)", s)
-
-        s = re.sub(r"\bis\s+bullish\b", "== 1", s, flags=re.IGNORECASE)
-        s = re.sub(r"\bis\s+bearish\b", "== -1", s, flags=re.IGNORECASE)
-        return s
-
     @classmethod
     def parse_system_code(cls, code: str) -> Dict[str, Any]:
-        lines = code.split("\n")
-        buy_ce_rules = []
-        buy_pe_rules = []
-        custom_params = {}
-        
-        current_section = None  # 'CE' or 'PE'
-        
-        for line_num, raw_line in enumerate(lines, start=1):
-            line = raw_line.strip()
-            if not line or line.startswith("#") or line.startswith("//"):
-                continue
-                
-            upper = line.upper()
-            if "BUY_CE" in upper or "BUY_CALL" in upper or "CALL ENTRY" in upper or "BULLISH" in upper:
-                current_section = "CE"
-                if ":" in line or "=" in line:
-                    sep = ":" if ":" in line else "="
-                    rhs = line.split(sep, 1)[1].strip()
-                    if rhs:
-                        buy_ce_rules.append(cls.preprocess_chartink_syntax(rhs))
-                continue
-            elif "BUY_PE" in upper or "BUY_PUT" in upper or "PUT ENTRY" in upper or "BEARISH" in upper:
-                current_section = "PE"
-                if ":" in line or "=" in line:
-                    sep = ":" if ":" in line else "="
-                    rhs = line.split(sep, 1)[1].strip()
-                    if rhs:
-                        buy_pe_rules.append(cls.preprocess_chartink_syntax(rhs))
-                continue
-                
-            param_match = re.match(r"^([A-Za-z0-9_]+)\s*=\s*([0-9\.]+)\s*(%|mins)?$", line)
-            if param_match:
-                key = param_match.group(1).upper()
-                val = float(param_match.group(2))
-                custom_params[key] = val
-                continue
-                
-            processed = cls.preprocess_chartink_syntax(line)
-            if current_section == "CE":
-                buy_ce_rules.append(processed)
-            elif current_section == "PE":
-                buy_pe_rules.append(processed)
-            else:
-                buy_ce_rules.append(processed)
+        # 1. Clean lines & strip inline comments
+        raw_lines = code.split('\n')
+        cleaned_lines = []
+        for r in raw_lines:
+            line = re.sub(r'//.*$', '', r)
+            line = re.sub(r'#.*$', '', line).strip()
+            if line:
+                cleaned_lines.append(line)
 
-        ce_expr = " and ".join(f"({r})" for r in buy_ce_rules) if buy_ce_rules else ""
-        pe_expr = " and ".join(f"({r})" for r in buy_pe_rules) if buy_pe_rules else ""
-        indicators = cls.extract_indicators_and_params(code)
-        
+        # 2. Join multi-line continuation statements
+        statements = []
+        for line in cleaned_lines:
+            if statements and (line.lower().startswith('and ') or line.lower().startswith('or ')):
+                statements[-1] += ' ' + line
+            elif statements and (statements[-1].rstrip().endswith('and') or statements[-1].rstrip().endswith('or') or statements[-1].rstrip().endswith('(') or statements[-1].rstrip().endswith('=')):
+                statements[-1] += ' ' + line
+            else:
+                statements.append(line)
+
+        variables = {}
+        custom_params = {}
+        raw_ce = []
+        raw_pe = []
+        current_sec = None
+
+        for stmt in statements:
+            # Check Risk Management TP / SL
+            tp_m = re.match(r'^(?:TP|TAKE_PROFIT)\s*=\s*([0-9\.]+)\s*%?', stmt, re.IGNORECASE)
+            if tp_m:
+                custom_params['TP'] = float(tp_m.group(1))
+                continue
+            sl_m = re.match(r'^(?:SL|STOP_LOSS)\s*=\s*([0-9\.]+)\s*%?', stmt, re.IGNORECASE)
+            if sl_m:
+                custom_params['SL'] = float(sl_m.group(1))
+                continue
+
+            # Check BUY_CE / BUY_CALL header or assignment
+            ce_m = re.match(r'^(?:BUY_CE|BUY_CALL|CALL_ENTRY|BULLISH_ENTRY)\s*[:=]\s*(.*)$', stmt, re.IGNORECASE)
+            if ce_m:
+                current_sec = 'CE'
+                rhs = ce_m.group(1).strip()
+                if rhs:
+                    raw_ce.append(rhs)
+                continue
+
+            # Check BUY_PE / BUY_PUT header or assignment
+            pe_m = re.match(r'^(?:BUY_PE|BUY_PUT|PUT_ENTRY|BEARISH_ENTRY)\s*[:=]\s*(.*)$', stmt, re.IGNORECASE)
+            if pe_m:
+                current_sec = 'PE'
+                rhs = pe_m.group(1).strip()
+                if rhs:
+                    raw_pe.append(rhs)
+                continue
+
+            # Variable assignment: e.g. Macro_ST = Supertrend(...)
+            var_m = re.match(r'^([A-Za-z0-9_]+)\s*=\s*(.*)$', stmt)
+            if var_m and current_sec is None:
+                vname = var_m.group(1).strip()
+                vexpr = cls.normalize_indicators(var_m.group(2).strip())
+                variables[vname] = vexpr
+                continue
+
+            if current_sec == 'CE':
+                raw_ce.append(stmt)
+            elif current_sec == 'PE':
+                raw_pe.append(stmt)
+            else:
+                # Default to CE rule if no section defined yet
+                raw_ce.append(stmt)
+
+        def transform_clause(expr: str) -> str:
+            s = expr.strip()
+            # Remove Chartink prefix tags like "[0] 5 minute", "[0]", "[-1] 5 minute"
+            s = re.sub(r'\[\s*0\s*\]\s*(?:\d+\s*(?:minute|min|hour|day)\s*)?', '', s, flags=re.IGNORECASE)
+            s = re.sub(r'\[\s*-1\s*\]\s*(?:\d+\s*(?:minute|min|hour|day)\s*)?', 'PREV_', s, flags=re.IGNORECASE)
+            s = re.sub(r'\[\s*-2\s*\]\s*(?:\d+\s*(?:minute|min|hour|day)\s*)?', 'PREV2_', s, flags=re.IGNORECASE)
+
+            # Crosses from Bearish to Bullish / Bullish to Bearish
+            s = re.sub(r'([A-Za-z0-9_]+)(?:\.Direction)?\s+crosses\s+from\s+Bearish\s+to\s+Bullish', r'CROSS_ABOVE(\1, 0)', s, flags=re.IGNORECASE)
+            s = re.sub(r'([A-Za-z0-9_]+)(?:\.Direction)?\s+crosses\s+from\s+Bullish\s+to\s+Bearish', r'CROSS_BELOW(\1, 0)', s, flags=re.IGNORECASE)
+
+            # Standard crosses above / below
+            s = re.sub(r'([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)\s+crosses\s+above\s+([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)', r'CROSS_ABOVE(\1, \2)', s, flags=re.IGNORECASE)
+            s = re.sub(r'([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)\s+crosses\s+below\s+([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)', r'CROSS_BELOW(\1, \2)', s, flags=re.IGNORECASE)
+
+            # .Direction and Bullish / Bearish states
+            s = re.sub(r'\.Direction\s*==\s*Bullish', ' == 1', s, flags=re.IGNORECASE)
+            s = re.sub(r'\.Direction\s*==\s*Bearish', ' == -1', s, flags=re.IGNORECASE)
+            s = re.sub(r'\.Direction\s+is\s+Bullish', ' == 1', s, flags=re.IGNORECASE)
+            s = re.sub(r'\.Direction\s+is\s+Bearish', ' == -1', s, flags=re.IGNORECASE)
+            s = re.sub(r'\.Direction', '', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bis\s+bullish\b', '== 1', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bis\s+bearish\b', '== -1', s, flags=re.IGNORECASE)
+            s = re.sub(r'==\s*Bullish', '== 1', s, flags=re.IGNORECASE)
+            s = re.sub(r'==\s*Bearish', '== -1', s, flags=re.IGNORECASE)
+
+            s = cls.normalize_indicators(s)
+
+            # Substitute user variables (longest names first)
+            for vname in sorted(variables.keys(), key=lambda x: -len(x)):
+                val = variables[vname]
+                s = re.sub(r'\b' + re.escape(vname) + r'\b', val, s)
+
+            return s
+
+        ce_expr = " and ".join(f"({transform_clause(r)})" for r in raw_ce) if raw_ce else ""
+        pe_expr = " and ".join(f"({transform_clause(r)})" for r in raw_pe) if raw_pe else ""
+        indicators = cls.extract_indicators_and_params(code + " " + " ".join(variables.values()))
+
         return {
             "valid": True,
             "buy_ce_expr": ce_expr,
             "buy_pe_expr": pe_expr,
-            "buy_ce_rules": buy_ce_rules,
-            "buy_pe_rules": buy_pe_rules,
+            "buy_ce_rules": raw_ce,
+            "buy_pe_rules": raw_pe,
+            "variables": variables,
             "custom_params": custom_params,
             "indicators": indicators
         }
@@ -333,9 +407,9 @@ class CustomExecutionContext:
             return res
 
         # Check VWAP
-        if clean == "VWAP":
+        if clean in ["VWAP", "VWAP()"]:
             res = calc_vwap(self.df)
-            self.variables[clean] = res
+            self.variables["VWAP"] = res
             return res
 
         # Check Supertrend
@@ -414,37 +488,27 @@ class SafeEvaluator(ast.NodeVisitor):
         if not expr_str.strip():
             return np.zeros(self.ctx.n, dtype=bool)
 
-        placeholders = {}
-
-        def replacer(match):
-            raw = match.group(0)
-            pname = f"VAR_IND_{len(placeholders)}"
-            placeholders[pname] = raw
-            return pname
-
-        transformed_expr = re.sub(r"[A-Za-z0-9_]+\s*\([^\)]*\)", replacer, expr_str)
-
         try:
-            tree = ast.parse(transformed_expr, mode='eval')
+            tree = ast.parse(expr_str, mode='eval')
         except SyntaxError as e:
             raise ValueError(f"Invalid condition syntax: '{expr_str}'. Detail: {str(e)}")
 
-        return self.visit(tree.body, placeholders)
+        return self.visit(tree.body)
 
-    def visit(self, node: ast.AST, placeholders: dict) -> np.ndarray:
+    def visit(self, node: ast.AST) -> np.ndarray:
         if isinstance(node, ast.BinOp):
-            left = self.visit(node.left, placeholders)
-            right = self.visit(node.right, placeholders)
+            left = self.visit(node.left)
+            right = self.visit(node.right)
             op_func = self.ALLOWED_OPERATORS.get(type(node.op))
             if not op_func:
                 raise ValueError(f"Unsupported operator: {type(node.op)}")
             return op_func(left, right)
 
         elif isinstance(node, ast.Compare):
-            left = self.visit(node.left, placeholders)
+            left = self.visit(node.left)
             result = np.ones(self.ctx.n, dtype=bool)
             for op, comparator in zip(node.ops, node.comparators):
-                right = self.visit(comparator, placeholders)
+                right = self.visit(comparator)
                 op_func = self.ALLOWED_OPERATORS.get(type(op))
                 if not op_func:
                     raise ValueError(f"Unsupported comparison operator: {type(op)}")
@@ -454,7 +518,7 @@ class SafeEvaluator(ast.NodeVisitor):
             return result
 
         elif isinstance(node, ast.BoolOp):
-            values = [self.visit(val, placeholders) for val in node.values]
+            values = [self.visit(val) for val in node.values]
             op_func = self.ALLOWED_OPERATORS.get(type(node.op))
             res = values[0]
             for v in values[1:]:
@@ -462,7 +526,7 @@ class SafeEvaluator(ast.NodeVisitor):
             return res
 
         elif isinstance(node, ast.UnaryOp):
-            operand = self.visit(node.operand, placeholders)
+            operand = self.visit(node.operand)
             if isinstance(node.op, ast.Not):
                 return ~operand
             elif isinstance(node.op, ast.USub):
@@ -473,32 +537,59 @@ class SafeEvaluator(ast.NodeVisitor):
             return np.full(self.ctx.n, float(node.value))
 
         elif isinstance(node, ast.Name):
-            name = node.id
-            if name in placeholders:
-                raw_call = placeholders[name]
-                if raw_call.startswith("CROSS_ABOVE("):
-                    inner = raw_call[12:-1]
-                    parts = [p.strip() for p in inner.split(",", 1)]
-                    a = self.ctx.resolve_indicator(parts[0])
-                    b = self.ctx.resolve_indicator(parts[1])
-                    prev_a = np.roll(a, 1)
-                    prev_b = np.roll(b, 1)
-                    cross = (a > b) & (prev_a <= prev_b)
-                    cross[0] = False
-                    return cross
-                elif raw_call.startswith("CROSS_BELOW("):
-                    inner = raw_call[12:-1]
-                    parts = [p.strip() for p in inner.split(",", 1)]
-                    a = self.ctx.resolve_indicator(parts[0])
-                    b = self.ctx.resolve_indicator(parts[1])
-                    prev_a = np.roll(a, 1)
-                    prev_b = np.roll(b, 1)
-                    cross = (a < b) & (prev_a >= prev_b)
-                    cross[0] = False
-                    return cross
-                return self.ctx.resolve_indicator(raw_call)
+            return self.ctx.resolve_indicator(node.id)
 
-            return self.ctx.resolve_indicator(name)
+        elif isinstance(node, ast.Call):
+            fname = node.func.id.upper() if isinstance(node.func, ast.Name) else ''
+            args = [self.visit(a) for a in node.args]
+
+            if fname == 'CROSS_ABOVE':
+                a, b = args[0], args[1]
+                prev_a, prev_b = np.roll(a, 1), np.roll(b, 1)
+                cross = (a > b) & (prev_a <= prev_b)
+                cross[0] = False
+                return cross
+
+            elif fname == 'CROSS_BELOW':
+                a, b = args[0], args[1]
+                prev_a, prev_b = np.roll(a, 1), np.roll(b, 1)
+                cross = (a < b) & (prev_a >= prev_b)
+                cross[0] = False
+                return cross
+
+            elif fname == 'RSI':
+                period = int(args[0][0])
+                return self.ctx.resolve_indicator(f'RSI({period})')
+
+            elif fname == 'EMA':
+                period = int(args[0][0])
+                return self.ctx.resolve_indicator(f'EMA({period})')
+
+            elif fname == 'SMA':
+                period = int(args[0][0])
+                return self.ctx.resolve_indicator(f'SMA({period})')
+
+            elif fname == 'VWAP':
+                return self.ctx.resolve_indicator('VWAP')
+
+            elif fname == 'SUPERTREND':
+                p = int(args[0][0])
+                mult = float(args[1][0])
+                return self.ctx.resolve_indicator(f'SUPERTREND({p}, {mult})')
+
+            elif fname == 'MACD':
+                f, s, sig = int(args[0][0]), int(args[1][0]), int(args[2][0])
+                return self.ctx.resolve_indicator(f'MACD({f}, {s}, {sig})')
+
+            elif fname.startswith('BB_'):
+                p, dev = int(args[0][0]), float(args[1][0])
+                return self.ctx.resolve_indicator(f'{fname}({p}, {dev})')
+
+            elif fname == 'ATR':
+                p = int(args[0][0])
+                return self.ctx.resolve_indicator(f'ATR({p})')
+
+            raise ValueError(f"Unsupported indicator call: {fname}")
 
         elif isinstance(node, ast.Subscript):
             base_name = node.value.id if isinstance(node.value, ast.Name) else "CLOSE"
@@ -538,9 +629,13 @@ def generate_custom_signals(df: pd.DataFrame, buy_ce_expr: str, buy_pe_expr: str
         spot = float(row['close'])
         
         indicators_snapshot = {}
-        for k in ['RSI(14)', 'EMA(20)', 'EMA(50)', 'VWAP', 'SUPERTREND(10, 3)']:
-            if k in ctx.variables:
-                indicators_snapshot[k] = round(float(ctx.variables[k][i]), 2)
+        base_keys = {'CLOSE', 'OPEN', 'HIGH', 'LOW', 'VOLUME', 'PREV_CLOSE', 'PREV_OPEN', 'PREV_HIGH', 'PREV_LOW', 'PREV_VOLUME', 'PREV2_CLOSE', 'PREV2_OPEN', 'PREV2_HIGH', 'PREV2_LOW'}
+        for k, arr in ctx.variables.items():
+            if k not in base_keys and not k.endswith('_LINE') and not k.endswith('_SIGNAL'):
+                try:
+                    indicators_snapshot[k] = round(float(arr[i]), 2)
+                except:
+                    pass
 
         if ce_mask[i] and not pe_mask[i]:
             signals.append({
