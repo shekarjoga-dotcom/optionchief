@@ -94,7 +94,7 @@ export default function CustomStrategyStudio() {
   // Paper Trade & Live Execution Modal state
   const [orderModalData, setOrderModalData] = useState<{
     isOpen: boolean;
-    type: 'ETF' | 'SPREAD';
+    type: 'ETF' | 'SPREAD' | 'OPTION';
     broker: 'paper' | 'dhan';
     name: string;
     symbol: string;
@@ -1185,21 +1185,36 @@ SL = 12%
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 block mb-1">Strike Moneyness</label>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">Execution Instrument / Strike</label>
                   <select
                     value={moneyness}
-                    onChange={(e) => setMoneyness(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMoneyness(val);
+                      if (val === 'NIFTYBEES' || val === 'BANKBEES' || val === 'ETF') {
+                        if (tpPct >= 10) setTpPct(2.0);
+                        if (slPct >= 5) setSlPct(0.8);
+                      }
+                    }}
                     className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1.5 text-xs text-cyan-300 font-bold focus:outline-none focus:border-accentBrand"
                   >
-                    <option value="ATM">ATM (At The Money)</option>
-                    <option value="OTM1">OTM 1 (1 Strike Out)</option>
-                    <option value="OTM2">OTM 2 (2 Strikes Out)</option>
-                    <option value="ITM">ITM (1 Strike In)</option>
+                    <optgroup label="Index ETFs (Zero Time Decay - High Win-Rate)">
+                      <option value="NIFTYBEES">NIFTYBEES (Nifty 50 ETF)</option>
+                      <option value="BANKBEES">BANKBEES (BankNifty ETF)</option>
+                    </optgroup>
+                    <optgroup label="Index Options (Delta Leverage - Time Decay)">
+                      <option value="ATM">ATM (At The Money)</option>
+                      <option value="OTM1">OTM 1 (1 Strike Out)</option>
+                      <option value="OTM2">OTM 2 (2 Strikes Out)</option>
+                      <option value="ITM">ITM (1 Strike In)</option>
+                    </optgroup>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 block mb-1">Lot Size</label>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">
+                    {moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 'Position Lots (×100 Sh)' : 'Lot Size'}
+                  </label>
                   <input
                     type="number"
                     min={1}
@@ -1214,6 +1229,7 @@ SL = 12%
                   <input
                     type="number"
                     value={tpPct}
+                    step={moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 0.1 : 1}
                     onChange={(e) => setTpPct(parseFloat(e.target.value) || 0)}
                     className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1.5 text-xs text-emerald-400 font-bold focus:outline-none focus:border-accentBrand"
                   />
@@ -1224,11 +1240,26 @@ SL = 12%
                   <input
                     type="number"
                     value={slPct}
+                    step={moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 0.1 : 1}
                     onChange={(e) => setSlPct(parseFloat(e.target.value) || 0)}
                     className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1.5 text-xs text-red-400 font-bold focus:outline-none focus:border-accentBrand"
                   />
                 </div>
               </div>
+
+              {(moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF') && (
+                <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-2.5 text-[11px] text-emerald-300">
+                  <div className="p-1 rounded-md bg-emerald-500/20 text-emerald-400 mt-0.5">
+                    <Zap className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <strong className="text-white block font-semibold mb-0.5">
+                      ⚡ ZERO THETA DECAY ACTIVE ({moneyness === 'BANKBEES' ? 'BANKBEES' : 'NIFTYBEES'} Mode)
+                    </strong>
+                    Strategy scans <strong>{symbol}</strong> Index spot candles for signals, but executes directly in <strong>{moneyness === 'BANKBEES' ? 'BANKBEES' : 'NIFTYBEES'}</strong> ETF shares. Eliminates 100% of expiry theta erosion and Greeks volatility drag!
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Quick Tips Box */}
@@ -1310,9 +1341,9 @@ SL = 12%
                     {renderSortHeader('Signal', 'direction', scannerSort, handleScannerSort)}
                     {renderSortHeader('Trigger Time', 'triggerTime', scannerSort, handleScannerSort)}
                     {renderSortHeader('Spot Price', 'spotPrice', scannerSort, handleScannerSort)}
-                    {renderSortHeader('Target Option Contract', 'contractName', scannerSort, handleScannerSort, 'left', 'text-cyan-400')}
-                    {renderSortHeader('Est. Premium', 'estimatedPremium', scannerSort, handleScannerSort)}
-                    {renderSortHeader('Lot Size', 'lotSize', scannerSort, handleScannerSort)}
+                    {renderSortHeader('Instrument / Strike', 'contractName', scannerSort, handleScannerSort, 'left', 'text-cyan-400')}
+                    {renderSortHeader('Est. Price / Prem', 'estimatedPremium', scannerSort, handleScannerSort)}
+                    {renderSortHeader('Units / Lot', 'lotSize', scannerSort, handleScannerSort)}
                     <th className="p-3.5">Key Indicators</th>
                     <th className="p-3.5 text-right">Action</th>
                   </tr>
@@ -1321,16 +1352,26 @@ SL = 12%
                   {sortedScanResults.length > 0 ? (
                     sortedScanResults.map((sig, idx) => {
                       const isCe = sig.direction === 'BULLISH_CE';
+                      const isEtf = sig.isEtf || sig.optionType === 'ETF';
                       return (
                         <tr key={idx} className="hover:bg-white/5 transition-colors">
-                          <td className="p-3.5 font-bold text-white">{sig.symbol}</td>
+                          <td className="p-3.5 font-bold text-white">
+                            <div className="flex items-center gap-1.5">
+                              <span>{sig.symbol}</span>
+                              {isEtf && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                  ETF
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="p-3.5 font-bold">
                             <span className={`px-2 py-1 rounded-md text-[11px] font-extrabold border ${
-                              isCe 
-                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
-                                : 'bg-pink-500/15 text-pink-400 border-pink-500/30'
+                              isEtf
+                                ? (isCe ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30')
+                                : (isCe ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-pink-500/15 text-pink-400 border-pink-500/30')
                             }`}>
-                              {isCe ? 'BUY CALL (CE)' : 'BUY PUT (PE)'}
+                              {isEtf ? (isCe ? 'BUY ETF' : 'EXIT/HEDGE ETF') : (isCe ? 'BUY CALL (CE)' : 'BUY PUT (PE)')}
                             </span>
                           </td>
                           <td className="p-3.5 text-gray-400 font-mono text-[11px]">{sig.triggerTime}</td>
@@ -1341,7 +1382,9 @@ SL = 12%
                           <td className="p-3.5 font-bold text-white font-mono">
                             ₹{sig.estimatedPremium}
                           </td>
-                          <td className="p-3.5 text-gray-400 font-mono">{sig.lotSize}</td>
+                          <td className="p-3.5 text-gray-400 font-mono">
+                            {sig.lotSize} {isEtf ? 'shares' : 'qty'}
+                          </td>
                           <td className="p-3.5 text-gray-300 font-mono text-[11px]">
                             {Object.entries(sig.indicators || {}).map(([k, v]) => (
                               <span key={k} className="mr-2 px-1.5 py-0.5 rounded bg-black/40 border border-borderClr text-gray-300 text-[10px]">
@@ -1351,10 +1394,81 @@ SL = 12%
                           </td>
                           <td className="p-3.5 text-right">
                             <button
-                              onClick={() => alert(`Simulated Paper Trade for ${sig.contractName} @ ₹${sig.estimatedPremium} placed!`)}
-                              className="px-3 py-1 bg-accentBrand hover:bg-accentBrand/90 text-white text-[11px] font-bold rounded-md transition-all shadow"
+                              onClick={() => {
+                                const activeStratName = (selectedSavedId && savedStrategies.find(s => s.id === selectedSavedId)?.name)
+                                  || (selectedPresetId && presets.find(p => p.id === selectedPresetId)?.name)
+                                  || 'Index Scanner';
+
+                                if (isEtf) {
+                                  const etfSym = sig.etfSymbol || (sig.symbol === 'BANKNIFTY' ? 'BANKBEES' : 'NIFTYBEES');
+                                  const defaultQty = (sig.lotSize && sig.lotSize > 0) ? sig.lotSize : 100;
+                                  const totalVal = Math.round(sig.estimatedPremium * defaultQty);
+                                  setOrderModalData({
+                                    isOpen: true,
+                                    type: 'ETF',
+                                    broker: 'paper',
+                                    name: `${etfSym} Index Trend Entry`,
+                                    symbol: etfSym,
+                                    description: `Strategy: ${activeStratName} on ${sig.symbol} @ ₹${sig.spotPrice} (Zero Time Decay ETF)`,
+                                    qty: defaultQty,
+                                    lotSize: 1,
+                                    margin: totalVal,
+                                    maxProfit: `Target: +${tpPct}% (~₹${Math.round(totalVal * (tpPct / 100))})`,
+                                    maxLoss: `Stop Loss: -${slPct}% (~₹${Math.round(totalVal * (slPct / 100))})`,
+                                    invalidation: `Exit if spot breaches -${slPct}% or opposite reversal candle`,
+                                    legs: [
+                                      {
+                                        id: `bees_${Date.now()}`,
+                                        strike: 0.0,
+                                        optionType: 'F',
+                                        expiry: 'INTRADAY',
+                                        action: 'BUY',
+                                        quantity: defaultQty,
+                                        entryPrice: sig.estimatedPremium,
+                                        currentPrice: sig.estimatedPremium,
+                                        iv: 0.0
+                                      }
+                                    ]
+                                  });
+                                } else {
+                                  const lotMultiplier = sig.lotSize || 25;
+                                  const contractCost = Math.round(sig.estimatedPremium * lotMultiplier);
+                                  setOrderModalData({
+                                    isOpen: true,
+                                    type: 'OPTION',
+                                    broker: 'paper',
+                                    name: `${sig.contractName} Breakout Entry`,
+                                    symbol: sig.symbol,
+                                    description: `Strategy: ${activeStratName} on ${sig.symbol} @ ₹${sig.spotPrice}`,
+                                    qty: 1,
+                                    lotSize: lotMultiplier,
+                                    margin: contractCost,
+                                    maxProfit: `Target: +${tpPct}% (~₹${Math.round(contractCost * (tpPct / 100))})`,
+                                    maxLoss: `Stop Loss: -${slPct}% (~₹${Math.round(contractCost * (slPct / 100))})`,
+                                    invalidation: `Option stop loss at -${slPct}%`,
+                                    legs: [
+                                      {
+                                        id: `opt_${Date.now()}`,
+                                        strike: sig.strike,
+                                        optionType: sig.optionType,
+                                        expiry: 'WEEKLY',
+                                        action: 'BUY',
+                                        quantity: lotMultiplier,
+                                        entryPrice: sig.estimatedPremium,
+                                        currentPrice: sig.estimatedPremium,
+                                        iv: 0.15
+                                      }
+                                    ]
+                                  });
+                                }
+                              }}
+                              className={`px-3 py-1 text-white text-[11px] font-bold rounded-md transition-all shadow ${
+                                isEtf 
+                                  ? 'bg-emerald-600 hover:bg-emerald-500' 
+                                  : 'bg-accentBrand hover:bg-accentBrand/90'
+                              }`}
                             >
-                              Paper Trade
+                              {isEtf ? 'Paper Trade ETF' : 'Paper Trade'}
                             </button>
                           </td>
                         </tr>
@@ -1445,6 +1559,38 @@ SL = 12%
                   onChange={(e) => setInitialCapital(parseFloat(e.target.value) || 100000)}
                   className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold w-28"
                 />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 block mb-1">
+                  Execution Instrument
+                  {(moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF') && (
+                    <span className="ml-1 text-[9px] text-emerald-400 font-bold">⚡ Zero Decay</span>
+                  )}
+                </label>
+                <select
+                  value={moneyness}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMoneyness(val);
+                    if (val === 'NIFTYBEES' || val === 'BANKBEES' || val === 'ETF') {
+                      if (tpPct >= 10) setTpPct(2.0);
+                      if (slPct >= 5) setSlPct(0.8);
+                    }
+                  }}
+                  className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-cyan-300 font-bold"
+                >
+                  <optgroup label="Index ETFs (Zero Time Decay)">
+                    <option value="NIFTYBEES">NIFTYBEES ETF</option>
+                    <option value="BANKBEES">BANKBEES ETF</option>
+                  </optgroup>
+                  <optgroup label="Index Options (Greeks / Decay)">
+                    <option value="ATM">ATM Options</option>
+                    <option value="OTM1">OTM 1 Strike</option>
+                    <option value="OTM2">OTM 2 Strikes</option>
+                    <option value="ITM">ITM 1 Strike</option>
+                  </optgroup>
+                </select>
               </div>
             </div>
 
@@ -1558,7 +1704,9 @@ SL = 12%
                   <h3 className="text-xs font-black uppercase tracking-wider text-gray-400">
                     Detailed Trades Log ({backtestResults.trades.length})
                   </h3>
-                  <span className="text-xs text-gray-500">Click headers to sort trades • Intraday Black-Scholes Model</span>
+                  <span className="text-xs text-gray-500">
+                    Click headers to sort trades • {moneyness.includes('BEES') || moneyness === 'ETF' ? 'Direct ETF Spot Tracking (Zero Time Decay)' : 'Intraday Black-Scholes Model'}
+                  </span>
                 </div>
                 <div className="overflow-x-auto max-h-96">
                   <table className="w-full text-left text-xs border-collapse">
@@ -1568,37 +1716,44 @@ SL = 12%
                         {renderSortHeader('Direction', 'direction', tradeSort, handleTradeSort)}
                         {renderSortHeader('Entry Time', 'entryDate', tradeSort, handleTradeSort)}
                         {renderSortHeader('Exit Time', 'exitDate', tradeSort, handleTradeSort)}
-                        {renderSortHeader('Strike & Type', 'strike', tradeSort, handleTradeSort)}
-                        {renderSortHeader('Entry Prem', 'entryPrice', tradeSort, handleTradeSort)}
-                        {renderSortHeader('Exit Prem', 'exitPrice', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Instrument / Strike', 'strike', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Entry Price', 'entryPrice', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Exit Price', 'exitPrice', tradeSort, handleTradeSort)}
                         {renderSortHeader('Exit Reason', 'exitReason', tradeSort, handleTradeSort)}
                         {renderSortHeader('Duration', 'duration', tradeSort, handleTradeSort)}
                         {renderSortHeader('Net PnL (₹)', 'netPnL', tradeSort, handleTradeSort, 'right')}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-borderClr/30">
-                      {sortedTrades.map((t: any) => (
-                        <tr key={t.tradeId} className="hover:bg-white/5 font-mono">
-                          <td className="p-3 text-gray-400">{t.tradeId}</td>
-                          <td className="p-3 font-sans">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              t.direction === 'BULLISH_CE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-pink-500/20 text-pink-400'
-                            }`}>
-                              {t.direction === 'BULLISH_CE' ? 'CE' : 'PE'}
-                            </span>
-                          </td>
-                          <td className="p-3 text-gray-300 text-[11px]">{t.entryDate}</td>
-                          <td className="p-3 text-gray-300 text-[11px]">{t.exitDate}</td>
-                          <td className="p-3 font-bold text-white">{t.strike} {t.optionType}</td>
-                          <td className="p-3">₹{t.entryPrice}</td>
-                          <td className="p-3">₹{t.exitPrice}</td>
-                          <td className="p-3 font-sans text-gray-400 text-[11px]">{t.exitReason}</td>
-                          <td className="p-3 text-gray-400 text-[11px]">{t.duration}</td>
-                          <td className={`p-3 text-right font-bold ${t.netPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {t.netPnL >= 0 ? `+₹${t.netPnL}` : `-₹${Math.abs(t.netPnL)}`}
-                          </td>
-                        </tr>
-                      ))}
+                      {sortedTrades.map((t: any) => {
+                        const isEtf = t.optionType === 'ETF' || String(t.strike).includes('BEES');
+                        return (
+                          <tr key={t.tradeId} className="hover:bg-white/5 font-mono">
+                            <td className="p-3 text-gray-400">{t.tradeId}</td>
+                            <td className="p-3 font-sans">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                isEtf
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : (t.direction === 'BULLISH_CE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-pink-500/20 text-pink-400')
+                              }`}>
+                                {isEtf ? 'BUY ETF' : (t.direction === 'BULLISH_CE' ? 'CE' : 'PE')}
+                              </span>
+                            </td>
+                            <td className="p-3 text-gray-300 text-[11px]">{t.entryDate}</td>
+                            <td className="p-3 text-gray-300 text-[11px]">{t.exitDate}</td>
+                            <td className="p-3 font-bold text-white">
+                              {isEtf ? `${t.strike}` : `${t.strike} ${t.optionType}`}
+                            </td>
+                            <td className="p-3">₹{t.entryPrice}</td>
+                            <td className="p-3">₹{t.exitPrice}</td>
+                            <td className="p-3 font-sans text-gray-400 text-[11px]">{t.exitReason}</td>
+                            <td className="p-3 text-gray-400 text-[11px]">{t.duration}</td>
+                            <td className={`p-3 text-right font-bold ${t.netPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {t.netPnL >= 0 ? `+₹${t.netPnL}` : `-₹${Math.abs(t.netPnL)}`}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1684,7 +1839,7 @@ SL = 12%
                 Moneyness Sweep
               </label>
               <div className="flex flex-wrap gap-2">
-                {["ATM", "OTM1", "OTM2"].map((m) => {
+                {["NIFTYBEES", "BANKBEES", "ITM", "ATM", "OTM1", "OTM2"].map((m) => {
                   const active = optMoneynessRange.includes(m);
                   return (
                     <button

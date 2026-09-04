@@ -68,6 +68,54 @@ VIX_TICKERS = {
 
 DEFAULT_PRESETS = [
     {
+        "id": "niftybees_index_trend_rider",
+        "name": "💎 NIFTYBEES Index Trend Rider (Zero Theta Decay)",
+        "description": "Scans NIFTY 50 index candles for Supertrend & EMA alignment, but enters NIFTYBEES ETF directly instead of options. Completely eliminates time decay wipes.",
+        "symbol": "NIFTY",
+        "timeframe": "15m",
+        "moneyness": "NIFTYBEES",
+        "tp_pct": 2.0,
+        "sl_pct": 0.8,
+        "code": """// === NIFTYBEES INDEX TREND RIDER (ZERO THETA DECAY) ===
+// Scans NIFTY 50 Index candles, enters NIFTYBEES ETF directly!
+// Zero Time Decay · Complete Elimination of Theta Drag
+
+// Bullish Entry (Buy NIFTYBEES ETF Units):
+BUY_CE: Supertrend(10, 2.0) is Bullish and RSI(14) crosses above 52 and Close > EMA(20)
+
+// Exit / Bearish Reversal (Square off NIFTYBEES or Book Profits):
+BUY_PE: Supertrend(10, 2.0) is Bearish and RSI(14) crosses below 48 and Close < EMA(20)
+
+// Index ETF Risk Targets (2.0% Target vs 0.8% Stop Loss on ETF):
+TP = 2.0%
+SL = 0.8%
+"""
+    },
+    {
+        "id": "optionrider_niftybees_edition",
+        "name": "🧠 OptionRider NIFTYBEES Edition (Gap + Zero Decay)",
+        "description": "Scans NIFTY index opening gap & momentum, but executes in NIFTYBEES ETF shares to neutralize time decay wipeouts.",
+        "symbol": "NIFTY",
+        "timeframe": "15m",
+        "moneyness": "NIFTYBEES",
+        "tp_pct": 2.5,
+        "sl_pct": 1.0,
+        "code": """// === OPTIONRIDER AI: NIFTYBEES ETF EDITION ===
+// Scans NIFTY 50 Index for opening momentum, enters NIFTYBEES ETF directly!
+// Eliminates all Greeks risk, IV crush, and expiration decay.
+
+// Bullish Entry (Buy NIFTYBEES ETF):
+BUY_CE: Close > Open and Close > EMA(20) and Supertrend(10, 2.0) is Bullish and RSI(14) crosses above 54
+
+// Bearish Entry (Exit NIFTYBEES / Take Profit):
+BUY_PE: Close < Open and Close < EMA(20) and Supertrend(10, 2.0) is Bearish and RSI(14) crosses below 46
+
+// ETF Risk Rules:
+TP = 2.5%
+SL = 1.0%
+"""
+    },
+    {
         "id": "banknifty_asymmetric_scalper",
         "name": "🏆 BankNifty 15m Asymmetric Scalper (PF 1.72 | ITM)",
         "description": "Backtested positive expectancy on BankNifty. Uses In-The-Money options with 1:2.5 Risk-to-Reward to neutralize Theta decay.",
@@ -106,6 +154,7 @@ BUY_CE: Close crosses above BB_Lower(20, 2.0) and RSI(14) < 40
 // Bearish Entry (Buy In-The-Money PUT on Upper Band rejection):
 BUY_PE: Close crosses below BB_Upper(20, 2.0) and RSI(14) > 60
 
+// Target & Stop Loss Settings:
 TP = 18%
 SL = 8%
 """
@@ -408,32 +457,57 @@ def run_custom_scanner(req: ScanRequest):
 
             # Determine strike based on moneyness
             m_upper = (req.moneyness or "ATM").upper()
+            is_etf_mode = m_upper in ["NIFTYBEES", "BANKBEES", "ETF"]
 
             for sig in matching_signals:
                 is_ce = sig["direction"] == "BULLISH_CE"
                 leg_type = "C" if is_ce else "P"
                 
-                if is_ce:
-                    strike = atm_strike + (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
+                if is_etf_mode:
+                    is_bank = ("BANK" in sym_upper or m_upper == "BANKBEES")
+                    etf_name = "BANKBEES" if is_bank else "NIFTYBEES"
+                    ratio = 100.0 if is_bank else 87.82
+                    est_prem = round(spot / ratio, 2)
+                    contract_name = f"{etf_name} (Zero Theta ETF)" if is_ce else f"{etf_name} [BEARISH EXIT/HEDGE]"
+                    
+                    scanner_results.append({
+                        "symbol": sym_upper,
+                        "direction": sig["direction"],
+                        "triggerTime": sig["timestamp"],
+                        "spotPrice": round(sig["spot_price"], 2),
+                        "strike": etf_name,
+                        "optionType": "ETF",
+                        "contractName": contract_name,
+                        "estimatedPremium": est_prem,
+                        "lotSize": 50 if is_bank else 100,
+                        "isEtf": True,
+                        "etfSymbol": etf_name,
+                        "indicators": sig.get("indicators", {}),
+                        "candle": sig.get("candle", {})
+                    })
                 else:
-                    strike = atm_strike - (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
+                    if is_ce:
+                        strike = atm_strike + (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
+                    else:
+                        strike = atm_strike - (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
 
-                # Estimate premium via BS
-                est_prem = max(10.0, round(bs_pricing(spot, strike, 4 / 365.0, 0.065, 0.15, leg_type), 2))
+                    # Estimate premium via BS
+                    est_prem = max(10.0, round(bs_pricing(spot, strike, 4 / 365.0, 0.065, 0.15, leg_type), 2))
 
-                scanner_results.append({
-                    "symbol": sym_upper,
-                    "direction": sig["direction"],
-                    "triggerTime": sig["timestamp"],
-                    "spotPrice": round(sig["spot_price"], 2),
-                    "strike": strike,
-                    "optionType": leg_type,
-                    "contractName": f"{sym_upper} {strike} {leg_type}E",
-                    "estimatedPremium": est_prem,
-                    "lotSize": lot_mult,
-                    "indicators": sig.get("indicators", {}),
-                    "candle": sig.get("candle", {})
-                })
+                    scanner_results.append({
+                        "symbol": sym_upper,
+                        "direction": sig["direction"],
+                        "triggerTime": sig["timestamp"],
+                        "spotPrice": round(sig["spot_price"], 2),
+                        "strike": strike,
+                        "optionType": leg_type,
+                        "contractName": f"{sym_upper} {strike} {leg_type}E",
+                        "estimatedPremium": est_prem,
+                        "lotSize": lot_mult,
+                        "isEtf": False,
+                        "indicators": sig.get("indicators", {}),
+                        "candle": sig.get("candle", {})
+                    })
         except Exception as e:
             print(f"Error scanning {sym_upper}: {str(e)}")
 

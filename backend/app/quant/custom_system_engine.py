@@ -822,36 +822,59 @@ def run_custom_system_backtest(
         time_mins = h * 60 + m
 
         if current_trade is not None:
-            expiry_dt = current_trade["expiryDate"]
-            T_years = get_dte(ts, expiry_dt)
-            dist_pct = (current_trade["strike"] - spot) / spot
-            
-            try:
-                vix_val = float(vix_series.loc[pd.to_datetime(date_str)])
-            except:
-                vix_val = 15.0
-            base_iv = max(0.08, vix_val / 100.0)
-            leg_iv = base_iv - 0.50 * dist_pct + 0.30 * (dist_pct ** 2)
-            leg_iv = max(0.08, min(1.0, leg_iv))
+            if current_trade.get("is_etf"):
+                ratio = current_trade.get("ratio", 87.82)
+                current_etf_price = round(spot / ratio, 2)
+                trade_qty = current_trade.get("qty", total_qty)
+                direction_mult = 1.0 if current_trade["direction"] == "BULLISH_CE" else -1.0
+                trade_pnl = (current_etf_price - current_trade["entryPremium"]) * direction_mult * trade_qty
+                entry_cost = current_trade["entryPremium"] * trade_qty
+                current_prem = current_etf_price
 
-            current_prem = bs_pricing(spot, current_trade["strike"], T_years, r, leg_iv, current_trade["optionType"])
-            trade_pnl = (current_prem - current_trade["entryPremium"]) * total_qty
-            entry_cost = current_trade["entryPremium"] * total_qty
+                exit_reason = None
+                if take_profit_pct and entry_cost > 0 and (trade_pnl >= entry_cost * (take_profit_pct / 100.0)):
+                    exit_reason = f"Target Hit (+{take_profit_pct}%)"
+                    target_hits += 1
+                elif stop_loss_pct and entry_cost > 0 and (trade_pnl <= -entry_cost * (stop_loss_pct / 100.0)):
+                    exit_reason = f"Stop Loss (-{stop_loss_pct}%)"
+                    sl_hits += 1
+                elif time_mins >= (15 * 60 + 20):
+                    exit_reason = "Intraday EOD Squareoff"
+                elif ts in signals_map and signals_map[ts]["direction"] != current_trade["direction"]:
+                    exit_reason = "Opposite Reversal Signal"
+            else:
+                expiry_dt = current_trade["expiryDate"]
+                T_years = get_dte(ts, expiry_dt)
+                dist_pct = (current_trade["strike"] - spot) / spot
+                
+                try:
+                    vix_val = float(vix_series.loc[pd.to_datetime(date_str)])
+                except:
+                    vix_val = 15.0
+                base_iv = max(0.08, vix_val / 100.0)
+                leg_iv = base_iv - 0.50 * dist_pct + 0.30 * (dist_pct ** 2)
+                leg_iv = max(0.08, min(1.0, leg_iv))
 
-            exit_reason = None
-            if take_profit_pct and entry_cost > 0 and (trade_pnl >= entry_cost * (take_profit_pct / 100.0)):
-                exit_reason = f"Target Hit (+{take_profit_pct}%)"
-                target_hits += 1
-            elif stop_loss_pct and entry_cost > 0 and (trade_pnl <= -entry_cost * (stop_loss_pct / 100.0)):
-                exit_reason = f"Stop Loss (-{stop_loss_pct}%)"
-                sl_hits += 1
-            elif time_mins >= (15 * 60 + 20):
-                exit_reason = "Intraday EOD Squareoff"
-            elif ts in signals_map and signals_map[ts]["direction"] != current_trade["direction"]:
-                exit_reason = "Opposite Reversal Signal"
+                current_prem = bs_pricing(spot, current_trade["strike"], T_years, r, leg_iv, current_trade["optionType"])
+                trade_pnl = (current_prem - current_trade["entryPremium"]) * total_qty
+                entry_cost = current_trade["entryPremium"] * total_qty
+
+                exit_reason = None
+                if take_profit_pct and entry_cost > 0 and (trade_pnl >= entry_cost * (take_profit_pct / 100.0)):
+                    exit_reason = f"Target Hit (+{take_profit_pct}%)"
+                    target_hits += 1
+                elif stop_loss_pct and entry_cost > 0 and (trade_pnl <= -entry_cost * (stop_loss_pct / 100.0)):
+                    exit_reason = f"Stop Loss (-{stop_loss_pct}%)"
+                    sl_hits += 1
+                elif time_mins >= (15 * 60 + 20):
+                    exit_reason = "Intraday EOD Squareoff"
+                elif ts in signals_map and signals_map[ts]["direction"] != current_trade["direction"]:
+                    exit_reason = "Opposite Reversal Signal"
 
             if exit_reason is not None:
-                net_pnl = float(trade_pnl - (slippage * 2 * total_qty))
+                actual_qty = current_trade.get("qty", total_qty)
+                actual_slippage = 0.05 if current_trade.get("is_etf") else slippage
+                net_pnl = float(trade_pnl - (actual_slippage * 2 * actual_qty))
                 capital += net_pnl
                 peak_capital = max(peak_capital, capital)
                 dd = (peak_capital - capital) / peak_capital * 100.0
@@ -870,7 +893,7 @@ def run_custom_system_backtest(
                     "exitDate": ts,
                     "entrySpot": round(float(current_trade["entrySpot"]), 2),
                     "exitSpot": round(float(spot), 2),
-                    "strike": int(current_trade["strike"]),
+                    "strike": current_trade["strike"],
                     "optionType": current_trade["optionType"],
                     "entryPrice": round(float(current_trade["entryPremium"]), 2),
                     "exitPrice": round(float(current_prem), 2),
@@ -885,38 +908,61 @@ def run_custom_system_backtest(
             if ts in signals_map:
                 sig = signals_map[ts]
                 direction = sig["direction"]
-                atm_strike = round(spot / strike_round) * strike_round
                 m_upper = moneyness.upper()
 
-                if direction == "BULLISH_CE":
-                    leg_type = "C"
-                    strike = atm_strike + (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
+                if m_upper in ["NIFTYBEES", "BANKBEES", "ETF"]:
+                    is_nifty = ("NIFTY" in symbol.upper() and "BANK" not in symbol.upper())
+                    ratio = 87.82 if is_nifty else 100.0
+                    etf_symbol = "NIFTYBEES" if is_nifty else "BANKBEES"
+                    entry_etf = round(spot / ratio, 2) + slippage
+                    trade_qty = max(10, int((initial_capital * 0.35) / entry_etf)) if lots <= 1 else int((initial_capital * 0.35 * lots) / entry_etf)
+                    
+                    current_trade = {
+                        "entryTime": ts,
+                        "direction": direction,
+                        "entrySpot": float(spot),
+                        "strike": etf_symbol,
+                        "optionType": "ETF (Long)" if direction == "BULLISH_CE" else "ETF (Short)",
+                        "entryPremium": max(1.0, float(entry_etf)),
+                        "expiryDate": dt_obj,
+                        "is_etf": True,
+                        "qty": trade_qty,
+                        "ratio": ratio,
+                        "etf_symbol": etf_symbol
+                    }
                 else:
-                    leg_type = "P"
-                    strike = atm_strike - (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
+                    atm_strike = round(spot / strike_round) * strike_round
+                    if direction == "BULLISH_CE":
+                        leg_type = "C"
+                        strike = atm_strike + (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
+                    else:
+                        leg_type = "P"
+                        strike = atm_strike - (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
 
-                expiry_dt = get_weekly_expiry(dt_obj)
-                T_years = get_dte(ts, expiry_dt)
-                dist_pct = (strike - spot) / spot
-                try:
-                    vix_val = float(vix_series.loc[pd.to_datetime(date_str)])
-                except:
-                    vix_val = 15.0
-                base_iv = max(0.08, vix_val / 100.0)
-                leg_iv = max(0.08, min(1.0, base_iv - 0.50 * dist_pct + 0.30 * (dist_pct ** 2)))
+                    expiry_dt = get_weekly_expiry(dt_obj)
+                    T_years = get_dte(ts, expiry_dt)
+                    dist_pct = (strike - spot) / spot
+                    try:
+                        vix_val = float(vix_series.loc[pd.to_datetime(date_str)])
+                    except:
+                        vix_val = 15.0
+                    base_iv = max(0.08, vix_val / 100.0)
+                    leg_iv = max(0.08, min(1.0, base_iv - 0.50 * dist_pct + 0.30 * (dist_pct ** 2)))
 
-                entry_prem = float(bs_pricing(spot, strike, T_years, r, leg_iv, leg_type))
-                entry_prem += slippage
+                    entry_prem = float(bs_pricing(spot, strike, T_years, r, leg_iv, leg_type))
+                    entry_prem += slippage
 
-                current_trade = {
-                    "entryTime": ts,
-                    "direction": direction,
-                    "entrySpot": float(spot),
-                    "strike": strike,
-                    "optionType": leg_type,
-                    "entryPremium": max(1.5, float(entry_prem)),
-                    "expiryDate": expiry_dt,
-                }
+                    current_trade = {
+                        "entryTime": ts,
+                        "direction": direction,
+                        "entrySpot": float(spot),
+                        "strike": strike,
+                        "optionType": leg_type,
+                        "entryPremium": max(1.5, float(entry_prem)),
+                        "expiryDate": expiry_dt,
+                        "is_etf": False,
+                        "qty": total_qty
+                    }
 
         equity_curve.append({
             "timestamp": ts,
