@@ -189,6 +189,14 @@ SL = 12%
   const [backtestError, setBacktestError] = useState<string | null>(null);
 
   // Optimizer state
+  const ETF_TP_DEFAULTS = [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
+  const ETF_SL_DEFAULTS = [0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0];
+  const OPTION_TP_DEFAULTS = [15, 20, 25, 30, 40, 50];
+  const OPTION_SL_DEFAULTS = [10, 15, 20, 30, 40];
+
+  const [optScaleMode, setOptScaleMode] = useState<'etf' | 'options'>('options');
+  const [customTpInput, setCustomTpInput] = useState<string>('');
+  const [customSlInput, setCustomSlInput] = useState<string>('');
   const [optTpRange, setOptTpRange] = useState<number[]>([15, 25, 35]);
   const [optSlRange, setOptSlRange] = useState<number[]>([10, 15, 20]);
   const [optMoneynessRange, setOptMoneynessRange] = useState<string[]>(["ATM", "OTM1"]);
@@ -262,6 +270,12 @@ SL = 12%
       setTpPct(p.tp_pct);
       setSlPct(p.sl_pct);
       setValidation(null);
+      if (p.moneyness === 'NIFTYBEES' || p.moneyness === 'BANKBEES' || p.moneyness === 'ETF') {
+        setOptScaleMode('etf');
+        setOptMoneynessRange([p.moneyness]);
+        setOptTpRange([1.0, 1.5, 2.0, 2.5]);
+        setOptSlRange([0.5, 0.8, 1.0]);
+      }
     }
   };
 
@@ -279,6 +293,12 @@ SL = 12%
       if (strat.tp_pct !== undefined) setTpPct(strat.tp_pct);
       if (strat.sl_pct !== undefined) setSlPct(strat.sl_pct);
       setValidation(null);
+      if (strat.moneyness === 'NIFTYBEES' || strat.moneyness === 'BANKBEES' || strat.moneyness === 'ETF') {
+        setOptScaleMode('etf');
+        setOptMoneynessRange([strat.moneyness]);
+        setOptTpRange([1.0, 1.5, 2.0, 2.5]);
+        setOptSlRange([0.5, 0.8, 1.0]);
+      }
     }
   };
 
@@ -1788,20 +1808,97 @@ SL = 12%
             </button>
           </div>
 
+          {/* Target Scale Mode Switcher & Explanation */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-cardClr border border-borderClr rounded-xl p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-bold text-gray-300">Target Scaling Mode:</span>
+              <div className="flex items-center gap-1.5 bg-black/50 p-1 rounded-xl border border-borderClr">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOptScaleMode('etf');
+                    if (!optMoneynessRange.some(m => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(m))) {
+                      setOptMoneynessRange(['NIFTYBEES']);
+                    }
+                    if (optTpRange.some(v => v >= 10)) {
+                      setOptTpRange([1.0, 1.5, 2.0, 2.5]);
+                    }
+                    if (optSlRange.some(v => v >= 5)) {
+                      setOptSlRange([0.5, 0.8, 1.0]);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    optScaleMode === 'etf'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>⚡ ETF Fractional Mode (0.3% – 5.0%)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOptScaleMode('options');
+                    if (optMoneynessRange.every(m => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(m))) {
+                      setOptMoneynessRange(['ATM', 'OTM1']);
+                    }
+                    if (optTpRange.some(v => v < 5)) {
+                      setOptTpRange([15, 25, 35]);
+                    }
+                    if (optSlRange.some(v => v < 3)) {
+                      setOptSlRange([10, 15, 20]);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    optScaleMode === 'options'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                  <span>🎯 Options Leveraged Mode (10% – 50%)</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-gray-400 max-w-xl">
+              {optScaleMode === 'etf' ? (
+                <span className="text-emerald-300 flex items-center gap-1.5">
+                  <span className="font-extrabold text-emerald-400">⚡ ZERO THETA DECAY:</span>
+                  Index ETFs track index spot 1:1. Realistic targets are fractional percentages (0.5% – 3.0%).
+                </span>
+              ) : (
+                <span className="text-gray-400">
+                  🎯 <strong>Options Mode:</strong> Targets & stop losses are tested as contract premium percentages (10% – 50%).
+                </span>
+              )}
+            </div>
+          </div>
+
           {/* Optimizer Configuration Grid */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-cardClr border border-borderClr rounded-xl p-5">
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
-                Take Profit % Range
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {[15, 20, 25, 30, 40, 50].map((v) => {
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Take Profit % Range {optScaleMode === 'etf' ? '(Fractions)' : '(Options)'}
+                </label>
+                <span className="text-[10px] text-emerald-400 font-mono">
+                  {optTpRange.length} selected
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                {Array.from(new Set([
+                  ...(optScaleMode === 'etf' ? ETF_TP_DEFAULTS : OPTION_TP_DEFAULTS),
+                  ...optTpRange
+                ])).sort((a, b) => a - b).map((v) => {
                   const active = optTpRange.includes(v);
                   return (
                     <button
                       key={v}
+                      type="button"
                       onClick={() => setOptTpRange(prev => active ? prev.filter(x => x !== v) : [...prev, v])}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
                         active ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-black/30 text-gray-500 border-borderClr'
                       }`}
                     >
@@ -1810,20 +1907,64 @@ SL = 12%
                   );
                 })}
               </div>
+              {/* Custom TP adder */}
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder={optScaleMode === 'etf' ? "+ Add % (e.g. 1.8)" : "+ Add % (e.g. 35)"}
+                  value={customTpInput}
+                  onChange={(e) => setCustomTpInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customTpInput) {
+                      const val = parseFloat(customTpInput);
+                      if (!isNaN(val) && val > 0 && !optTpRange.includes(val)) {
+                        setOptTpRange(prev => [...prev, val].sort((a, b) => a - b));
+                        setCustomTpInput('');
+                      }
+                    }
+                  }}
+                  className="bg-black/40 border border-borderClr rounded-lg px-2 py-1 text-xs text-white placeholder-gray-600 font-mono w-32 focus:outline-none focus:border-accentBrand"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customTpInput) {
+                      const val = parseFloat(customTpInput);
+                      if (!isNaN(val) && val > 0 && !optTpRange.includes(val)) {
+                        setOptTpRange(prev => [...prev, val].sort((a, b) => a - b));
+                        setCustomTpInput('');
+                      }
+                    }
+                  }}
+                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg transition-all"
+                >
+                  + Add
+                </button>
+              </div>
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
-                Stop Loss % Range
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {[10, 15, 20, 30, 40].map((v) => {
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Stop Loss % Range {optScaleMode === 'etf' ? '(Fractions)' : '(Options)'}
+                </label>
+                <span className="text-[10px] text-red-400 font-mono">
+                  {optSlRange.length} selected
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                {Array.from(new Set([
+                  ...(optScaleMode === 'etf' ? ETF_SL_DEFAULTS : OPTION_SL_DEFAULTS),
+                  ...optSlRange
+                ])).sort((a, b) => a - b).map((v) => {
                   const active = optSlRange.includes(v);
                   return (
                     <button
                       key={v}
+                      type="button"
                       onClick={() => setOptSlRange(prev => active ? prev.filter(x => x !== v) : [...prev, v])}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
                         active ? 'bg-red-500/20 text-red-400 border-red-500/40' : 'bg-black/30 text-gray-500 border-borderClr'
                       }`}
                     >
@@ -1832,27 +1973,112 @@ SL = 12%
                   );
                 })}
               </div>
+              {/* Custom SL adder */}
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder={optScaleMode === 'etf' ? "+ Add % (e.g. 0.6)" : "+ Add % (e.g. 12)"}
+                  value={customSlInput}
+                  onChange={(e) => setCustomSlInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customSlInput) {
+                      const val = parseFloat(customSlInput);
+                      if (!isNaN(val) && val > 0 && !optSlRange.includes(val)) {
+                        setOptSlRange(prev => [...prev, val].sort((a, b) => a - b));
+                        setCustomSlInput('');
+                      }
+                    }
+                  }}
+                  className="bg-black/40 border border-borderClr rounded-lg px-2 py-1 text-xs text-white placeholder-gray-600 font-mono w-32 focus:outline-none focus:border-accentBrand"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customSlInput) {
+                      const val = parseFloat(customSlInput);
+                      if (!isNaN(val) && val > 0 && !optSlRange.includes(val)) {
+                        setOptSlRange(prev => [...prev, val].sort((a, b) => a - b));
+                        setCustomSlInput('');
+                      }
+                    }
+                  }}
+                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg transition-all"
+                >
+                  + Add
+                </button>
+              </div>
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
-                Moneyness Sweep
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {["NIFTYBEES", "BANKBEES", "ITM", "ATM", "OTM1", "OTM2"].map((m) => {
-                  const active = optMoneynessRange.includes(m);
-                  return (
-                    <button
-                      key={m}
-                      onClick={() => setOptMoneynessRange(prev => active ? prev.filter(x => x !== m) : [...prev, m])}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${
-                        active ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40' : 'bg-black/30 text-gray-500 border-borderClr'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  );
-                })}
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Moneyness / Instrument Sweep
+                </label>
+                <span className="text-[10px] text-cyan-400 font-mono">
+                  {optMoneynessRange.length} selected
+                </span>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                <div>
+                  <span className="text-[9px] text-emerald-400 font-bold block mb-1">Index ETFs (Zero Decay):</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["NIFTYBEES", "BANKBEES"].map((m) => {
+                      const active = optMoneynessRange.includes(m);
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => {
+                            const next = active ? optMoneynessRange.filter(x => x !== m) : [...optMoneynessRange, m];
+                            setOptMoneynessRange(next);
+                            const hasOptions = next.some(x => !['NIFTYBEES', 'BANKBEES', 'ETF'].includes(x));
+                            if (!active && !hasOptions) {
+                              setOptScaleMode('etf');
+                              if (optTpRange.some(v => v >= 10)) setOptTpRange([1.0, 1.5, 2.0, 2.5]);
+                              if (optSlRange.some(v => v >= 5)) setOptSlRange([0.5, 0.8, 1.0]);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                            active ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow' : 'bg-black/30 text-gray-500 border-borderClr'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[9px] text-gray-400 font-bold block mb-1">Options (Leveraged):</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["ITM", "ATM", "OTM1", "OTM2"].map((m) => {
+                      const active = optMoneynessRange.includes(m);
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => {
+                            const next = active ? optMoneynessRange.filter(x => x !== m) : [...optMoneynessRange, m];
+                            setOptMoneynessRange(next);
+                            const hasEtfs = next.some(x => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(x));
+                            if (!active && !hasEtfs) {
+                              setOptScaleMode('options');
+                              if (optTpRange.some(v => v < 5)) setOptTpRange([15, 25, 35]);
+                              if (optSlRange.some(v => v < 3)) setOptSlRange([10, 15, 20]);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                            active ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40' : 'bg-black/30 text-gray-500 border-borderClr'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1909,9 +2135,18 @@ SL = 12%
                             {isTop && <span className="text-amber-400">★</span>}
                             #{idx + 1}
                           </td>
-                          <td className="p-3 font-bold text-cyan-300">{p.moneyness}</td>
-                          <td className="p-3 text-emerald-400 font-bold">+{p.takeProfitPct}%</td>
-                          <td className="p-3 text-red-400 font-bold">-{p.stopLossPct}%</td>
+                          <td className="p-3 font-bold text-cyan-300">
+                            <div className="flex items-center gap-1.5">
+                              <span>{p.moneyness}</span>
+                              {['NIFTYBEES', 'BANKBEES', 'ETF'].includes(p.moneyness) && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                  ETF
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-emerald-400 font-bold font-mono">+{p.takeProfitPct}%</td>
+                          <td className="p-3 text-red-400 font-bold font-mono">-{p.stopLossPct}%</td>
                           <td className={`p-3 text-right font-mono font-bold ${m.netPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             ₹{m.netPnL.toLocaleString()}
                           </td>
