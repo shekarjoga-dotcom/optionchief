@@ -135,22 +135,40 @@ def calc_bollinger_bands(close: np.ndarray, period: int = 20, std_dev: float = 2
     lower = mid - (std_dev * std)
     return upper, mid, lower
 
+def calc_orb(df: pd.DataFrame, orb_minutes: int = 15) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Computes Opening Range High and Low (default 15m: 09:15 - 09:30).
+    Values prior to the opening range completion are NaN so no false entries occur before 09:30.
+    """
+    n = len(df)
+    orb_high = np.full(n, np.nan)
+    orb_low = np.full(n, np.nan)
+    if 'timestamp' not in df.columns or n == 0:
+        return orb_high, orb_low
+    try:
+        df_copy = df.copy()
+        df_copy['dt'] = pd.to_datetime(df_copy['timestamp'])
+        df_copy['date'] = df_copy['dt'].dt.date
+        df_copy['time_mins'] = df_copy['dt'].dt.hour * 60 + df_copy['dt'].dt.minute
+        orb_start_mins = 9 * 60 + 15
+        orb_end_mins = orb_start_mins + orb_minutes
+
+        for date, group in df_copy.groupby('date'):
+            orb_candles = group[(group['time_mins'] >= orb_start_mins) & (group['time_mins'] < orb_end_mins)]
+            if not orb_candles.empty:
+                h_val = float(orb_candles['high'].max())
+                l_val = float(orb_candles['low'].min())
+                idx_after = group[group['time_mins'] >= orb_end_mins].index
+                orb_high[idx_after] = h_val
+                orb_low[idx_after] = l_val
+    except Exception as e:
+        pass
+    return orb_high, orb_low
+
 
 # ==========================================
-# 2. CHARTINK / CUSTOM SCRIPT PARSER
+# 2. CHARTINK & PINE SCRIPT PARSER
 # ==========================================
-
-class CustomRuleParser:
-    """
-    Parses and safely executes Chartink-like trading system rules.
-    Supports clauses like:
-      - Close > EMA(20) and RSI(14) > 60
-      - [0] Close > [0] EMA(20)
-      - RSI(14) crosses above 50
-      - Close > High[-1]
-      - Volume > SMA(Volume, 20) * 1.5
-      - Supertrend(10, 3) == 1
-    """
 
 class CustomRuleParser:
     """
@@ -167,6 +185,17 @@ class CustomRuleParser:
     @staticmethod
     def normalize_indicators(expr: str) -> str:
         s = expr
+        # Pine Script ta.crossover / ta.crossunder
+        s = re.sub(r'\bta\.crossover\s*\(\s*([^,]+)\s*,\s*([^\)]+)\s*\)', r'CROSS_ABOVE(\1, \2)', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.crossunder\s*\(\s*([^,]+)\s*,\s*([^\)]+)\s*\)', r'CROSS_BELOW(\1, \2)', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.vwap(?:\s*\([^\)]*\))?', 'VWAP', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.rsi', 'RSI', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.ema', 'EMA', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.sma', 'SMA', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.atr', 'ATR', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.supertrend', 'SUPERTREND', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bta\.macd', 'MACD', s, flags=re.IGNORECASE)
+
         # Supertrend(Period = 20, Multiplier = 3.0) or Supertrend(20, 3.0)
         s = re.sub(r'\bSupertrend\s*\(\s*(?:period\s*=\s*)?(\d+)\s*,\s*(?:multiplier\s*=\s*)?([\d\.]+)\s*\)', r'SUPERTREND(\1, \2)', s, flags=re.IGNORECASE)
         # EMA(Close, 20) or EMA(20)
@@ -412,6 +441,19 @@ class CustomExecutionContext:
             self.variables["VWAP"] = res
             return res
 
+        # Check ORB (Opening Range Breakout High / Low)
+        m = re.match(r"^ORB_(HIGH|LOW)(?:\s*\(\s*(\d+)\s*\))?$", clean)
+        if m:
+            side = m.group(1)
+            mins = int(m.group(2)) if m.group(2) else 15
+            if f"ORB_HIGH({mins})" not in self.variables:
+                oh, ol = calc_orb(self.df, mins)
+                self.variables[f"ORB_HIGH({mins})"] = oh
+                self.variables[f"ORB_LOW({mins})"] = ol
+                self.variables["ORB_HIGH"] = oh
+                self.variables["ORB_LOW"] = ol
+            return self.variables[f"ORB_HIGH({mins})"] if side == "HIGH" else self.variables[f"ORB_LOW({mins})"]
+
         # Check Supertrend
         m = re.match(r"^SUPERTREND\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)$", clean)
         if m:
@@ -571,6 +613,10 @@ class SafeEvaluator(ast.NodeVisitor):
 
             elif fname == 'VWAP':
                 return self.ctx.resolve_indicator('VWAP')
+
+            elif fname in ['ORB_HIGH', 'ORB_LOW']:
+                mins = int(args[0][0]) if args else 15
+                return self.ctx.resolve_indicator(f"{fname}({mins})")
 
             elif fname == 'SUPERTREND':
                 p = int(args[0][0])
