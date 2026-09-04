@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
 import { BACKEND_URL } from '../config';
 import { 
   Code2, Play, CheckCircle2, AlertTriangle, RefreshCw, Save, 
-  Sliders, Activity, Zap, HelpCircle, FileCode, Check
+  Sliders, Activity, Zap, HelpCircle, FileCode, Check,
+  Trash2, FolderHeart, X
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
@@ -14,11 +15,27 @@ interface Preset {
   id: string;
   name: string;
   description: string;
+  symbol?: string;
   timeframe: string;
   moneyness: string;
   tp_pct: number;
   sl_pct: number;
   code: string;
+}
+
+interface SavedStrategy {
+  id: string;
+  name: string;
+  description?: string;
+  code: string;
+  symbol: string;
+  timeframe: string;
+  moneyness: string;
+  lot_size: number;
+  tp_pct: number;
+  sl_pct: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface ValidationResult {
@@ -29,7 +46,35 @@ interface ValidationResult {
   buyPeExpr?: string;
   recentTriggers?: number;
   sampleSignals?: any[];
+  vwapWarning?: string | null;
 }
+
+const LOCAL_STORAGE_SAVED_KEY = 'options_oracle_custom_strategies';
+
+const SYMBOL_OPTIONS = [
+  {
+    group: 'Spot Indices',
+    items: [
+      { value: 'BANKNIFTY', label: 'BANKNIFTY' },
+      { value: 'NIFTY', label: 'NIFTY 50' },
+      { value: 'FINNIFTY', label: 'FINNIFTY' },
+      { value: 'SENSEX', label: 'SENSEX' },
+      { value: 'MIDCPNIFTY', label: 'MIDCPNIFTY' },
+    ]
+  },
+  {
+    group: 'High-Volume F&O Stocks (VWAP Volume Enabled)',
+    items: [
+      { value: 'RELIANCE', label: 'RELIANCE (Real Volume)' },
+      { value: 'HDFCBANK', label: 'HDFCBANK (Real Volume)' },
+      { value: 'ICICIBANK', label: 'ICICIBANK (Real Volume)' },
+      { value: 'SBIN', label: 'SBIN (Real Volume)' },
+      { value: 'TCS', label: 'TCS (Real Volume)' },
+      { value: 'INFY', label: 'INFY (Real Volume)' },
+      { value: 'TATAMOTORS', label: 'TATAMOTORS (Real Volume)' },
+    ]
+  }
+];
 
 export default function CustomStrategyStudio() {
   const { token } = useStore();
@@ -38,7 +83,7 @@ export default function CustomStrategyStudio() {
   const [subTab, setSubTab] = useState<'editor' | 'scanner' | 'backtest' | 'optimizer'>('editor');
 
   // Strategy configuration state
-  const [strategyName, setStrategyName] = useState<string>("My Chartink Strategy");
+  const [strategyName, setStrategyName] = useState<string>("My Custom Strategy");
   const [code, setCode] = useState<string>(`// === CHARTINK CUSTOM STRATEGY ===
 // Bullish Rule (CALL Option Entry):
 BUY_CE: [0] Close > [0] EMA(20) and EMA(9) crosses above EMA(21) and RSI(14) > 55
@@ -65,8 +110,30 @@ SL = 12%
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>("");
 
+  // Saved custom strategies state
+  const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>([]);
+  const [selectedSavedId, setSelectedSavedId] = useState<string>("");
+  const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
+  const [saveModalName, setSaveModalName] = useState<string>("");
+  const [saveModalDesc, setSaveModalDesc] = useState<string>("");
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Sorting state for all 3 tables
+  const [scannerSort, setScannerSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({
+    field: 'triggerTime',
+    direction: 'desc'
+  });
+  const [tradeSort, setTradeSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({
+    field: 'tradeId',
+    direction: 'asc'
+  });
+  const [optSort, setOptSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({
+    field: 'rank',
+    direction: 'asc'
+  });
+
   // Scanner state
-  const [scanSymbols, setScanSymbols] = useState<string[]>(["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX"]);
+  const [scanSymbols, setScanSymbols] = useState<string[]>(["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX", "RELIANCE", "HDFCBANK"]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanResults, setScanResults] = useState<any[]>([]);
   const [scanTimestamp, setScanTimestamp] = useState<string>("");
@@ -90,10 +157,11 @@ SL = 12%
   const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
   const [optResults, setOptResults] = useState<any[]>([]);
 
-  // 1. Load Strategy Presets on Mount
+  // 1. Load Presets & Saved Strategies on Mount
   useEffect(() => {
     fetchPresets();
-  }, []);
+    fetchSavedStrategies();
+  }, [token]);
 
   const fetchPresets = async () => {
     try {
@@ -107,12 +175,49 @@ SL = 12%
     }
   };
 
+  const fetchSavedStrategies = async () => {
+    let localList: SavedStrategy[] = [];
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_SAVED_KEY);
+      if (raw) {
+        localList = JSON.parse(raw);
+      }
+    } catch (e) {
+      console.error("Failed to parse local saved strategies:", e);
+    }
+
+    if (token) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/custom-strategy/saved`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const serverList = await res.json();
+          const mergedMap = new Map<string, SavedStrategy>();
+          serverList.forEach((s: SavedStrategy) => mergedMap.set(s.id, s));
+          localList.forEach((s: SavedStrategy) => {
+            if (!mergedMap.has(s.id)) mergedMap.set(s.id, s);
+          });
+          const merged = Array.from(mergedMap.values());
+          setSavedStrategies(merged);
+          localStorage.setItem(LOCAL_STORAGE_SAVED_KEY, JSON.stringify(merged));
+          return;
+        }
+      } catch (e) {
+        console.warn("Could not sync saved strategies with backend, using local copy", e);
+      }
+    }
+    setSavedStrategies(localList);
+  };
+
   const handleSelectPreset = (presetId: string) => {
     setSelectedPresetId(presetId);
+    setSelectedSavedId(""); // clear custom saved selection
     const p = presets.find(x => x.id === presetId);
     if (p) {
       setStrategyName(p.name);
       setCode(p.code);
+      if (p.symbol) setSymbol(p.symbol);
       setTimeframe(p.timeframe);
       setMoneyness(p.moneyness);
       setTpPct(p.tp_pct);
@@ -120,6 +225,232 @@ SL = 12%
       setValidation(null);
     }
   };
+
+  const handleSelectSavedStrategy = (savedId: string) => {
+    setSelectedSavedId(savedId);
+    setSelectedPresetId(""); // clear preset selection
+    const strat = savedStrategies.find(s => s.id === savedId);
+    if (strat) {
+      setStrategyName(strat.name);
+      setCode(strat.code);
+      if (strat.symbol) setSymbol(strat.symbol);
+      if (strat.timeframe) setTimeframe(strat.timeframe);
+      if (strat.moneyness) setMoneyness(strat.moneyness);
+      if (strat.lot_size) setLotSize(strat.lot_size);
+      if (strat.tp_pct !== undefined) setTpPct(strat.tp_pct);
+      if (strat.sl_pct !== undefined) setSlPct(strat.sl_pct);
+      setValidation(null);
+    }
+  };
+
+  const handleOpenSaveModal = () => {
+    setSaveModalName(strategyName || "My Custom Strategy");
+    const existing = savedStrategies.find(s => s.id === selectedSavedId);
+    setSaveModalDesc(existing?.description || "");
+    setShowSaveModal(true);
+  };
+
+  const handleSaveCustomStrategy = async (asNew: boolean = false) => {
+    setIsSaving(true);
+    const stratId = (!asNew && selectedSavedId) ? selectedSavedId : `strat_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const finalName = saveModalName.trim() || strategyName.trim() || "My Custom Strategy";
+    const strategyData: SavedStrategy = {
+      id: stratId,
+      name: finalName,
+      description: saveModalDesc.trim(),
+      code,
+      symbol,
+      timeframe,
+      moneyness,
+      lot_size: lotSize,
+      tp_pct: tpPct,
+      sl_pct: slPct,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Always update local storage
+    const updatedList = [strategyData, ...savedStrategies.filter(s => s.id !== stratId)];
+    setSavedStrategies(updatedList);
+    localStorage.setItem(LOCAL_STORAGE_SAVED_KEY, JSON.stringify(updatedList));
+    setStrategyName(finalName);
+    setSelectedSavedId(stratId);
+
+    // 2. If token present, sync to backend
+    if (token) {
+      try {
+        await fetch(`${BACKEND_URL}/api/custom-strategy/save`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            id: stratId,
+            name: strategyData.name,
+            description: strategyData.description,
+            code: strategyData.code,
+            symbol: strategyData.symbol,
+            timeframe: strategyData.timeframe,
+            moneyness: strategyData.moneyness,
+            lot_size: strategyData.lot_size,
+            tp_pct: strategyData.tp_pct,
+            sl_pct: strategyData.sl_pct
+          })
+        });
+      } catch (e) {
+        console.warn("Saved to local storage, backend sync failed:", e);
+      }
+    }
+
+    setIsSaving(false);
+    setShowSaveModal(false);
+    setSaveSuccessMsg(`Strategy "${finalName}" saved!`);
+    setTimeout(() => setSaveSuccessMsg(""), 3500);
+  };
+
+  const handleDeleteSavedStrategy = async (idToDelete: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const strat = savedStrategies.find(s => s.id === idToDelete);
+    const name = strat?.name || "this strategy";
+    if (!window.confirm(`Are you sure you want to delete "${name}" from your custom strategies?`)) return;
+
+    const nextList = savedStrategies.filter(s => s.id !== idToDelete);
+    setSavedStrategies(nextList);
+    localStorage.setItem(LOCAL_STORAGE_SAVED_KEY, JSON.stringify(nextList));
+
+    if (selectedSavedId === idToDelete) {
+      setSelectedSavedId("");
+    }
+
+    if (token) {
+      try {
+        await fetch(`${BACKEND_URL}/api/custom-strategy/saved/${idToDelete}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } catch (err) {
+        console.warn("Failed to delete strategy on backend:", err);
+      }
+    }
+  };
+
+  // Sorting handlers & memoized sorted arrays
+  const handleScannerSort = (field: string) => {
+    setScannerSort(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const handleTradeSort = (field: string) => {
+    setTradeSort(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const handleOptSort = (field: string) => {
+    setOptSort(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const sortedScanResults = useMemo(() => {
+    return [...scanResults].sort((a, b) => {
+      const { field, direction } = scannerSort;
+      let valA = a[field];
+      let valB = b[field];
+      if (valA === undefined || valA === null) valA = '';
+      if (valB === undefined || valB === null) valB = '';
+      let cmp = 0;
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        cmp = valA - valB;
+      } else {
+        cmp = String(valA).localeCompare(String(valB));
+      }
+      return direction === 'asc' ? cmp : -cmp;
+    });
+  }, [scanResults, scannerSort]);
+
+  const sortedTrades = useMemo(() => {
+    const trades = backtestResults?.trades || [];
+    return [...trades].sort((a, b) => {
+      const { field, direction } = tradeSort;
+      let valA = a[field];
+      let valB = b[field];
+      if (valA === undefined || valA === null) valA = '';
+      if (valB === undefined || valB === null) valB = '';
+      let cmp = 0;
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        cmp = valA - valB;
+      } else {
+        cmp = String(valA).localeCompare(String(valB));
+      }
+      return direction === 'asc' ? cmp : -cmp;
+    });
+  }, [backtestResults, tradeSort]);
+
+  const sortedOptResults = useMemo(() => {
+    const mapped = optResults.map((row, idx) => ({
+      ...row,
+      rank: idx + 1,
+      moneyness: row.parameters?.moneyness || '',
+      takeProfitPct: row.parameters?.takeProfitPct ?? 0,
+      stopLossPct: row.parameters?.stopLossPct ?? 0,
+      netPnL: row.metrics?.netPnL ?? 0,
+      netReturnPct: row.metrics?.netReturnPct ?? 0,
+      winRate: row.metrics?.winRate ?? 0,
+      profitFactor: typeof row.metrics?.profitFactor === 'number' ? row.metrics.profitFactor : 0,
+      maxDrawdown: row.metrics?.maxDrawdown ?? 0,
+    }));
+
+    return mapped.sort((a, b) => {
+      const { field, direction } = optSort;
+      let valA = (a as any)[field];
+      let valB = (b as any)[field];
+      if (valA === undefined || valA === null) valA = '';
+      if (valB === undefined || valB === null) valB = '';
+      let cmp = 0;
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        cmp = valA - valB;
+      } else {
+        cmp = String(valA).localeCompare(String(valB));
+      }
+      return direction === 'asc' ? cmp : -cmp;
+    });
+  }, [optResults, optSort]);
+
+  const renderSortHeader = (
+    label: string,
+    field: string,
+    currentSort: { field: string; direction: 'asc' | 'desc' },
+    onSort: (field: string) => void,
+    align: 'left' | 'right' | 'center' = 'left',
+    extraClass: string = ''
+  ) => {
+    const isActive = currentSort.field === field;
+    return (
+      <th
+        onClick={() => onSort(field)}
+        className={`p-3.5 cursor-pointer select-none group transition-colors hover:text-white ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'} ${extraClass}`}
+        title={`Click to sort by ${label}`}
+      >
+        <div className={`inline-flex items-center gap-1.5 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'}`}>
+          <span>{label}</span>
+          <span className={`text-[11px] font-mono transition-all ${isActive ? 'text-accentBrand font-black opacity-100' : 'text-gray-600 opacity-40 group-hover:opacity-100'}`}>
+            {isActive ? (currentSort.direction === 'asc' ? '▲' : '▼') : '↕'}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
+  // VWAP & Index detection
+  const isVwapUsed = /\bvwap\b/i.test(code) || (validation?.indicators?.some(ind => ind.type?.toLowerCase() === 'vwap') ?? false);
+  const isIndexSymbol = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'SENSEX', 'MIDCPNIFTY'].includes(symbol.toUpperCase());
+  const isVwapOnIndex = isVwapUsed && isIndexSymbol;
+
 
   // 2. Validate User Code
   const handleValidateCode = async () => {
@@ -149,42 +480,6 @@ SL = 12%
       });
     } finally {
       setIsValidating(false);
-    }
-  };
-
-  // 3. Save Custom Strategy
-  const handleSaveStrategy = async () => {
-    if (!token) {
-      alert("Please log in to save custom strategies to your account.");
-      return;
-    }
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/custom-strategy/save`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: strategyName,
-          code,
-          symbol,
-          timeframe,
-          moneyness,
-          lot_size: lotSize,
-          tp_pct: tpPct,
-          sl_pct: slPct
-        })
-      });
-      if (res.ok) {
-        setSaveSuccessMsg("Strategy saved successfully!");
-        setTimeout(() => setSaveSuccessMsg(""), 3000);
-      } else {
-        const err = await res.json();
-        alert(`Error saving strategy: ${err.detail || 'Failed'}`);
-      }
-    } catch (e: any) {
-      alert(`Network error: ${e.message}`);
     }
   };
 
@@ -379,7 +674,7 @@ SL = 12%
             
             {/* Top Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-borderClr/40 pb-4">
-              <div className="flex-1 min-w-[220px]">
+              <div className="flex-1 min-w-[200px]">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
                   Strategy Name
                 </label>
@@ -391,8 +686,8 @@ SL = 12%
                 />
               </div>
 
-              {/* Template Selector */}
-              <div className="min-w-[200px]">
+              {/* Template Presets */}
+              <div className="min-w-[190px]">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
                   Load Template Preset
                 </label>
@@ -401,29 +696,102 @@ SL = 12%
                   onChange={(e) => handleSelectPreset(e.target.value)}
                   className="w-full bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-amber-300 font-semibold focus:outline-none focus:border-accentBrand"
                 >
-                  <option value="">-- Select a Preset --</option>
+                  <option value="">-- Built-in Presets --</option>
                   {presets.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>
 
+              {/* My Saved Custom Strategies Library */}
+              <div className="min-w-[220px]">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1">
+                    <FolderHeart className="w-3 h-3" />
+                    <span>My Saved Strategies ({savedStrategies.length})</span>
+                  </label>
+                  {selectedSavedId && (
+                    <button
+                      onClick={(e) => handleDeleteSavedStrategy(selectedSavedId, e)}
+                      title="Delete this saved strategy"
+                      className="text-[10px] text-red-400 hover:text-red-300 font-bold flex items-center gap-0.5 transition-colors"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" /> Delete
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={selectedSavedId}
+                  onChange={(e) => handleSelectSavedStrategy(e.target.value)}
+                  className="w-full bg-black/40 border border-pink-500/30 rounded-lg px-3 py-1.5 text-xs text-pink-300 font-semibold focus:outline-none focus:border-pink-500"
+                >
+                  <option value="">-- {savedStrategies.length > 0 ? "Select Saved Strategy" : "No saved strategies yet"} --</option>
+                  {savedStrategies.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      ★ {s.name} ({s.symbol || 'BANKNIFTY'} {s.timeframe || '5m'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Save / Update Strategy Button */}
               <div className="flex items-end gap-2">
                 <button
-                  onClick={handleSaveStrategy}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-borderClr rounded-lg text-xs font-bold transition-all"
-                  title="Save to database"
+                  onClick={handleOpenSaveModal}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-accentBrand hover:bg-accentBrand/90 text-white rounded-lg text-xs font-bold transition-all shadow-md"
+                  title="Save or update custom strategy"
                 >
-                  <Save className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Save</span>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{selectedSavedId ? "Update / Save As" : "Save Strategy"}</span>
                 </button>
                 {saveSuccessMsg && (
-                  <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                  <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
                     <Check className="w-3 h-3" /> {saveSuccessMsg}
                   </span>
                 )}
               </div>
             </div>
+
+            {/* VWAP on Index Warning Banner */}
+            {isVwapOnIndex && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-3 shadow-lg">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-bold text-amber-200 flex items-center gap-2">
+                    <span>VWAP Traded Volume Notice</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                      {symbol} is a Spot Index
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-amber-300/80 mt-1 leading-relaxed">
+                    Spot indices (<strong>{symbol}</strong>, NIFTY, BANKNIFTY) do not have exchange-traded volume in spot cash feeds. 
+                    VWAP calculates as an intraday cumulative typical price average proxy. For true institutional volume-weighted VWAP, 
+                    select high-volume F&O equity stocks or trade index futures contracts.
+                  </div>
+                  <div className="flex items-center gap-2 mt-2.5">
+                    <span className="text-[10px] font-bold text-gray-400">Switch to Volume Stock:</span>
+                    <button
+                      onClick={() => setSymbol('RELIANCE')}
+                      className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold transition-all"
+                    >
+                      RELIANCE
+                    </button>
+                    <button
+                      onClick={() => setSymbol('HDFCBANK')}
+                      className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold transition-all"
+                    >
+                      HDFCBANK
+                    </button>
+                    <button
+                      onClick={() => setSymbol('SBIN')}
+                      className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold transition-all"
+                    >
+                      SBIN
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Code Textarea */}
             <div className="relative flex flex-col flex-1">
@@ -544,16 +912,24 @@ SL = 12%
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 block mb-1">Index / Underlying</label>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">
+                    Index / Underlying
+                    {isVwapOnIndex && (
+                      <span className="ml-1 text-[9px] text-amber-400 font-normal">⚠️ Spot (No Vol)</span>
+                    )}
+                  </label>
                   <select
                     value={symbol}
                     onChange={(e) => setSymbol(e.target.value)}
                     className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-accentBrand"
                   >
-                    <option value="BANKNIFTY">BANKNIFTY</option>
-                    <option value="NIFTY">NIFTY</option>
-                    <option value="FINNIFTY">FINNIFTY</option>
-                    <option value="SENSEX">SENSEX</option>
+                    {SYMBOL_OPTIONS.map((grp) => (
+                      <optgroup key={grp.group} label={grp.group}>
+                        {grp.items.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </div>
 
@@ -694,20 +1070,20 @@ SL = 12%
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-black/40 border-b border-borderClr text-gray-400 uppercase font-bold text-[10px] tracking-wider">
-                    <th className="p-3.5">Symbol</th>
-                    <th className="p-3.5">Signal</th>
-                    <th className="p-3.5">Trigger Time</th>
-                    <th className="p-3.5">Spot Price</th>
-                    <th className="p-3.5 text-cyan-400">Target Option Contract</th>
-                    <th className="p-3.5">Est. Premium</th>
-                    <th className="p-3.5">Lot Size</th>
+                    {renderSortHeader('Symbol', 'symbol', scannerSort, handleScannerSort)}
+                    {renderSortHeader('Signal', 'direction', scannerSort, handleScannerSort)}
+                    {renderSortHeader('Trigger Time', 'triggerTime', scannerSort, handleScannerSort)}
+                    {renderSortHeader('Spot Price', 'spotPrice', scannerSort, handleScannerSort)}
+                    {renderSortHeader('Target Option Contract', 'contractName', scannerSort, handleScannerSort, 'left', 'text-cyan-400')}
+                    {renderSortHeader('Est. Premium', 'estimatedPremium', scannerSort, handleScannerSort)}
+                    {renderSortHeader('Lot Size', 'lotSize', scannerSort, handleScannerSort)}
                     <th className="p-3.5">Key Indicators</th>
                     <th className="p-3.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-borderClr/30">
-                  {scanResults.length > 0 ? (
-                    scanResults.map((sig, idx) => {
+                  {sortedScanResults.length > 0 ? (
+                    sortedScanResults.map((sig, idx) => {
                       const isCe = sig.direction === 'BULLISH_CE';
                       return (
                         <tr key={idx} className="hover:bg-white/5 transition-colors">
@@ -782,16 +1158,24 @@ SL = 12%
           <div className="bg-cardClr border border-borderClr rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-4">
               <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">Index</label>
+                <label className="text-[10px] font-bold text-gray-400 block mb-1">
+                  Underlying Instrument
+                  {isVwapOnIndex && (
+                    <span className="ml-1 text-[9px] text-amber-400 font-normal">⚠️ Spot Proxy</span>
+                  )}
+                </label>
                 <select
                   value={symbol}
                   onChange={(e) => setSymbol(e.target.value)}
                   className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold"
                 >
-                  <option value="BANKNIFTY">BANKNIFTY</option>
-                  <option value="NIFTY">NIFTY</option>
-                  <option value="FINNIFTY">FINNIFTY</option>
-                  <option value="SENSEX">SENSEX</option>
+                  {SYMBOL_OPTIONS.map((grp) => (
+                    <optgroup key={grp.group} label={grp.group}>
+                      {grp.items.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
 
@@ -938,26 +1322,26 @@ SL = 12%
                   <h3 className="text-xs font-black uppercase tracking-wider text-gray-400">
                     Detailed Trades Log ({backtestResults.trades.length})
                   </h3>
-                  <span className="text-xs text-gray-500">Intraday Black-Scholes Option Model</span>
+                  <span className="text-xs text-gray-500">Click headers to sort trades • Intraday Black-Scholes Model</span>
                 </div>
                 <div className="overflow-x-auto max-h-96">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-black/80 z-10 border-b border-borderClr text-gray-400 uppercase font-bold text-[10px]">
                       <tr>
-                        <th className="p-3">#</th>
-                        <th className="p-3">Direction</th>
-                        <th className="p-3">Entry Time</th>
-                        <th className="p-3">Exit Time</th>
-                        <th className="p-3">Strike & Type</th>
-                        <th className="p-3">Entry Prem</th>
-                        <th className="p-3">Exit Prem</th>
-                        <th className="p-3">Exit Reason</th>
-                        <th className="p-3">Duration</th>
-                        <th className="p-3 text-right">Net PnL (₹)</th>
+                        {renderSortHeader('#', 'tradeId', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Direction', 'direction', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Entry Time', 'entryDate', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Exit Time', 'exitDate', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Strike & Type', 'strike', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Entry Prem', 'entryPrice', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Exit Prem', 'exitPrice', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Exit Reason', 'exitReason', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Duration', 'duration', tradeSort, handleTradeSort)}
+                        {renderSortHeader('Net PnL (₹)', 'netPnL', tradeSort, handleTradeSort, 'right')}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-borderClr/30">
-                      {backtestResults.trades.map((t: any) => (
+                      {sortedTrades.map((t: any) => (
                         <tr key={t.tradeId} className="hover:bg-white/5 font-mono">
                           <td className="p-3 text-gray-400">{t.tradeId}</td>
                           <td className="p-3 font-sans">
@@ -1110,21 +1494,21 @@ SL = 12%
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-black/40 border-b border-borderClr text-gray-400 uppercase font-bold text-[10px]">
-                    <th className="p-3">Rank</th>
-                    <th className="p-3">Moneyness</th>
-                    <th className="p-3 text-emerald-400">Take Profit</th>
-                    <th className="p-3 text-red-400">Stop Loss</th>
-                    <th className="p-3 text-right">Net Return (₹)</th>
-                    <th className="p-3 text-right">Net Return (%)</th>
-                    <th className="p-3 text-right">Win Rate</th>
-                    <th className="p-3 text-right">Profit Factor</th>
-                    <th className="p-3 text-right">Max DD</th>
+                    {renderSortHeader('Rank', 'rank', optSort, handleOptSort)}
+                    {renderSortHeader('Moneyness', 'moneyness', optSort, handleOptSort)}
+                    {renderSortHeader('Take Profit', 'takeProfitPct', optSort, handleOptSort, 'left', 'text-emerald-400')}
+                    {renderSortHeader('Stop Loss', 'stopLossPct', optSort, handleOptSort, 'left', 'text-red-400')}
+                    {renderSortHeader('Net Return (₹)', 'netPnL', optSort, handleOptSort, 'right')}
+                    {renderSortHeader('Net Return (%)', 'netReturnPct', optSort, handleOptSort, 'right')}
+                    {renderSortHeader('Win Rate', 'winRate', optSort, handleOptSort, 'right')}
+                    {renderSortHeader('Profit Factor', 'profitFactor', optSort, handleOptSort, 'right')}
+                    {renderSortHeader('Max DD', 'maxDrawdown', optSort, handleOptSort, 'right')}
                     <th className="p-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-borderClr/30">
-                  {optResults.length > 0 ? (
-                    optResults.map((row, idx) => {
+                  {sortedOptResults.length > 0 ? (
+                    sortedOptResults.map((row, idx) => {
                       const p = row.parameters;
                       const m = row.metrics;
                       const isTop = idx === 0;
@@ -1172,6 +1556,118 @@ SL = 12%
         </div>
       )}
 
+      {/* SAVE STRATEGY MODAL */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#111827] border border-borderClr rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-borderClr/60 flex items-center justify-between bg-black/40">
+              <div className="flex items-center gap-2">
+                <FolderHeart className="w-5 h-5 text-pink-400" />
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                  Save Custom Strategy
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 flex flex-col gap-4 text-xs">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1.5">
+                  Strategy Name *
+                </label>
+                <input
+                  type="text"
+                  value={saveModalName}
+                  onChange={(e) => setSaveModalName(e.target.value)}
+                  placeholder="e.g., 5m High-Momentum VWAP Breakout"
+                  className="w-full bg-black/50 border border-borderClr rounded-xl px-3.5 py-2 text-white font-bold focus:outline-none focus:border-accentBrand"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1.5">
+                  Description / Strategy Notes (Optional)
+                </label>
+                <textarea
+                  value={saveModalDesc}
+                  onChange={(e) => setSaveModalDesc(e.target.value)}
+                  rows={3}
+                  placeholder="e.g., Runs on Reliance with RSI confirmation and 25% TP."
+                  className="w-full bg-black/50 border border-borderClr rounded-xl p-3 text-gray-300 focus:outline-none focus:border-accentBrand resize-none"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-black/40 border border-borderClr/60 grid grid-cols-3 gap-2 font-mono text-[11px]">
+                <div>
+                  <span className="text-gray-500 block text-[9px]">SYMBOL</span>
+                  <span className="text-white font-bold">{symbol}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">TIMEFRAME</span>
+                  <span className="text-white font-bold">{timeframe}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">MONEYNESS</span>
+                  <span className="text-cyan-300 font-bold">{moneyness}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">TAKE PROFIT</span>
+                  <span className="text-emerald-400 font-bold">+{tpPct}%</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">STOP LOSS</span>
+                  <span className="text-red-400 font-bold">-{slPct}%</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">LOTS</span>
+                  <span className="text-white font-bold">{lotSize}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-4 border-t border-borderClr/60 bg-black/40 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 rounded-xl text-gray-400 hover:text-white text-xs font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <div className="flex items-center gap-2">
+                {selectedSavedId && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => handleSaveCustomStrategy(true)}
+                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-borderClr rounded-xl text-xs font-bold transition-all"
+                  >
+                    Save As New
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => handleSaveCustomStrategy(false)}
+                  className="flex items-center gap-2 px-5 py-2 bg-accentBrand hover:bg-accentBrand/90 text-white rounded-xl text-xs font-bold transition-all shadow-lg"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? "Saving..." : selectedSavedId ? "Update Strategy" : "Save Strategy"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

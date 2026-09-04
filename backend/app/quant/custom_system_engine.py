@@ -58,7 +58,12 @@ def calc_sma(values: np.ndarray, period: int) -> np.ndarray:
     return s.rolling(window=period, min_periods=1).mean().to_numpy()
 
 def calc_vwap(df: pd.DataFrame) -> np.ndarray:
-    # Intraday VWAP reset daily
+    """
+    Intraday VWAP reset daily.
+    Note: For spot indices (NIFTY, BANKNIFTY, etc.) where spot traded volume is 0 or absent,
+    gracefully calculates the intraday cumulative typical price average (expanding TWAP proxy)
+    so indicator values remain in range instead of exploding.
+    """
     df_copy = df.copy()
     if 'timestamp' in df_copy.columns:
         df_copy['date'] = pd.to_datetime(df_copy['timestamp']).dt.date
@@ -66,13 +71,29 @@ def calc_vwap(df: pd.DataFrame) -> np.ndarray:
         df_copy['date'] = 1
     
     typical_price = (df_copy['high'] + df_copy['low'] + df_copy['close']) / 3.0
-    vol = df_copy['volume'].replace(0, 1)
-    df_copy['pv'] = typical_price * vol
+    df_copy['tp'] = typical_price
     
-    cum_pv = df_copy.groupby('date')['pv'].cumsum()
-    cum_vol = df_copy.groupby('date')['volume'].cumsum().replace(0, 1)
-    vwap = cum_pv / cum_vol
-    return vwap.to_numpy()
+    has_valid_volume = False
+    if 'volume' in df_copy.columns:
+        tot_vol = df_copy['volume'].fillna(0).sum()
+        if tot_vol > 0:
+            has_valid_volume = True
+            
+    if has_valid_volume:
+        vol = df_copy['volume'].fillna(0).astype(float)
+        df_copy['vol'] = vol
+        df_copy['pv'] = typical_price * vol
+        cum_pv = df_copy.groupby('date')['pv'].cumsum()
+        cum_vol = df_copy.groupby('date')['vol'].cumsum()
+        # Fallback to typical price where cumulative volume is 0
+        vwap = np.where(cum_vol > 0, cum_pv / np.maximum(cum_vol, 1e-9), typical_price)
+    else:
+        # Index / zero volume fallback: Cumulative Average of Typical Price per day
+        cum_pv = df_copy.groupby('date')['tp'].cumsum()
+        cum_count = df_copy.groupby('date').cumcount() + 1
+        vwap = (cum_pv / cum_count).to_numpy()
+
+    return np.nan_to_num(vwap, nan=typical_price.to_numpy())
 
 def calc_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
     n = len(close)

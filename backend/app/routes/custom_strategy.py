@@ -32,6 +32,13 @@ LOT_SIZES = {
     "SENSEX": 20,
     "FINNIFTY": 25,
     "MIDCPNIFTY": 75,
+    "RELIANCE": 250,
+    "HDFCBANK": 550,
+    "ICICIBANK": 700,
+    "SBIN": 750,
+    "TCS": 175,
+    "INFY": 400,
+    "TATAMOTORS": 1425,
 }
 
 STRIKE_ROUND_INTERVALS = {
@@ -40,7 +47,16 @@ STRIKE_ROUND_INTERVALS = {
     "SENSEX": 100,
     "FINNIFTY": 50,
     "MIDCPNIFTY": 25,
+    "RELIANCE": 20,
+    "HDFCBANK": 10,
+    "ICICIBANK": 10,
+    "SBIN": 5,
+    "TCS": 20,
+    "INFY": 10,
+    "TATAMOTORS": 10,
 }
+
+INDEX_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "MIDCPNIFTY", "^NSEI", "^NSEBANK"}
 
 VIX_TICKERS = {
     "NIFTY": "^INDIAVIX",
@@ -54,6 +70,7 @@ DEFAULT_PRESETS = [
         "id": "ema_crossover",
         "name": "⚡ 9/21 EMA Crossover + RSI Momentum",
         "description": "Trend scalper that enters on EMA 9/21 cross with RSI directional confirmation.",
+        "symbol": "BANKNIFTY",
         "timeframe": "5m",
         "moneyness": "ATM",
         "tp_pct": 25.0,
@@ -74,6 +91,7 @@ SL = 12%
         "id": "supertrend_scalper",
         "name": "🎯 Supertrend 10/3 Option Rider",
         "description": "Rides intraday index momentum using Supertrend and price action above/below EMA 20.",
+        "symbol": "BANKNIFTY",
         "timeframe": "5m",
         "moneyness": "ATM",
         "tp_pct": 30.0,
@@ -91,13 +109,15 @@ SL = 15%
     },
     {
         "id": "vwap_breakout",
-        "name": "🌊 VWAP Intraday Breakout + Volume",
-        "description": "Breakout scalper detecting aggressive institutional volume across daily VWAP.",
+        "name": "🌊 VWAP Intraday Breakout (F&O Stock / Volume)",
+        "description": "Breakout scalper detecting institutional volume across daily VWAP. Best on F&O stocks with real volume (RELIANCE, HDFCBANK).",
+        "symbol": "RELIANCE",
         "timeframe": "5m",
         "moneyness": "ATM",
         "tp_pct": 25.0,
         "sl_pct": 12.0,
         "code": """// === VWAP INTRADAY BREAKOUT ===
+// Note: VWAP requires traded volume. Best suited on F&O stocks (RELIANCE, etc.)
 // Bullish Entry (CALL Option):
 BUY_CE: Close crosses above VWAP and RSI(14) > 60 and Close > High[-1]
 
@@ -112,6 +132,7 @@ SL = 12%
         "id": "bollinger_blast",
         "name": "💥 Bollinger Band Volatility Blast",
         "description": "Catches explosive option moves when price expands outside Bollinger Bands.",
+        "symbol": "BANKNIFTY",
         "timeframe": "15m",
         "moneyness": "OTM1",
         "tp_pct": 35.0,
@@ -230,9 +251,19 @@ def validate_custom_code(req: ValidateCodeRequest):
         }
 
     # Fetch recent candles for dry-run
-    symbol_upper = req.symbol.upper()
+    symbol_upper = req.symbol.upper() if req.symbol else "BANKNIFTY"
     interval_int = int(req.timeframe.replace("m", "").replace("min", "")) if "m" in req.timeframe else 5
     
+    # Check VWAP on spot index
+    vwap_used = ("vwap" in req.code.lower()) or any(ind.get("type", "").lower() == "vwap" for ind in parsed.get("indicators", []))
+    vwap_warning = None
+    if vwap_used and symbol_upper in INDEX_SYMBOLS:
+        vwap_warning = (
+            f"Spot index '{symbol_upper}' does not have exchange-traded volume in cash spot feeds. "
+            f"VWAP operates as an intraday typical price average proxy. For true volume-weighted VWAP, "
+            f"apply to liquid F&O stocks (e.g. RELIANCE, HDFCBANK, SBIN, TCS, INFY) or Index Futures."
+        )
+
     try:
         raw_candles = market_service.get_historical_intraday_candles(
             symbol=symbol_upper,
@@ -253,7 +284,8 @@ def validate_custom_code(req: ValidateCodeRequest):
                 "valid": False,
                 "error": f"Evaluation Error during test run: {str(e)}",
                 "indicators": parsed.get("indicators", []),
-                "recentTriggers": 0
+                "recentTriggers": 0,
+                "vwapWarning": vwap_warning
             }
 
     return {
@@ -264,7 +296,8 @@ def validate_custom_code(req: ValidateCodeRequest):
         "buyPeExpr": parsed.get("buy_pe_expr", ""),
         "customParams": parsed.get("custom_params", {}),
         "recentTriggers": recent_triggers,
-        "sampleSignals": test_signals[-5:]
+        "sampleSignals": test_signals[-5:],
+        "vwapWarning": vwap_warning
     }
 
 
@@ -397,6 +430,17 @@ def backtest_custom_strategy(req: BacktestCustomRequest):
         lots=req.lots or 1
     )
 
+    # Check VWAP warning for spot index
+    vwap_used = ("vwap" in req.code.lower()) or any(ind.get("type", "").lower() == "vwap" for ind in parsed.get("indicators", []))
+    vwap_warning = None
+    if vwap_used and sym_upper in INDEX_SYMBOLS:
+        vwap_warning = (
+            f"Spot index '{sym_upper}' does not have exchange-traded volume in spot feeds. "
+            f"VWAP operated as an intraday typical price average proxy. For real volume-weighted VWAP, "
+            f"test on liquid F&O stocks (e.g. RELIANCE, HDFCBANK) or Index Futures."
+        )
+
+    results["vwapWarning"] = vwap_warning
     return results
 
 
@@ -541,3 +585,24 @@ async def get_saved_strategies(
     )
     configs = result.scalars().all()
     return configs
+
+
+@router.delete("/saved/{strategy_id}")
+async def delete_saved_strategy(
+    strategy_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Deletes a user's custom saved strategy."""
+    result = await db.execute(
+        select(CustomStrategyConfig).where(
+            CustomStrategyConfig.id == strategy_id,
+            CustomStrategyConfig.user_id == current_user.id
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    await db.delete(existing)
+    await db.commit()
+    return {"status": "deleted", "id": strategy_id}
