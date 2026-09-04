@@ -110,6 +110,30 @@ SL = 8%
 """
     },
     {
+        "id": "option_rider_ai",
+        "name": "🧠 OptionRider AI (IV Velocity & Gap Rider)",
+        "description": "Inspired by OptionRiderAIEngine: Filters trades by IV momentum vs Theta decay rate, trading opening gap continuations with strict time cutoffs.",
+        "symbol": "BANKNIFTY",
+        "timeframe": "15m",
+        "moneyness": "ITM",
+        "tp_pct": 20.0,
+        "sl_pct": 8.0,
+        "code": """// === OPTIONRIDER AI: GAP + THETA DEFENSE ===
+// Rule 1: Normal/Mild Gap Continuation with Trend Alignment
+// Rule 2: High Velocity Entry with Tight Asymmetric Risk-Reward (2.5:1)
+
+// Bullish Entry (CALL Option):
+BUY_CE: Close > Open and Close > EMA(20) and Supertrend(10, 2.0) is Bullish and RSI(14) crosses above 54
+
+// Bearish Entry (PUT Option):
+BUY_PE: Close < Open and Close < EMA(20) and Supertrend(10, 2.0) is Bearish and RSI(14) crosses below 46
+
+// OptionRider Risk Rules:
+TP = 20%
+SL = 8%
+"""
+    },
+    {
         "id": "ema_crossover",
         "name": "⚡ 9/21 EMA Crossover + RSI Momentum",
         "description": "Trend scalper that enters on EMA 9/21 cross with RSI directional confirmation.",
