@@ -5,7 +5,7 @@ import {
   Code2, Play, CheckCircle2, AlertTriangle, RefreshCw, Save, 
   Sliders, Activity, Zap, HelpCircle, FileCode, Check,
   Trash2, FolderHeart, X, ShieldCheck, TrendingUp, 
-  ArrowUpRight, Scale, Clock, ShieldAlert
+  ArrowUpRight, Scale, Clock, ShieldAlert, Briefcase
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
@@ -78,7 +78,7 @@ const SYMBOL_OPTIONS = [
 ];
 
 export default function CustomStrategyStudio() {
-  const { token } = useStore();
+  const { token, fetchPortfolios } = useStore();
 
   // Sub-tabs
   const [subTab, setSubTab] = useState<'editor' | 'scanner' | 'backtest' | 'optimizer' | 'quant_read'>('editor');
@@ -88,6 +88,31 @@ export default function CustomStrategyStudio() {
   const [quantData, setQuantData] = useState<any | null>(null);
   const [isQuantLoading, setIsQuantLoading] = useState<boolean>(false);
   const [quantError, setQuantError] = useState<string | null>(null);
+
+  // Paper Trade & Live Execution Modal state
+  const [orderModalData, setOrderModalData] = useState<{
+    isOpen: boolean;
+    type: 'ETF' | 'SPREAD';
+    broker: 'paper' | 'dhan';
+    name: string;
+    symbol: string;
+    description: string;
+    qty: number;
+    lotSize: number;
+    legs: any[];
+    margin: number;
+    maxProfit: string;
+    maxLoss: string;
+    invalidation: string;
+  } | null>(null);
+
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+  const [orderSuccessBanner, setOrderSuccessBanner] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    portfolioId?: string;
+  } | null>(null);
 
   // Strategy configuration state
   const [strategyName, setStrategyName] = useState<string>("My Custom Strategy");
@@ -618,6 +643,143 @@ SL = 12%
       setQuantError(err.message || 'Failed to fetch quant read.');
     } finally {
       setIsQuantLoading(false);
+    }
+  };
+
+  // Paper Trade & Live Execution Handlers for Quant Hub
+  const handleOpenEtfOrder = () => {
+    if (!quantData) return;
+    const cmp = quantData.niftybees_track?.cmp || 273.40;
+    const defaultQty = 100;
+    const totalVal = Math.round(cmp * defaultQty);
+    
+    setOrderModalData({
+      isOpen: true,
+      type: 'ETF',
+      broker: 'paper',
+      name: 'NIFTYBEES Intraday Accumulation',
+      symbol: 'NIFTYBEES',
+      description: `Support Buy Zone: ${quantData.niftybees_track?.buy_zone_str} (Zero Time Decay)`,
+      qty: defaultQty,
+      lotSize: 1,
+      margin: totalVal,
+      maxProfit: `Target Zone: ${quantData.niftybees_track?.target_zone_str}`,
+      maxLoss: quantData.niftybees_track?.invalidation_str || 'Exit on support breakdown',
+      invalidation: quantData.niftybees_track?.invalidation_str || '',
+      legs: [
+        {
+          id: `bees_${Date.now()}`,
+          strike: 0.0,
+          optionType: 'F',
+          expiry: 'INTRADAY',
+          action: 'BUY',
+          quantity: defaultQty,
+          entryPrice: cmp,
+          currentPrice: cmp,
+          iv: 0.0
+        }
+      ]
+    });
+  };
+
+  const handleOpenSpreadOrder = () => {
+    if (!quantData) return;
+    const spread = quantData.defined_risk_spread;
+    const sym = quantData.symbol || 'NIFTY';
+    const lotMultiplier = spread.lot_size || (sym === 'NIFTY' ? 25 : 15);
+    const optType = spread.option_type || ('Call' in spread.spread_type ? 'C' : 'P');
+    const shortStrike = spread.short_strike || quantData.walls?.put_wall_strike || 23800;
+    const longStrike = spread.long_strike || (shortStrike - (sym === 'NIFTY' ? 100 : 200));
+    const shortPrem = spread.short_premium || 55.0;
+    const longPrem = spread.long_premium || 19.0;
+    const netCredit = spread.net_credit_pts || (shortPrem - longPrem);
+    const maxProf = spread.max_profit_lot || (netCredit * lotMultiplier);
+    const maxRisk = spread.max_risk_lot || ((Math.abs(shortStrike - longStrike) - netCredit) * lotMultiplier);
+    const spreadMargin = spread.spread_margin || 28500;
+
+    setOrderModalData({
+      isOpen: true,
+      type: 'SPREAD',
+      broker: 'paper',
+      name: `${sym} ${spread.spread_type}`,
+      symbol: sym,
+      description: `Net Credit: +${netCredit} pts | Margin ~₹${spreadMargin.toLocaleString()}`,
+      qty: 1, // 1 lot
+      lotSize: lotMultiplier,
+      margin: spreadMargin,
+      maxProfit: `+₹${maxProf.toLocaleString()} (${netCredit} pts credit)`,
+      maxLoss: `-₹${maxRisk.toLocaleString()} (Capped Risk)`,
+      invalidation: quantData.action_plan?.invalidation || '',
+      legs: [
+        {
+          id: `leg_${Date.now()}_short`,
+          strike: shortStrike,
+          optionType: optType,
+          expiry: 'WEEKLY',
+          action: 'SELL',
+          quantity: lotMultiplier,
+          entryPrice: shortPrem,
+          currentPrice: shortPrem,
+          iv: 14.5
+        },
+        {
+          id: `leg_${Date.now()}_long`,
+          strike: longStrike,
+          optionType: optType,
+          expiry: 'WEEKLY',
+          action: 'BUY',
+          quantity: lotMultiplier,
+          entryPrice: longPrem,
+          currentPrice: longPrem,
+          iv: 15.0
+        }
+      ]
+    });
+  };
+
+  const handleConfirmOrder = async () => {
+    if (!orderModalData) return;
+    setIsSubmittingOrder(true);
+    try {
+      const multiplier = orderModalData.type === 'ETF' ? 1 : (orderModalData.qty || 1);
+      const updatedLegs = orderModalData.legs.map(l => ({
+        ...l,
+        quantity: orderModalData.type === 'ETF' ? orderModalData.qty : (orderModalData.lotSize * multiplier)
+      }));
+
+      const response = await fetch(`${BACKEND_URL}/api/portfolio/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          broker: orderModalData.broker,
+          name: orderModalData.name,
+          symbol: orderModalData.symbol,
+          description: orderModalData.description,
+          legs: updatedLegs
+        })
+      });
+
+      const resData = await response.json();
+      if (response.ok && resData.status === 'success') {
+        await fetchPortfolios();
+        const placedBroker = orderModalData.broker.toUpperCase();
+        setOrderModalData(null);
+        setOrderSuccessBanner({
+          show: true,
+          title: `Trade Executed in ${placedBroker} Trade Book!`,
+          message: `Successfully booked "${orderModalData.name}" with ${updatedLegs.length} leg(s). You can monitor live Greeks, margin and P&L in the Paper Portfolio Book.`,
+          portfolioId: resData.portfolio_id
+        });
+      } else {
+        alert(`Order Execution Error: ${resData.detail || 'Failed to place order.'}`);
+      }
+    } catch (err: any) {
+      alert(`Order submission error: ${err.message || err}`);
+    } finally {
+      setIsSubmittingOrder(false);
     }
   };
 
@@ -1883,10 +2045,11 @@ SL = 12%
                       {quantData.niftybees_track.invalidation_str}
                     </span>
                     <button
-                      onClick={() => alert(`Placing intraday NIFTYBEES order around ${quantData.niftybees_track.buy_zone_str} on Dhan broker.`)}
-                      className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                      onClick={handleOpenEtfOrder}
+                      className="px-3.5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-black transition-all shadow-lg flex items-center gap-2"
                     >
-                      <span>1-Click ETF Order</span>
+                      <Briefcase className="w-3.5 h-3.5" />
+                      <span>Paper Trade ETF</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -1976,10 +2139,11 @@ SL = 12%
                       Invalidation: <strong className="text-white">{quantData.action_plan.invalidation}</strong>
                     </span>
                     <button
-                      onClick={() => alert(`Applying ${quantData.defined_risk_spread.spread_type} to Broker Execution.`)}
-                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                      onClick={handleOpenSpreadOrder}
+                      className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-black transition-all shadow-lg flex items-center gap-2"
                     >
-                      <span>Deploy Spread</span>
+                      <Briefcase className="w-3.5 h-3.5" />
+                      <span>Paper Trade Spread</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -2173,6 +2337,254 @@ SL = 12%
                   <span>{isSaving ? "Saving..." : selectedSavedId ? "Update Strategy" : "Save Strategy"}</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PLACE ORDER IN PAPER TRADE BOOK MODAL */}
+      {orderModalData && orderModalData.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#111827] border border-borderClr rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-borderClr/60 flex items-center justify-between bg-black/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400">
+                  <Briefcase className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                    Place Trade in Paper Trade Book
+                  </h3>
+                  <p className="text-[11px] text-gray-400">
+                    Live virtual simulation book with real-time mark-to-market P&L tracking
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOrderModalData(null)}
+                className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 flex flex-col gap-4 text-xs max-h-[80vh] overflow-y-auto">
+              
+              {/* Execution Mode Selector */}
+              <div className="flex items-center justify-between p-1.5 bg-black/60 border border-borderClr rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setOrderModalData({ ...orderModalData, broker: 'paper' })}
+                  className={`flex-1 py-2 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                    orderModalData.broker === 'paper'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>📘 Paper Trade (Simulation)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderModalData({ ...orderModalData, broker: 'dhan' })}
+                  className={`flex-1 py-2 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                    orderModalData.broker === 'dhan'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-4 h-4" />
+                  <span>⚡ Live Broker (Dhan API)</span>
+                </button>
+              </div>
+
+              {/* Strategy Name & Description */}
+              <div className="p-3.5 bg-black/30 border border-borderClr/60 rounded-2xl flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-purple-400">Strategy Setup</span>
+                <div className="text-sm font-black text-white">{orderModalData.name}</div>
+                <div className="text-[11px] text-gray-400">{orderModalData.description}</div>
+              </div>
+
+              {/* Quantity / Lots Input */}
+              <div className="flex items-center justify-between p-3.5 bg-black/40 border border-borderClr/60 rounded-2xl">
+                <div>
+                  <span className="text-xs font-bold text-gray-200 block">
+                    {orderModalData.type === 'ETF' ? 'Number of ETF Shares' : 'Number of Spread Lots'}
+                  </span>
+                  <span className="text-[10px] text-gray-400">
+                    {orderModalData.type === 'ETF'
+                      ? `1 Share ≈ ₹${orderModalData.legs[0]?.entryPrice}`
+                      : `1 Lot = ${orderModalData.lotSize} Qty`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const step = orderModalData.type === 'ETF' ? 25 : 1;
+                      const next = Math.max(step, orderModalData.qty - step);
+                      setOrderModalData({ ...orderModalData, qty: next });
+                    }}
+                    className="w-8 h-8 rounded-xl bg-gray-800 hover:bg-gray-700 text-white font-bold flex items-center justify-center"
+                  >
+                    -
+                  </button>
+                  <span className="font-mono font-black text-white text-sm px-3">
+                    {orderModalData.qty} {orderModalData.type === 'ETF' ? 'Shares' : 'Lots'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const step = orderModalData.type === 'ETF' ? 25 : 1;
+                      const next = orderModalData.qty + step;
+                      setOrderModalData({ ...orderModalData, qty: next });
+                    }}
+                    className="w-8 h-8 rounded-xl bg-gray-800 hover:bg-gray-700 text-white font-bold flex items-center justify-center"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Legs Table */}
+              <div className="border border-borderClr/60 rounded-2xl overflow-hidden">
+                <div className="p-2.5 bg-black/50 border-b border-borderClr/60 text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                  <span>Order Legs</span>
+                  <span>{orderModalData.legs.length} Leg(s)</span>
+                </div>
+                <div className="divide-y divide-borderClr/40 font-mono">
+                  {orderModalData.legs.map((leg, idx) => {
+                    const totalQty = orderModalData.type === 'ETF' 
+                      ? orderModalData.qty 
+                      : (orderModalData.lotSize * orderModalData.qty);
+                    return (
+                      <div key={idx} className="p-3 bg-black/20 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                            leg.action === 'BUY'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          }`}>
+                            {leg.action}
+                          </span>
+                          <div>
+                            <span className="text-white font-bold">
+                              {leg.strike > 0 ? `${leg.strike} ${leg.optionType === 'C' ? 'CE' : 'PE'}` : orderModalData.symbol}
+                            </span>
+                            <span className="text-[10px] text-gray-400 block font-sans">
+                              {leg.expiry} Expiry
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-white font-bold">₹{leg.entryPrice}</span>
+                          <span className="text-[10px] text-gray-400 block">
+                            Qty: {totalQty}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Financial Risk & Reward Summary */}
+              <div className="p-4 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/30 rounded-2xl flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Capital / Margin Required:</span>
+                  <span className="font-mono font-black text-emerald-400 text-sm">
+                    ₹{((orderModalData.margin || 28500) * (orderModalData.type === 'ETF' ? (orderModalData.qty / 100) : orderModalData.qty)).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Max Profit Potential:</span>
+                  <span className="font-mono font-bold text-white text-xs">{orderModalData.maxProfit}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Risk Profile:</span>
+                  <span className="font-mono font-bold text-red-300 text-xs">{orderModalData.maxLoss}</span>
+                </div>
+                {orderModalData.invalidation && (
+                  <div className="pt-2 border-t border-borderClr/40 flex items-center justify-between text-[11px]">
+                    <span className="text-gray-400">Invalidation Rule:</span>
+                    <span className="text-amber-400 font-bold">{orderModalData.invalidation}</span>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-4 border-t border-borderClr/60 bg-black/40 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setOrderModalData(null)}
+                className="px-4 py-2 rounded-xl text-gray-400 hover:text-white text-xs font-bold transition-colors"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={isSubmittingOrder}
+                onClick={handleConfirmOrder}
+                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-black transition-all shadow-xl disabled:opacity-50"
+              >
+                {isSubmittingOrder ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Booking Trade...</span>
+                  </>
+                ) : (
+                  <>
+                    <Briefcase className="w-3.5 h-3.5" />
+                    <span>Confirm & Book in {orderModalData.broker.toUpperCase()} Book</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ORDER SUCCESS NOTIFICATION MODAL */}
+      {orderSuccessBanner && orderSuccessBanner.show && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#111827] border border-emerald-500/40 rounded-3xl w-full max-w-md shadow-2xl p-6 flex flex-col items-center text-center gap-4">
+            <div className="p-3 bg-emerald-500/20 text-emerald-400 rounded-2xl border border-emerald-500/30">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            
+            <div>
+              <h3 className="text-base font-black text-white">{orderSuccessBanner.title}</h3>
+              <p className="text-xs text-gray-300 mt-2 leading-relaxed">
+                {orderSuccessBanner.message}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 w-full mt-2">
+              <button
+                type="button"
+                onClick={() => setOrderSuccessBanner(null)}
+                className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-bold transition-all"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderSuccessBanner(null);
+                  window.location.hash = 'portfolios';
+                }}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black transition-all shadow-lg flex items-center justify-center gap-1.5"
+              >
+                <span>View Paper Book</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>

@@ -439,6 +439,11 @@ def analyze_quant_market(
     
     credit_spread_data = {
         "spread_type": spread_type,
+        "option_type": "C" if "Call" in spread_type else "P",
+        "short_strike": short_strike,
+        "long_strike": long_strike,
+        "short_premium": short_prem,
+        "long_premium": long_prem,
         "short_leg": f"Sell {short_strike} {'CE' if 'Call' in spread_type else 'PE'} @ ₹{short_prem}",
         "long_leg": f"Buy {long_strike} {'CE' if 'Call' in spread_type else 'PE'} @ ₹{long_prem} (Hedge)",
         "net_credit_pts": net_credit,
