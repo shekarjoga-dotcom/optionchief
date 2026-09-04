@@ -15,8 +15,20 @@ Key Pillars:
 """
 
 import math
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Dict, List, Any, Optional
+
+def get_next_weekly_expiry(sym: str = "NIFTY") -> str:
+    """Calculates upcoming weekly expiry date string in YYYY-MM-DD format."""
+    now = datetime.now()
+    sym_upper = (sym or "NIFTY").upper()
+    # Target weekday: NIFTY/FINNIFTY Thursday=3, BANKNIFTY Wednesday=2, SENSEX Friday=4
+    target_day = 2 if "BANK" in sym_upper else (4 if "SENSEX" in sym_upper else 3)
+    days_ahead = target_day - now.weekday()
+    if days_ahead < 0 or (days_ahead == 0 and (now.hour > 15 or (now.hour == 15 and now.minute >= 30))):
+        days_ahead += 7
+    exp = now + timedelta(days=days_ahead)
+    return exp.strftime("%Y-%m-%d")
 
 def calculate_atr(candles: List[Any], period: int = 14) -> float:
     """Calculates Wilder's ATR(14) from historical candles (dicts or floats)."""
@@ -440,6 +452,7 @@ def analyze_quant_market(
     credit_spread_data = {
         "spread_type": spread_type,
         "option_type": "C" if "Call" in spread_type else "P",
+        "expiry": get_next_weekly_expiry(sym),
         "short_strike": short_strike,
         "long_strike": long_strike,
         "short_premium": short_prem,

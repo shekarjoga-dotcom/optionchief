@@ -338,7 +338,7 @@ export const PortfolioManager: React.FC = () => {
   const getPortfolioStats = (p: SavedPortfolio) => {
     const activeSpot = (underlying && p.symbol.toUpperCase() === symbol.toUpperCase()) 
       ? underlying.spot 
-      : (p.legs[0]?.strike || 100);
+      : (p.legs[0]?.strike > 0 ? p.legs[0]?.strike : (p.legs[0]?.currentPrice || p.legs[0]?.entryPrice || 100));
 
     let totalUnrealizedPnL = 0;
     for (const leg of p.legs) {
@@ -468,8 +468,8 @@ export const PortfolioManager: React.FC = () => {
     const metrics = stats.metrics;
     const activeSpot = stats.spotPrice;
 
-    // Check Expiry
-    const isExpired = p.legs.some(l => isContractExpired(l.expiry));
+    // Check Expiry (only C/P option contracts expire; F/ETF/Stock legs do not)
+    const isExpired = p.legs.length > 0 && p.legs.some(l => (l.optionType === 'C' || l.optionType === 'P') && isContractExpired(l.expiry));
 
     // Check Target Profit
     const tpVal = p.takeProfit ?? 20.0;

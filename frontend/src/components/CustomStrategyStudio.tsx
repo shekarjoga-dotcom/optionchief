@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
 import { BACKEND_URL } from '../config';
+import { getNextWeeklyExpiry } from '../utils/optionsMath';
 import { 
   Code2, Play, CheckCircle2, AlertTriangle, RefreshCw, Save, 
   Sliders, Activity, Zap, HelpCircle, FileCode, Check,
@@ -78,7 +79,7 @@ const SYMBOL_OPTIONS = [
 ];
 
 export default function CustomStrategyStudio() {
-  const { token, fetchPortfolios } = useStore();
+  const { token, fetchPortfolios, selectedExpiry, expiryDates } = useStore();
 
   // Sub-tabs
   const [subTab, setSubTab] = useState<'editor' | 'scanner' | 'backtest' | 'optimizer' | 'quant_read'>('editor');
@@ -687,7 +688,7 @@ SL = 12%
     const spread = quantData.defined_risk_spread;
     const sym = quantData.symbol || 'NIFTY';
     const lotMultiplier = spread.lot_size || (sym === 'NIFTY' ? 25 : 15);
-    const optType = spread.option_type || ('Call' in spread.spread_type ? 'C' : 'P');
+    const optType = spread.option_type || (spread.spread_type?.includes('Call') ? 'C' : 'P');
     const shortStrike = spread.short_strike || quantData.walls?.put_wall_strike || 23800;
     const longStrike = spread.long_strike || (shortStrike - (sym === 'NIFTY' ? 100 : 200));
     const shortPrem = spread.short_premium || 55.0;
@@ -696,6 +697,7 @@ SL = 12%
     const maxProf = spread.max_profit_lot || (netCredit * lotMultiplier);
     const maxRisk = spread.max_risk_lot || ((Math.abs(shortStrike - longStrike) - netCredit) * lotMultiplier);
     const spreadMargin = spread.spread_margin || 28500;
+    const expiryDate = spread.expiry || selectedExpiry || (expiryDates && expiryDates.length > 0 ? expiryDates[0] : getNextWeeklyExpiry(sym));
 
     setOrderModalData({
       isOpen: true,
@@ -703,7 +705,7 @@ SL = 12%
       broker: 'paper',
       name: `${sym} ${spread.spread_type}`,
       symbol: sym,
-      description: `Net Credit: +${netCredit} pts | Margin ~₹${spreadMargin.toLocaleString()}`,
+      description: `Net Credit: +${netCredit} pts | Margin ~₹${spreadMargin.toLocaleString()} | Exp: ${expiryDate}`,
       qty: 1, // 1 lot
       lotSize: lotMultiplier,
       margin: spreadMargin,
@@ -715,23 +717,23 @@ SL = 12%
           id: `leg_${Date.now()}_short`,
           strike: shortStrike,
           optionType: optType,
-          expiry: 'WEEKLY',
+          expiry: expiryDate,
           action: 'SELL',
           quantity: lotMultiplier,
           entryPrice: shortPrem,
           currentPrice: shortPrem,
-          iv: 14.5
+          iv: 0.145
         },
         {
           id: `leg_${Date.now()}_long`,
           strike: longStrike,
           optionType: optType,
-          expiry: 'WEEKLY',
+          expiry: expiryDate,
           action: 'BUY',
           quantity: lotMultiplier,
           entryPrice: longPrem,
           currentPrice: longPrem,
-          iv: 15.0
+          iv: 0.150
         }
       ]
     });
@@ -764,6 +766,32 @@ SL = 12%
 
       const resData = await response.json();
       if (response.ok && resData.status === 'success') {
+        // Immediate local store registration so the trade appears in Paper Trade Book without delay
+        const newPortfolioObj = {
+          id: resData.portfolio_id || `port_${Date.now()}`,
+          name: `${orderModalData.broker === 'paper' ? 'Paper:' : orderModalData.broker === 'dhan' ? 'Live (Dhan):' : 'Live (Kotak):'} ${orderModalData.name}`,
+          symbol: orderModalData.symbol,
+          description: orderModalData.description,
+          legs: updatedLegs,
+          createdAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+          marginDeployed: orderModalData.margin,
+          realizedPnL: 0.0,
+          entrySpot: quantData?.spot || 0.0,
+          peakProfit: 0.0,
+          maxDrawdown: 0.0,
+          takeProfit: 20.0,
+          stopLoss: 0.0
+        };
+        const currentPorts = useStore.getState().portfolios;
+        if (!currentPorts.some(p => p.id === newPortfolioObj.id)) {
+          const updatedPorts = [newPortfolioObj as any, ...currentPorts];
+          useStore.setState({ portfolios: updatedPorts });
+          const userPhone = useStore.getState().user?.phone_number || "guest";
+          try {
+            localStorage.setItem(`options_oracle_portfolios_${userPhone}`, JSON.stringify(updatedPorts));
+          } catch (e) {}
+        }
+
         await fetchPortfolios();
         const placedBroker = orderModalData.broker.toUpperCase();
         setOrderModalData(null);

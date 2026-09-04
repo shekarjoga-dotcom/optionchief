@@ -21,9 +21,46 @@ export function pdfNormal(x: number): number {
   return (1.0 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x);
 }
 
+/**
+ * Computes next upcoming weekly expiry date string in YYYY-MM-DD format.
+ * - NIFTY / FINNIFTY: Thursday (day 4)
+ * - BANKNIFTY: Wednesday (day 3)
+ * - SENSEX: Friday (day 5)
+ */
+export function getNextWeeklyExpiry(sym = 'NIFTY'): string {
+  const now = new Date();
+  const upper = (sym || 'NIFTY').toUpperCase();
+  let targetDay = 4; // Thursday default
+  if (upper.includes('BANK')) targetDay = 3;
+  else if (upper.includes('SENSEX') || upper.includes('BSE')) targetDay = 5;
+
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let diff = targetDay - d.getDay();
+  // If today is targetDay and past 15:30 IST, or already passed target day this week, move to next week
+  if (diff < 0 || (diff === 0 && (now.getHours() > 15 || (now.getHours() === 15 && now.getMinutes() >= 30)))) {
+    diff += 7;
+  }
+  d.setDate(d.getDate() + diff);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Robust date parsing to prevent browser-specific NaN parsing errors (e.g., Safari with dashes)
 export function parseExpiryDate(dateStr: string): Date {
   if (!dateStr) return new Date();
+  const upper = dateStr.trim().toUpperCase();
+  if (['INTRADAY', 'EQUITY', 'PERPETUAL', 'ETF'].includes(upper)) {
+    // Non-expiring contracts - return a far future date (e.g. 1 year) so time decay doesn't close them
+    const future = new Date();
+    future.setFullYear(future.getFullYear() + 1);
+    return future;
+  }
+  if (upper === 'WEEKLY' || upper === 'MONTHLY') {
+    return new Date(getNextWeeklyExpiry());
+  }
+
   const d = new Date(dateStr);
   if (!isNaN(d.getTime())) return d;
 
@@ -50,7 +87,16 @@ export function parseExpiryDate(dateStr: string): Date {
 
 export function isContractExpired(dateStr: string): boolean {
   if (!dateStr) return false;
+  const upper = dateStr.trim().toUpperCase();
+  if (['INTRADAY', 'EQUITY', 'PERPETUAL', 'ETF', 'WEEKLY', 'MONTHLY'].includes(upper)) {
+    return false;
+  }
+  // If string contains no numbers at all, it cannot be a real date
+  if (!/\d/.test(dateStr)) {
+    return false;
+  }
   const d = parseExpiryDate(dateStr);
+  if (!d || isNaN(d.getTime())) return false;
   const now = new Date();
   // Expiry cutoff is 15:30 IST on the expiry day
   const cutoff = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 15, 30, 0);
@@ -212,8 +258,9 @@ export function calculateLegPrice(
   const remainingDays = Math.max(0, totalDays - daysPassed);
   const T = remainingDays / 365.0;
   
-  // Calculate leg-specific volatility (fallback to default 16% IV if missing/zero)
-  const ivBase = (leg.iv && leg.iv > 0) ? leg.iv : 0.16;
+  // Calculate leg-specific volatility (auto-normalize percentages like 14.5 to decimal 0.145)
+  const ivRaw = (leg.iv && leg.iv > 0) ? leg.iv : 0.16;
+  const ivBase = ivRaw > 2.0 ? (ivRaw / 100.0) : ivRaw;
   const legIv = Math.max(0.01, ivBase * (1 + ivOffsetPct / 100.0));
 
   return bsPricing(spotPrice, leg.strike, T, r, legIv, leg.optionType);
@@ -408,8 +455,9 @@ export function projectStrategy(
 
     const remainingDays = Math.max(0, totalDays - daysPassed);
     const T = remainingDays / 365.0;
-    // Fallback to default 16% IV if missing/zero
-    const ivBase = (leg.iv && leg.iv > 0) ? leg.iv : 0.16;
+    // Auto-normalize percentages like 14.5 to decimal 0.145
+    const ivRaw = (leg.iv && leg.iv > 0) ? leg.iv : 0.16;
+    const ivBase = ivRaw > 2.0 ? (ivRaw / 100.0) : ivRaw;
     const legIv = Math.max(0.01, ivBase * (1 + ivOffsetPct / 100.0));
 
     const greeks = bsGreeks(spotPrice, leg.strike, T, r, legIv, leg.optionType);
