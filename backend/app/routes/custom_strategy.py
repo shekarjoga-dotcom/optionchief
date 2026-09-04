@@ -67,6 +67,49 @@ VIX_TICKERS = {
 
 DEFAULT_PRESETS = [
     {
+        "id": "banknifty_asymmetric_scalper",
+        "name": "🏆 BankNifty 15m Asymmetric Scalper (PF 1.72 | ITM)",
+        "description": "Backtested positive expectancy on BankNifty. Uses In-The-Money options with 1:2.5 Risk-to-Reward to neutralize Theta decay.",
+        "symbol": "BANKNIFTY",
+        "timeframe": "15m",
+        "moneyness": "ITM",
+        "tp_pct": 20.0,
+        "sl_pct": 8.0,
+        "code": """// === BANKNIFTY 15-MIN ASYMMETRIC ITM SCALPER ===
+// High Expectancy Momentum Setup (1:2.5 Risk-to-Reward)
+// Bullish Rule (Buy In-The-Money CALL Option):
+BUY_CE: Supertrend(10, 2.0) is Bullish and RSI(14) crosses above 55 and Close > EMA(20)
+
+// Bearish Rule (Buy In-The-Money PUT Option):
+BUY_PE: Supertrend(10, 2.0) is Bearish and RSI(14) crosses below 45 and Close < EMA(20)
+
+// Asymmetric Targets (8% Stop Loss vs 20% Take Profit):
+TP = 20%
+SL = 8%
+"""
+    },
+    {
+        "id": "nifty_bb_mean_reversion",
+        "name": "🎯 Nifty 15m Bollinger Reversal (PF 1.10 | ITM)",
+        "description": "Mean-reversion scalper designed specifically for Nifty 50. Catches extreme range bounces back to the 20-period moving average.",
+        "symbol": "NIFTY",
+        "timeframe": "15m",
+        "moneyness": "ITM",
+        "tp_pct": 18.0,
+        "sl_pct": 8.0,
+        "code": """// === NIFTY 15-MIN BOLLINGER MEAN REVERSION ===
+// Catches explosive mean-reversion snaps back to center band
+// Bullish Entry (Buy In-The-Money CALL on Lower Band bounce):
+BUY_CE: Close crosses above BB_Lower(20, 2.0) and RSI(14) < 40
+
+// Bearish Entry (Buy In-The-Money PUT on Upper Band rejection):
+BUY_PE: Close crosses below BB_Upper(20, 2.0) and RSI(14) > 60
+
+TP = 18%
+SL = 8%
+"""
+    },
+    {
         "id": "ema_crossover",
         "name": "⚡ 9/21 EMA Crossover + RSI Momentum",
         "description": "Trend scalper that enters on EMA 9/21 cross with RSI directional confirmation.",

@@ -348,12 +348,13 @@ class CustomRuleParser:
             s = re.sub(r'\[\s*-2\s*\]\s*(?:\d+\s*(?:minute|min|hour|day)\s*)?', 'PREV2_', s, flags=re.IGNORECASE)
 
             # Crosses from Bearish to Bullish / Bullish to Bearish
-            s = re.sub(r'([A-Za-z0-9_]+)(?:\.Direction)?\s+crosses\s+from\s+Bearish\s+to\s+Bullish', r'CROSS_ABOVE(\1, 0)', s, flags=re.IGNORECASE)
-            s = re.sub(r'([A-Za-z0-9_]+)(?:\.Direction)?\s+crosses\s+from\s+Bullish\s+to\s+Bearish', r'CROSS_BELOW(\1, 0)', s, flags=re.IGNORECASE)
+            s = re.sub(r'([A-Za-z0-9_]+(?:\([^\)]*\))?)(?:\.Direction)?\s+crosses\s+from\s+Bearish\s+to\s+Bullish', r'CROSS_ABOVE(\1, 0)', s, flags=re.IGNORECASE)
+            s = re.sub(r'([A-Za-z0-9_]+(?:\([^\)]*\))?)(?:\.Direction)?\s+crosses\s+from\s+Bullish\s+to\s+Bearish', r'CROSS_BELOW(\1, 0)', s, flags=re.IGNORECASE)
 
             # Standard crosses above / below
-            s = re.sub(r'([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)\s+crosses\s+above\s+([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)', r'CROSS_ABOVE(\1, \2)', s, flags=re.IGNORECASE)
-            s = re.sub(r'([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)\s+crosses\s+below\s+([A-Za-z0-9_\(\),\.\*\+\-\/\[\]]+)', r'CROSS_BELOW(\1, \2)', s, flags=re.IGNORECASE)
+            TERM_PAT = r'([A-Za-z0-9_]+(?:\([^\)]*\))?(?:\[[^\]]*\])?)'
+            s = re.sub(TERM_PAT + r'\s+crosses\s+above\s+' + TERM_PAT, r'CROSS_ABOVE(\1, \2)', s, flags=re.IGNORECASE)
+            s = re.sub(TERM_PAT + r'\s+crosses\s+below\s+' + TERM_PAT, r'CROSS_BELOW(\1, \2)', s, flags=re.IGNORECASE)
 
             # .Direction and Bullish / Bearish states
             s = re.sub(r'\.Direction\s*==\s*Bullish', ' == 1', s, flags=re.IGNORECASE)
