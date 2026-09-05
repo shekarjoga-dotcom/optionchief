@@ -819,6 +819,8 @@ SL = 12%
           tpRange: optTpRange,
           slRange: optSlRange,
           moneynessRange: optMoneynessRange,
+          chartTarget,
+          optionStrikesRange,
           objective: optObjective
         })
       });
@@ -2168,103 +2170,174 @@ SL = 12%
         <div className="flex flex-col gap-6">
           
           {/* Backtest Control Card */}
-          <div className="bg-cardClr border border-borderClr rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">
-                  Underlying Instrument
-                  {isVwapOnIndex && (
-                    <span className="ml-1 text-[9px] text-amber-400 font-normal">⚠️ Spot Proxy</span>
-                  )}
-                </label>
-                <select
-                  value={symbol}
-                  onChange={(e) => setSymbol(e.target.value)}
-                  className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold"
-                >
-                  {SYMBOL_OPTIONS.map((grp) => (
-                    <optgroup key={grp.group} label={grp.group}>
-                      {grp.items.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+          <div className="bg-cardClr border border-borderClr rounded-xl p-5 flex flex-col gap-4 shadow-xl">
+            {/* Chart Target Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-borderClr/40">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-accentBrand" />
+                  <span>Backtest Chart Target:</span>
+                </span>
+                <div className="flex items-center bg-black/60 p-0.5 rounded-lg border border-borderClr">
+                  <button
+                    type="button"
+                    onClick={() => setChartTarget('SPOT')}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      chartTarget === 'SPOT'
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📈 Spot Index Chart</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChartTarget('OPTION_CHARTS');
+                      setScanAssetClass('OPTIONS');
+                      if (['NIFTYBEES', 'BANKBEES', 'ETF', 'EQUITY'].includes(moneyness)) {
+                        setMoneyness('ATM');
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      chartTarget === 'OPTION_CHARTS'
+                        ? 'bg-purple-500/25 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-500/20'
+                        : 'text-gray-400 hover:text-purple-300'
+                    }`}
+                  >
+                    <span>🎯 Direct Option Charts (ATM & Nearby)</span>
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold"
-                >
-                </input>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold"
-                >
-                </input>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">Initial Capital</label>
-                <input
-                  type="number"
-                  value={initialCapital}
-                  onChange={(e) => setInitialCapital(parseFloat(e.target.value) || 100000)}
-                  className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold w-28"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">
-                  Execution Instrument
-                  {(moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF') && (
-                    <span className="ml-1 text-[9px] text-emerald-400 font-bold">⚡ Zero Decay</span>
-                  )}
-                </label>
-                <select
-                  value={moneyness}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setMoneyness(val);
-                    if (val === 'NIFTYBEES' || val === 'BANKBEES' || val === 'ETF') {
-                      if (tpPct >= 10) setTpPct(2.0);
-                      if (slPct >= 5) setSlPct(0.8);
-                    }
-                  }}
-                  className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-cyan-300 font-bold"
-                >
-                  <optgroup label="Index ETFs (Zero Time Decay)">
-                    <option value="NIFTYBEES">NIFTYBEES ETF</option>
-                    <option value="BANKBEES">BANKBEES ETF</option>
-                  </optgroup>
-                  <optgroup label="Index Options (Greeks / Decay)">
-                    <option value="ATM">ATM Options</option>
-                    <option value="OTM1">OTM 1 Strike</option>
-                    <option value="OTM2">OTM 2 Strikes</option>
-                    <option value="ITM">ITM 1 Strike</option>
-                  </optgroup>
-                </select>
-              </div>
+              {chartTarget === 'OPTION_CHARTS' && (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5 text-xs text-purple-300 font-bold">
+                    <span>Strikes:</span>
+                    <select
+                      value={optionStrikesRange}
+                      onChange={(e) => setOptionStrikesRange(e.target.value as any)}
+                      className="bg-black/60 border border-purple-500/40 rounded-lg px-2.5 py-1 text-xs text-purple-200 font-bold focus:outline-none"
+                    >
+                      <option value="ATM">ATM Only (ATM CE & PE)</option>
+                      <option value="ATM_1">ATM ± 1 Strike [Recommended]</option>
+                      <option value="ATM_2">ATM ± 2 Strikes (5 Strikes)</option>
+                    </select>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-amber-400" />
+                    <span>Dhan API / Option Engine</span>
+                  </span>
+                </div>
+              )}
             </div>
 
-            <button
-              onClick={handleRunBacktest}
-              disabled={isBacktesting}
-              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
-            >
-              {isBacktesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              <span>{isBacktesting ? 'Simulating Trades...' : 'Run Historical Backtest'}</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">
+                    Underlying Instrument
+                    {isVwapOnIndex && (
+                      <span className="ml-1 text-[9px] text-amber-400 font-normal">⚠️ Spot Proxy</span>
+                    )}
+                  </label>
+                  <select
+                    value={symbol}
+                    onChange={(e) => setSymbol(e.target.value)}
+                    className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold"
+                  >
+                    {SYMBOL_OPTIONS.map((grp) => (
+                      <optgroup key={grp.group} label={grp.group}>
+                        {grp.items.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">Initial Capital</label>
+                  <input
+                    type="number"
+                    value={initialCapital}
+                    onChange={(e) => setInitialCapital(parseFloat(e.target.value) || 100000)}
+                    className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold w-28"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">
+                    Execution Instrument
+                    {chartTarget === 'OPTION_CHARTS' ? (
+                      <span className="ml-1 text-[9px] text-purple-400 font-bold">🎯 Direct Charts</span>
+                    ) : (moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF') ? (
+                      <span className="ml-1 text-[9px] text-emerald-400 font-bold">⚡ Zero Decay</span>
+                    ) : null}
+                  </label>
+                  <select
+                    value={moneyness}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMoneyness(val);
+                      if (val === 'NIFTYBEES' || val === 'BANKBEES' || val === 'ETF') {
+                        setScanAssetClass('ETFS');
+                        setChartTarget('SPOT');
+                        if (tpPct >= 10) setTpPct(2.0);
+                        if (slPct >= 5) setSlPct(0.8);
+                      } else {
+                        setScanAssetClass('OPTIONS');
+                      }
+                    }}
+                    className="bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-cyan-300 font-bold"
+                  >
+                    <optgroup label="Index ETFs (Zero Time Decay)">
+                      <option value="NIFTYBEES">NIFTYBEES ETF</option>
+                      <option value="BANKBEES">BANKBEES ETF</option>
+                    </optgroup>
+                    <optgroup label="Index Options (Greeks / Decay)">
+                      <option value="ATM">ATM Options</option>
+                      <option value="OTM1">OTM 1 Strike</option>
+                      <option value="OTM2">OTM 2 Strikes</option>
+                      <option value="ITM">ITM 1 Strike</option>
+                    </optgroup>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                onClick={handleRunBacktest}
+                disabled={isBacktesting}
+                className={`flex items-center gap-2 px-6 py-2.5 text-white font-bold text-xs rounded-xl shadow-lg transition-all ${
+                  chartTarget === 'OPTION_CHARTS'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/30'
+                    : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+              >
+                {isBacktesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                <span>{isBacktesting ? 'Simulating Option Trades...' : (chartTarget === 'OPTION_CHARTS' ? 'Backtest Option Charts 🚀' : 'Run Historical Backtest')}</span>
+              </button>
+            </div>
           </div>
 
           {backtestError && (
@@ -2368,7 +2441,7 @@ SL = 12%
                     Detailed Trades Log ({backtestResults.trades.length})
                   </h3>
                   <span className="text-xs text-gray-500">
-                    Click headers to sort trades • {moneyness.includes('BEES') || moneyness === 'ETF' ? 'Direct ETF Spot Tracking (Zero Time Decay)' : 'Intraday Black-Scholes Model'}
+                    Click headers to sort trades • {backtestResults.chartTarget === 'OPTION_CHARTS' || chartTarget === 'OPTION_CHARTS' ? '🎯 Direct Option Premium Charts (Dhan API / Scrip Master)' : (moneyness.includes('BEES') || moneyness === 'ETF' ? 'Direct ETF Spot Tracking (Zero Time Decay)' : 'Intraday Black-Scholes Model')}
                   </span>
                 </div>
                 <div className="overflow-x-auto max-h-96">
@@ -2390,6 +2463,7 @@ SL = 12%
                     <tbody className="divide-y divide-borderClr/30">
                       {sortedTrades.map((t: any) => {
                         const isEtf = t.optionType === 'ETF' || String(t.strike).includes('BEES');
+                        const isOptionChart = t.chartSource === 'OPTION_CHART';
                         return (
                           <tr key={t.tradeId} className="hover:bg-white/5 font-mono">
                             <td className="p-3 text-gray-400">{t.tradeId}</td>
@@ -2405,7 +2479,18 @@ SL = 12%
                             <td className="p-3 text-gray-300 text-[11px]">{t.entryDate}</td>
                             <td className="p-3 text-gray-300 text-[11px]">{t.exitDate}</td>
                             <td className="p-3 font-bold text-white">
-                              {isEtf ? `${t.strike}` : `${t.strike} ${t.optionType}`}
+                              {isEtf ? (
+                                `${t.strike}`
+                              ) : isOptionChart ? (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span>{t.contractName || `${t.strike} ${t.optionType}`}</span>
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                    OPTION CHART
+                                  </span>
+                                </div>
+                              ) : (
+                                `${t.strike} ${t.optionType}`
+                              )}
                             </td>
                             <td className="p-3">₹{t.entryPrice}</td>
                             <td className="p-3">₹{t.exitPrice}</td>
@@ -2451,62 +2536,124 @@ SL = 12%
             </button>
           </div>
 
-          {/* Target Scale Mode Switcher & Explanation */}
+          {/* Target Scale Mode & Chart Target Switcher */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-cardClr border border-borderClr rounded-xl p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-xs font-bold text-gray-300">Target Scaling Mode:</span>
-              <div className="flex items-center gap-1.5 bg-black/50 p-1 rounded-xl border border-borderClr">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOptScaleMode('etf');
-                    if (!optMoneynessRange.some(m => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(m))) {
-                      setOptMoneynessRange(['NIFTYBEES']);
-                    }
-                    if (optTpRange.some(v => v >= 10)) {
-                      setOptTpRange([1.0, 1.5, 2.0, 2.5]);
-                    }
-                    if (optSlRange.some(v => v >= 5)) {
-                      setOptSlRange([0.5, 0.8, 1.0]);
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    optScaleMode === 'etf'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>⚡ ETF Fractional Mode (0.3% – 5.0%)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOptScaleMode('options');
-                    if (optMoneynessRange.every(m => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(m))) {
-                      setOptMoneynessRange(['ATM', 'OTM1']);
-                    }
-                    if (optTpRange.some(v => v < 5)) {
-                      setOptTpRange([15, 25, 35]);
-                    }
-                    if (optSlRange.some(v => v < 3)) {
-                      setOptSlRange([10, 15, 20]);
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    optScaleMode === 'options'
-                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <Sliders className="w-3.5 h-3.5 text-purple-400" />
-                  <span>🎯 Options Leveraged Mode (10% – 50%)</span>
-                </button>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-300">Sweep Target:</span>
+                <div className="flex items-center bg-black/60 p-0.5 rounded-lg border border-borderClr">
+                  <button
+                    type="button"
+                    onClick={() => setChartTarget('SPOT')}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      chartTarget === 'SPOT'
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📈 Spot Index</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChartTarget('OPTION_CHARTS');
+                      setOptScaleMode('options');
+                      if (optMoneynessRange.every(m => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(m))) {
+                        setOptMoneynessRange(['ATM', 'ATM_1', 'ATM_2']);
+                      }
+                      if (optTpRange.some(v => v < 5)) {
+                        setOptTpRange([15, 25, 35]);
+                      }
+                      if (optSlRange.some(v => v < 3)) {
+                        setOptSlRange([10, 15, 20]);
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      chartTarget === 'OPTION_CHARTS'
+                        ? 'bg-purple-500/25 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-500/20'
+                        : 'text-gray-400 hover:text-purple-300'
+                    }`}
+                  >
+                    <span>🎯 Direct Option Charts (Dhan API)</span>
+                  </button>
+                </div>
               </div>
+
+              {chartTarget === 'OPTION_CHARTS' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-purple-300">Strikes Range:</span>
+                  <select
+                    value={optionStrikesRange}
+                    onChange={(e) => setOptionStrikesRange(e.target.value as any)}
+                    className="bg-black/60 border border-purple-500/40 rounded-lg px-2.5 py-1 text-xs text-purple-200 font-bold focus:outline-none"
+                  >
+                    <option value="ATM">ATM Only</option>
+                    <option value="ATM_1">ATM ± 1 Strike</option>
+                    <option value="ATM_2">ATM ± 2 Strikes</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-gray-300">Scaling:</span>
+                  <div className="flex items-center gap-1.5 bg-black/50 p-1 rounded-xl border border-borderClr">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOptScaleMode('etf');
+                        if (!optMoneynessRange.some(m => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(m))) {
+                          setOptMoneynessRange(['NIFTYBEES']);
+                        }
+                        if (optTpRange.some(v => v >= 10)) {
+                          setOptTpRange([1.0, 1.5, 2.0, 2.5]);
+                        }
+                        if (optSlRange.some(v => v >= 5)) {
+                          setOptSlRange([0.5, 0.8, 1.0]);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        optScaleMode === 'etf'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>⚡ ETF Fractional Mode (0.3% – 5.0%)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOptScaleMode('options');
+                        if (optMoneynessRange.every(m => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(m))) {
+                          setOptMoneynessRange(['ATM', 'OTM1']);
+                        }
+                        if (optTpRange.some(v => v < 5)) {
+                          setOptTpRange([15, 25, 35]);
+                        }
+                        if (optSlRange.some(v => v < 3)) {
+                          setOptSlRange([10, 15, 20]);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        optScaleMode === 'options'
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                      <span>🎯 Options Leveraged Mode (10% – 50%)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="text-[11px] text-gray-400 max-w-xl">
-              {optScaleMode === 'etf' ? (
+              {chartTarget === 'OPTION_CHARTS' ? (
+                <span className="text-purple-300 flex items-center gap-1.5 font-medium">
+                  <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Sweeping direct Call & Put premium candles from <strong>Dhan HQ APIs</strong> across ATM and nearby strikes.</span>
+                </span>
+              ) : optScaleMode === 'etf' ? (
                 <span className="text-emerald-300 flex items-center gap-1.5">
                   <span className="font-extrabold text-emerald-400">⚡ ZERO THETA DECAY:</span>
                   Index ETFs track index spot 1:1. Realistic targets are fractional percentages (0.5% – 3.0%).
@@ -2663,65 +2810,100 @@ SL = 12%
                 </span>
               </div>
               <div className="flex flex-col gap-2.5">
-                <div>
-                  <span className="text-[9px] text-emerald-400 font-bold block mb-1">Index ETFs (Zero Decay):</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["NIFTYBEES", "BANKBEES"].map((m) => {
-                      const active = optMoneynessRange.includes(m);
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => {
-                            const next = active ? optMoneynessRange.filter(x => x !== m) : [...optMoneynessRange, m];
-                            setOptMoneynessRange(next);
-                            const hasOptions = next.some(x => !['NIFTYBEES', 'BANKBEES', 'ETF'].includes(x));
-                            if (!active && !hasOptions) {
-                              setOptScaleMode('etf');
-                              if (optTpRange.some(v => v >= 10)) setOptTpRange([1.0, 1.5, 2.0, 2.5]);
-                              if (optSlRange.some(v => v >= 5)) setOptSlRange([0.5, 0.8, 1.0]);
-                            }
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
-                            active ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow' : 'bg-black/30 text-gray-500 border-borderClr'
-                          }`}
-                        >
-                          {m}
-                        </button>
-                      );
-                    })}
+                {chartTarget === 'OPTION_CHARTS' ? (
+                  <div>
+                    <span className="text-[9px] text-purple-300 font-bold block mb-1">Option Strikes to Sweep:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { key: "ATM", label: "ATM Only" },
+                        { key: "ATM_1", label: "ATM ± 1" },
+                        { key: "ATM_2", label: "ATM ± 2" },
+                        { key: "OTM1", label: "OTM 1" },
+                        { key: "OTM2", label: "OTM 2" },
+                        { key: "ITM", label: "ITM 1" },
+                      ].map((item) => {
+                        const active = optMoneynessRange.includes(item.key);
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => {
+                              const next = active ? optMoneynessRange.filter(x => x !== item.key) : [...optMoneynessRange, item.key];
+                              setOptMoneynessRange(next.length > 0 ? next : ["ATM"]);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                              active ? 'bg-purple-500/25 text-purple-200 border-purple-500/50 shadow' : 'bg-black/30 text-gray-500 border-borderClr'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div>
+                      <span className="text-[9px] text-emerald-400 font-bold block mb-1">Index ETFs (Zero Decay):</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {["NIFTYBEES", "BANKBEES"].map((m) => {
+                          const active = optMoneynessRange.includes(m);
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                const next = active ? optMoneynessRange.filter(x => x !== m) : [...optMoneynessRange, m];
+                                setOptMoneynessRange(next);
+                                const hasOptions = next.some(x => !['NIFTYBEES', 'BANKBEES', 'ETF'].includes(x));
+                                if (!active && !hasOptions) {
+                                  setOptScaleMode('etf');
+                                  if (optTpRange.some(v => v >= 10)) setOptTpRange([1.0, 1.5, 2.0, 2.5]);
+                                  if (optSlRange.some(v => v >= 5)) setOptSlRange([0.5, 0.8, 1.0]);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                                active ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow' : 'bg-black/30 text-gray-500 border-borderClr'
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                <div>
-                  <span className="text-[9px] text-gray-400 font-bold block mb-1">Options (Leveraged):</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["ITM", "ATM", "OTM1", "OTM2"].map((m) => {
-                      const active = optMoneynessRange.includes(m);
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => {
-                            const next = active ? optMoneynessRange.filter(x => x !== m) : [...optMoneynessRange, m];
-                            setOptMoneynessRange(next);
-                            const hasEtfs = next.some(x => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(x));
-                            if (!active && !hasEtfs) {
-                              setOptScaleMode('options');
-                              if (optTpRange.some(v => v < 5)) setOptTpRange([15, 25, 35]);
-                              if (optSlRange.some(v => v < 3)) setOptSlRange([10, 15, 20]);
-                            }
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
-                            active ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40' : 'bg-black/30 text-gray-500 border-borderClr'
-                          }`}
-                        >
-                          {m}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                    <div>
+                      <span className="text-[9px] text-gray-400 font-bold block mb-1">Options (Leveraged):</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {["ITM", "ATM", "OTM1", "OTM2"].map((m) => {
+                          const active = optMoneynessRange.includes(m);
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                const next = active ? optMoneynessRange.filter(x => x !== m) : [...optMoneynessRange, m];
+                                setOptMoneynessRange(next);
+                                const hasEtfs = next.some(x => ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(x));
+                                if (!active && !hasEtfs) {
+                                  setOptScaleMode('options');
+                                  if (optTpRange.some(v => v < 5)) setOptTpRange([15, 25, 35]);
+                                  if (optSlRange.some(v => v < 3)) setOptSlRange([10, 15, 20]);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                                active ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40' : 'bg-black/30 text-gray-500 border-borderClr'
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -2781,11 +2963,15 @@ SL = 12%
                           <td className="p-3 font-bold text-cyan-300">
                             <div className="flex items-center gap-1.5">
                               <span>{p.moneyness}</span>
-                              {['NIFTYBEES', 'BANKBEES', 'ETF'].includes(p.moneyness) && (
+                              {chartTarget === 'OPTION_CHARTS' ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                  OPT CHART
+                                </span>
+                              ) : ['NIFTYBEES', 'BANKBEES', 'ETF'].includes(p.moneyness) ? (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                                   ETF
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                           <td className="p-3 text-emerald-400 font-bold font-mono">+{p.takeProfitPct}%</td>

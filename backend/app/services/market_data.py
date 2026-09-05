@@ -1523,6 +1523,105 @@ class MarketDataService:
                 
         return candles
 
+    def get_historical_option_candles(
+        self,
+        symbol: str,
+        strike: float,
+        option_type: str,
+        interval: int = 5,
+        from_date: str = "",
+        to_date: str = "",
+        spot_candles: Optional[list] = None
+    ) -> list:
+        """
+        Fetches historical intraday option candlestick charts (OHLCV).
+        Attempts to fetch real option candles via Dhan HQ API if configured,
+        or falls back seamlessly to high-fidelity Black-Scholes option candle synthesis.
+        Results are cached locally.
+        """
+        symbol_clean = self._clean_symbol(symbol)
+        opt_type = "CE" if option_type.upper().startswith("C") else "PE"
+        cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "intraday_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"opt_{symbol_clean}_{int(strike)}_{opt_type}_{interval}m_{from_date}_{to_date}.json")
+        
+        # 1. Check disk cache
+        if os.path.exists(cache_file):
+            import time, json
+            file_age = time.time() - os.path.getmtime(cache_file)
+            if file_age < 86400 or (from_date and to_date):
+                try:
+                    with open(cache_file, "r") as f:
+                        cached = json.load(f)
+                    if cached:
+                        return cached
+                except Exception:
+                    pass
+
+        candles = []
+
+        # 2. If Dhan is enabled, attempt to download real option candles from Dhan
+        if self.is_dhan_enabled:
+            try:
+                sec_id = None
+                if hasattr(self, "get_dhan_option_security_id"):
+                    expiries = self._get_valid_expiries(symbol_clean)
+                    nearest_exp = expiries[0] if expiries else None
+                    if nearest_exp:
+                        sec_id = self.get_dhan_option_security_id(symbol_clean, strike, opt_type, nearest_exp)
+
+                if sec_id:
+                    print(f"[Dhan API] Fetching historical option data for {symbol_clean} {int(strike)} {opt_type} (sec_id: {sec_id})...")
+                    resp = self.dhan.intraday_minute_data(
+                        security_id=sec_id,
+                        exchange_segment="NSE_FNO",
+                        instrument_type="OPTIDX",
+                        from_date=from_date,
+                        to_date=to_date,
+                        interval=interval
+                    )
+                    if resp and resp.get("status") == "success":
+                        raw_candles = resp.get("data", {}).get("candles", [])
+                        if raw_candles:
+                            print(f"[Dhan API] Successfully downloaded {len(raw_candles)} option candles for {symbol_clean} {int(strike)} {opt_type}.")
+                            for rc in raw_candles:
+                                try:
+                                    dt = datetime.fromtimestamp(rc[0]) if isinstance(rc[0], (int, float)) else pd.to_datetime(rc[0])
+                                    candles.append({
+                                        "timestamp": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                                        "open": float(rc[1]),
+                                        "high": float(rc[2]),
+                                        "low": float(rc[3]),
+                                        "close": float(rc[4]),
+                                        "volume": int(rc[5]) if len(rc) > 5 else 100
+                                    })
+                                except Exception:
+                                    pass
+            except Exception as e:
+                print(f"[Dhan API] Option candle fetch failed: {e}")
+
+        # 3. If candles still empty, synthesize using spot candles and build_option_chart_df
+        if not candles:
+            if not spot_candles:
+                spot_candles = self.get_historical_intraday_candles(symbol_clean, interval, from_date, to_date)
+            
+            if spot_candles:
+                from app.quant.custom_system_engine import build_option_chart_df
+                spot_df = pd.DataFrame(spot_candles)
+                opt_df = build_option_chart_df(spot_df, strike, opt_type)
+                candles = opt_df.to_dict(orient="records")
+
+        # 4. Save to cache
+        if candles:
+            try:
+                import json
+                with open(cache_file, "w") as f:
+                    json.dump(candles, f)
+            except Exception as e:
+                print(f"[Option Cache] Failed to write cache: {e}")
+
+        return candles
+
     def get_ticker_prices(self) -> dict:
         import time, gc
         now = time.time()

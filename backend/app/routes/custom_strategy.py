@@ -17,6 +17,7 @@ from app.quant.custom_system_engine import (
     CustomRuleParser,
     generate_custom_signals,
     run_custom_system_backtest,
+    run_option_chart_backtest,
     build_option_chart_df,
     bs_pricing
 )
@@ -341,6 +342,7 @@ class BacktestCustomRequest(BaseModel):
     lots: Optional[int] = 1
     slippagePerLeg: Optional[float] = 0.5
     chartTarget: Optional[str] = "SPOT"  # "SPOT" or "OPTION_CHARTS"
+    optionStrikesRange: Optional[str] = "ATM_1"  # "ATM", "ATM_1", "ATM_2"
 
 class OptimizeCustomRequest(BaseModel):
     symbol: str = "BANKNIFTY"
@@ -351,6 +353,8 @@ class OptimizeCustomRequest(BaseModel):
     tpRange: Optional[List[float]] = [15.0, 25.0, 35.0]
     slRange: Optional[List[float]] = [10.0, 15.0, 20.0]
     moneynessRange: Optional[List[str]] = ["ATM", "OTM1"]
+    chartTarget: Optional[str] = "SPOT"  # "SPOT" or "OPTION_CHARTS"
+    optionStrikesRange: Optional[str] = "ATM_1"  # "ATM", "ATM_1", "ATM_2"
     objective: Optional[str] = "netReturnPct"  # "netReturnPct", "winRate", "profitFactor", "maxDrawdown"
 
 class SaveStrategyRequest(BaseModel):
@@ -736,6 +740,25 @@ def backtest_custom_strategy(req: BacktestCustomRequest):
     tp = parsed["custom_params"].get("TP", req.takeProfitPct)
     sl = parsed["custom_params"].get("SL", req.stopLossPct)
 
+    chart_target = (req.chartTarget or "SPOT").upper()
+    if chart_target == "OPTION_CHARTS":
+        results = run_option_chart_backtest(
+            all_candles=raw_candles,
+            symbol=sym_upper,
+            buy_ce_expr=parsed["buy_ce_expr"],
+            buy_pe_expr=parsed["buy_pe_expr"],
+            take_profit_pct=tp,
+            stop_loss_pct=sl,
+            initial_capital=req.initialCapital or 100000.0,
+            slippage=req.slippagePerLeg or 0.5,
+            lot_multiplier=lot_multiplier,
+            strike_round=strike_round,
+            strikes_range=req.optionStrikesRange or "ATM_1",
+            lots=req.lots or 1
+        )
+        results["vwapWarning"] = None
+        return results
+
     results = run_custom_system_backtest(
         all_candles=raw_candles,
         vix_series=vix_series,
@@ -770,6 +793,7 @@ def backtest_custom_strategy(req: BacktestCustomRequest):
 def optimize_custom_strategy(req: OptimizeCustomRequest):
     """
     Sweeps TP, SL, and Moneyness parameter spaces for the user's custom strategy.
+    Supports both Spot Index and Direct Option Charts (ATM and nearby strikes).
     """
     sym_upper = req.symbol.upper()
     strike_round = STRIKE_ROUND_INTERVALS.get(sym_upper, 50)
@@ -795,33 +819,59 @@ def optimize_custom_strategy(req: OptimizeCustomRequest):
     sl_range = req.slRange or [10.0, 15.0, 20.0]
     moneyness_range = req.moneynessRange or ["ATM", "OTM1"]
 
+    chart_target = (req.chartTarget or "SPOT").upper()
     combinations = list(itertools.product(tp_range, sl_range, moneyness_range))
     results = []
 
-    for tp, sl, moneyness in combinations:
-        res = run_custom_system_backtest(
-            all_candles=raw_candles,
-            vix_series=vix_series,
-            symbol=sym_upper,
-            buy_ce_expr=parsed["buy_ce_expr"],
-            buy_pe_expr=parsed["buy_pe_expr"],
-            moneyness=moneyness,
-            take_profit_pct=tp,
-            stop_loss_pct=sl,
-            initial_capital=100000.0,
-            slippage=0.5,
-            lot_multiplier=lot_multiplier,
-            strike_round=strike_round,
-            lots=1
-        )
-        results.append({
-            "parameters": {
-                "takeProfitPct": tp,
-                "stopLossPct": sl,
-                "moneyness": moneyness
-            },
-            "metrics": res["metrics"]
-        })
+    if chart_target == "OPTION_CHARTS":
+        for tp, sl, moneyness in combinations:
+            res = run_option_chart_backtest(
+                all_candles=raw_candles,
+                symbol=sym_upper,
+                buy_ce_expr=parsed["buy_ce_expr"],
+                buy_pe_expr=parsed["buy_pe_expr"],
+                take_profit_pct=tp,
+                stop_loss_pct=sl,
+                initial_capital=100000.0,
+                slippage=0.5,
+                lot_multiplier=lot_multiplier,
+                strike_round=strike_round,
+                strikes_range=moneyness if moneyness in ["ATM", "ATM_1", "ATM_2"] else (req.optionStrikesRange or "ATM"),
+                lots=1
+            )
+            results.append({
+                "parameters": {
+                    "takeProfitPct": tp,
+                    "stopLossPct": sl,
+                    "moneyness": moneyness
+                },
+                "metrics": res["metrics"]
+            })
+    else:
+        for tp, sl, moneyness in combinations:
+            res = run_custom_system_backtest(
+                all_candles=raw_candles,
+                vix_series=vix_series,
+                symbol=sym_upper,
+                buy_ce_expr=parsed["buy_ce_expr"],
+                buy_pe_expr=parsed["buy_pe_expr"],
+                moneyness=moneyness,
+                take_profit_pct=tp,
+                stop_loss_pct=sl,
+                initial_capital=100000.0,
+                slippage=0.5,
+                lot_multiplier=lot_multiplier,
+                strike_round=strike_round,
+                lots=1
+            )
+            results.append({
+                "parameters": {
+                    "takeProfitPct": tp,
+                    "stopLossPct": sl,
+                    "moneyness": moneyness
+                },
+                "metrics": res["metrics"]
+            })
 
     obj = req.objective or "netReturnPct"
     def sort_key(item):
@@ -837,6 +887,7 @@ def optimize_custom_strategy(req: OptimizeCustomRequest):
     return {
         "objective": obj,
         "resultsCount": len(sorted_results),
+        "chartTarget": chart_target,
         "results": sorted_results[:50]
     }
 

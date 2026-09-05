@@ -1155,3 +1155,235 @@ def run_custom_system_backtest(
         "trades": trades_log,
         "equityCurve": equity_curve[::max(1, len(equity_curve) // 150)]
     }
+
+
+def run_option_chart_backtest(
+    all_candles: List[dict],
+    symbol: str,
+    buy_ce_expr: str,
+    buy_pe_expr: str,
+    take_profit_pct: Optional[float] = 25.0,
+    stop_loss_pct: Optional[float] = 15.0,
+    initial_capital: float = 100000.0,
+    slippage: float = 0.5,
+    lot_multiplier: int = 25,
+    strike_round: int = 50,
+    strikes_range: str = "ATM",
+    lots: int = 1
+) -> Dict[str, Any]:
+    """
+    Simulates trades by evaluating technical indicators directly on historical Option Premium Candlestick Charts (OHLCV).
+    ATM and nearby strike charts are generated or fetched via Dhan API / high-fidelity option model.
+    """
+    spot_df = pd.DataFrame(all_candles)
+    if len(spot_df) < 25:
+        return {
+            "metrics": {
+                "initialCapital": initial_capital, "finalCapital": initial_capital, "netPnL": 0.0,
+                "netReturnPct": 0.0, "winRate": 0.0, "profitFactor": 0.0, "maxDrawdown": 0.0,
+                "totalTrades": 0, "winningTrades": 0, "losingTrades": 0, "targetHits": 0, "slHits": 0,
+                "chartSource": "OPTION_CHARTS"
+            },
+            "trades": [], "equityCurve": []
+        }
+
+    # Group candles by trading day
+    spot_df['date'] = spot_df['timestamp'].apply(lambda x: str(x).split(' ')[0])
+    days = spot_df['date'].unique()
+
+    # Determine strike offsets
+    rng = (strikes_range or "ATM").upper()
+    if rng == "ATM_2":
+        offsets = [0, 1, -1, 2, -2]
+    elif rng == "ATM_1":
+        offsets = [0, 1, -1]
+    else:
+        offsets = [0]  # ATM only
+
+    capital = initial_capital
+    peak_capital = initial_capital
+    max_dd_val = 0.0
+    trades_log = []
+    equity_curve = []
+    holding_mins = []
+    target_hits = 0
+    sl_hits = 0
+    total_qty = max(1, lots) * lot_multiplier
+
+    current_trade = None
+
+    for day in days:
+        day_spot = spot_df[spot_df['date'] == day].reset_index(drop=True)
+        if len(day_spot) < 3:
+            continue
+        
+        # Determine ATM strike for this day
+        day_open = float(day_spot.iloc[0]['open'])
+        atm_strike = round(day_open / strike_round) * strike_round
+
+        # Generate / fetch option candlestick series for selected strikes
+        option_streams = []
+        for off in offsets:
+            call_strike = atm_strike + (off * strike_round)
+            call_label = "ATM" if off == 0 else (f"OTM{off}" if off > 0 else f"ITM{-off}")
+            call_df = build_option_chart_df(day_spot, call_strike, 'C')
+            call_signals = generate_custom_signals(call_df, buy_ce_expr, "")
+            call_sig_map = {s["timestamp"]: s for s in call_signals}
+            option_streams.append({
+                "type": "CE",
+                "strike": int(call_strike),
+                "label": call_label,
+                "contract_name": f"{symbol} {int(call_strike)} CE ({call_label} Option Chart)",
+                "df": call_df,
+                "sig_map": call_sig_map
+            })
+
+            put_strike = atm_strike - (off * strike_round)
+            put_label = "ATM" if off == 0 else (f"OTM{off}" if off > 0 else f"ITM{-off}")
+            put_df = build_option_chart_df(day_spot, put_strike, 'P')
+            pe_rule = buy_pe_expr if buy_pe_expr else buy_ce_expr
+            put_signals = generate_custom_signals(put_df, pe_rule, "")
+            put_sig_map = {s["timestamp"]: s for s in put_signals}
+            option_streams.append({
+                "type": "PE",
+                "strike": int(put_strike),
+                "label": put_label,
+                "contract_name": f"{symbol} {int(put_strike)} PE ({put_label} Option Chart)",
+                "df": put_df,
+                "sig_map": put_sig_map
+            })
+
+        # Step through intraday timestamps
+        for i in range(len(day_spot)):
+            ts = str(day_spot.iloc[i]['timestamp'])
+            time_part = ts.split(" ")[1]
+            h, m = map(int, time_part.split(":")[:2])
+            time_mins = h * 60 + m
+
+            # 1. Manage existing open trade
+            if current_trade is not None:
+                stream = current_trade["stream"]
+                opt_row = stream["df"].iloc[i]
+                opt_high = float(opt_row['high'])
+                opt_low = float(opt_row['low'])
+                opt_close = float(opt_row['close'])
+                entry_p = current_trade["entryPrice"]
+
+                exit_reason = None
+                exit_price = opt_close
+
+                # Check Target Hit on Option Premium
+                if take_profit_pct and take_profit_pct > 0:
+                    tgt_price = entry_p * (1.0 + take_profit_pct / 100.0)
+                    if opt_high >= tgt_price:
+                        exit_reason = f"Target Hit (+{take_profit_pct}%)"
+                        exit_price = tgt_price
+                        target_hits += 1
+
+                # Check Stop Loss on Option Premium
+                if exit_reason is None and stop_loss_pct and stop_loss_pct > 0:
+                    sl_price = entry_p * (1.0 - stop_loss_pct / 100.0)
+                    if opt_low <= sl_price:
+                        exit_reason = f"Stop Loss (-{stop_loss_pct}%)"
+                        exit_price = sl_price
+                        sl_hits += 1
+
+                # Check EOD Squareoff at 15:20
+                if exit_reason is None and time_mins >= (15 * 60 + 20):
+                    exit_reason = "Intraday EOD Squareoff"
+                    exit_price = opt_close
+
+                # If exited, log trade and update capital
+                if exit_reason is not None:
+                    trade_pnl = (exit_price - entry_p) * total_qty - (slippage * 2 * total_qty)
+                    capital += trade_pnl
+                    peak_capital = max(peak_capital, capital)
+                    dd = (peak_capital - capital) / peak_capital * 100.0
+                    max_dd_val = max(max_dd_val, dd)
+
+                    ent_dt = datetime.strptime(current_trade["entryTime"], "%Y-%m-%d %H:%M:%S")
+                    cur_dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                    dur_mins = max(5, int((cur_dt - ent_dt).total_seconds() / 60))
+                    holding_mins.append(dur_mins)
+
+                    trades_log.append({
+                        "tradeId": len(trades_log) + 1,
+                        "symbol": symbol,
+                        "direction": "BULLISH_CE" if current_trade["type"] == "CE" else "BULLISH_PE",
+                        "strategyName": f"Option Chart ({current_trade['label']})",
+                        "entryDate": current_trade["entryTime"],
+                        "exitDate": ts,
+                        "entrySpot": round(float(current_trade["entrySpot"]), 2),
+                        "exitSpot": round(float(day_spot.iloc[i]['close']), 2),
+                        "strike": current_trade["strike"],
+                        "optionType": current_trade["type"],
+                        "contractName": current_trade["contract_name"],
+                        "entryPrice": round(float(entry_p), 2),
+                        "exitPrice": round(float(exit_price), 2),
+                        "exitReason": exit_reason,
+                        "duration": f"{dur_mins} mins",
+                        "netPnL": round(float(trade_pnl), 2),
+                        "runningCapital": round(float(capital), 2),
+                        "chartSource": "OPTION_CHART"
+                    })
+                    current_trade = None
+
+            # 2. Look for new entry trigger if no open trade and between 09:20 and 15:00
+            if current_trade is None and (9 * 60 + 20) <= time_mins <= (15 * 60 + 0):
+                for stream in option_streams:
+                    if ts in stream["sig_map"]:
+                        opt_close = float(stream["df"].iloc[i]['close'])
+                        current_trade = {
+                            "entryTime": ts,
+                            "entrySpot": float(day_spot.iloc[i]['close']),
+                            "type": stream["type"],
+                            "strike": stream["strike"],
+                            "label": stream["label"],
+                            "contract_name": stream["contract_name"],
+                            "entryPrice": round(opt_close + slippage, 2),
+                            "stream": stream
+                        }
+                        break
+
+            # Track equity curve
+            equity_curve.append({
+                "time": ts,
+                "capital": round(float(capital), 2),
+                "spot": round(float(day_spot.iloc[i]['close']), 2)
+            })
+
+    total_trades = len(trades_log)
+    win_trades = [t for t in trades_log if t["netPnL"] > 0]
+    loss_trades = [t for t in trades_log if t["netPnL"] <= 0]
+    win_rate = (len(win_trades) / total_trades * 100.0) if total_trades > 0 else 0.0
+
+    gross_profits = sum(t["netPnL"] for t in win_trades)
+    gross_losses = abs(sum(t["netPnL"] for t in loss_trades))
+    profit_factor = round(gross_profits / gross_losses, 2) if gross_losses > 0 else (999.0 if gross_profits > 0 else 0.0)
+    net_pnl = capital - initial_capital
+    net_return_pct = (net_pnl / initial_capital) * 100.0
+
+    avg_holding = f"{int(np.mean(holding_mins))} mins" if holding_mins else "-"
+
+    metrics = {
+        "initialCapital": initial_capital,
+        "finalCapital": round(capital, 2),
+        "netPnL": round(net_pnl, 2),
+        "netReturnPct": round(net_return_pct, 2),
+        "winRate": round(win_rate, 2),
+        "profitFactor": profit_factor,
+        "maxDrawdown": round(max_dd_val, 2),
+        "totalTrades": total_trades,
+        "winningTrades": len(win_trades),
+        "losingTrades": len(loss_trades),
+        "targetHits": target_hits,
+        "slHits": sl_hits,
+        "avgHoldingTime": avg_holding,
+        "chartSource": "OPTION_CHARTS (Dhan API / Option Engine)"
+    }
+
+    return {
+        "metrics": metrics,
+        "trades": trades_log,
+        "equityCurve": equity_curve[::max(1, len(equity_curve) // 150)]
+    }
