@@ -320,14 +320,81 @@ SL = 12%
         "sl_pct": 15.0,
         "code": """// === ANIMESH EMA BAND (21 HIGH/LOW) + MACD MOMENTUM ===
 // Bullish Entry (Buy Call when Close crosses above 21 EMA of High with positive MACD):
-BUY_CE: Close crosses above EMA(HIGH, 21) and MACD_LINE(12, 26, 9) > MACD_SIGNAL(12, 26, 9) and MACD_HIST(12, 26, 9) > 0
+BUY_CE: Close crosses above EMA(HIGH, 21) and MACD_LINE > MACD_SIGNAL and MACD_HIST > 0
 
 // Bearish Entry (Buy Put when Close crosses below 21 EMA of Low with negative MACD):
-BUY_PE: Close crosses below EMA(LOW, 21) and MACD_LINE(12, 26, 9) < MACD_SIGNAL(12, 26, 9) and MACD_HIST(12, 26, 9) < 0
+BUY_PE: Close crosses below EMA(LOW, 21) and MACD_LINE < MACD_SIGNAL and MACD_HIST < 0
 
 // Risk Management:
 TP = 30%
 SL = 15%
+"""
+    },
+    {
+        "id": "nifty_atm_orb_regime_scanner",
+        "name": "🎯 NIFTY ATM ORB + VWAP + EMA + RSI Regime Scanner",
+        "description": "Full multi-factor NIFTY ATM scanner. Uses 15-min ORB breakout/breakdown, VWAP position, EMA 9/21 crossover, RSI directional filter, Supertrend market regime, and MACD momentum confirmation. Based on institutional-grade scanning logic.",
+        "symbol": "NIFTY",
+        "timeframe": "5m",
+        "moneyness": "ATM",
+        "tp_pct": 20.0,
+        "sl_pct": 12.0,
+        "code": """// === NIFTY ATM ORB + VWAP + EMA + RSI + REGIME SCANNER ===
+// Based on: 15-min ORB | VWAP | EMA 9/21 | RSI | Supertrend | MACD
+// Scan Window: 09:30-11:30 and 13:15-14:45 (OptionChief enforces time via TP/SL)
+
+// -------------------------------------------------------
+// BULLISH SIGNAL - BUY ATM CALL
+// Triggers when ALL of the following are true:
+//   1. Close breaks above 15-min Opening Range High (ORB)
+//   2. Price is above intraday VWAP (bulls in control)
+//   3. Fast EMA(9) is above Slow EMA(21) (uptrend)
+//   4. RSI(14) > 55 (bullish momentum confirmed)
+//   5. Supertrend(14, 2.0) is Bullish (trend regime)
+//   6. MACD Line above Signal + positive Histogram (momentum expanding)
+// -------------------------------------------------------
+BUY_CE: Close > ORB_HIGH(15) and Close > VWAP and EMA(9) > EMA(21) and RSI(14) > 55 and Supertrend(14, 2.0) is Bullish and MACD_LINE > MACD_SIGNAL and MACD_HIST > 0
+
+// -------------------------------------------------------
+// BEARISH SIGNAL - BUY ATM PUT
+// Triggers when ALL of the following are true:
+//   1. Close breaks below 15-min Opening Range Low (ORB)
+//   2. Price is below intraday VWAP (bears in control)
+//   3. Fast EMA(9) is below Slow EMA(21) (downtrend)
+//   4. RSI(14) < 45 (bearish momentum confirmed)
+//   5. Supertrend(14, 2.0) is Bearish (trend regime)
+//   6. MACD Line below Signal + negative Histogram (momentum expanding)
+// -------------------------------------------------------
+BUY_PE: Close < ORB_LOW(15) and Close < VWAP and EMA(9) < EMA(21) and RSI(14) < 45 and Supertrend(14, 2.0) is Bearish and MACD_LINE < MACD_SIGNAL and MACD_HIST < 0
+
+// -------------------------------------------------------
+// RISK MANAGEMENT (ATM NIFTY options, 5m timeframe)
+// 1.67:1 Risk-Reward on premium | Strict quality filter
+// -------------------------------------------------------
+TP = 20%
+SL = 12%
+"""
+    },
+    {
+        "id": "nifty_atm_orb_relaxed",
+        "name": "📡 NIFTY ATM ORB + VWAP Relaxed Scanner (More Trades)",
+        "description": "Relaxed version of the NIFTY ATM ORB scanner. Uses only ORB breakout, VWAP position, and RSI direction filter. Generates more signals with slightly lower selectivity. Good starting point for backtesting.",
+        "symbol": "NIFTY",
+        "timeframe": "5m",
+        "moneyness": "ATM",
+        "tp_pct": 20.0,
+        "sl_pct": 12.0,
+        "code": """// === NIFTY ATM ORB + VWAP RELAXED SCANNER ===
+// More trades, broader market conditions accepted
+
+// BULLISH: ORB breakout above 15-min high + Above VWAP + RSI > 50
+BUY_CE: Close > ORB_HIGH(15) and Close > VWAP and RSI(14) > 50 and EMA(9) > EMA(21)
+
+// BEARISH: ORB breakdown below 15-min low + Below VWAP + RSI < 50
+BUY_PE: Close < ORB_LOW(15) and Close < VWAP and RSI(14) < 50 and EMA(9) < EMA(21)
+
+TP = 20%
+SL = 12%
 """
     }
 ]
