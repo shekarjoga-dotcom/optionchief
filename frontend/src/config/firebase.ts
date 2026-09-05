@@ -5,6 +5,8 @@ import {
   RecaptchaVerifier, 
   signInWithPhoneNumber, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   type ConfirmationResult
@@ -34,6 +36,8 @@ export {
   RecaptchaVerifier, 
   signInWithPhoneNumber, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   firebaseSignOut 
 };
 export type { ConfirmationResult };

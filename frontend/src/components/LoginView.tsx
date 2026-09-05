@@ -6,6 +6,8 @@ import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   type ConfirmationResult
 } from '../config/firebase';
 import {
@@ -107,11 +109,61 @@ export const LoginView: React.FC<LoginViewProps> = ({
     return formatted.length >= 11;
   };
 
+  // Check for Google redirect result on mount
+  useEffect(() => {
+    let isMounted = true;
+    const checkRedirect = async () => {
+      try {
+        const result = await getRedirectResult(firebaseAuth);
+        if (result && result.user && isMounted) {
+          setIsFirebaseLoading(true);
+          const user = result.user;
+          const idToken = await user.getIdToken();
+          const success = await firebaseLogin({
+            id_token: idToken,
+            email: user.email || undefined,
+            phone_number: user.phoneNumber || undefined,
+            uid: user.uid,
+            display_name: user.displayName || undefined
+          });
+          if (success) {
+            setSuccessMessage("Signed in with Google successfully!");
+            await checkAuthSession();
+            if (onClose) onClose();
+          }
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          console.error("Google Redirect Result Error:", err);
+          setLocalError(err.message || "Failed to complete Google Sign-In redirect.");
+        }
+      } finally {
+        if (isMounted) setIsFirebaseLoading(false);
+      }
+    };
+    checkRedirect();
+    return () => { isMounted = false; };
+  }, []);
+
   // Google 1-Click Sign-In
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = async (forceRedirect: boolean = false) => {
     setIsFirebaseLoading(true);
     setLocalError(null);
     setSuccessMessage(null);
+
+    if (forceRedirect) {
+      try {
+        setSuccessMessage("Redirecting to Google Sign-In...");
+        await signInWithRedirect(firebaseAuth, googleProvider);
+        return;
+      } catch (redirectErr: any) {
+        console.error("Google Redirect Error:", redirectErr);
+        setLocalError(redirectErr.message || "Failed to redirect to Google.");
+        setIsFirebaseLoading(false);
+        return;
+      }
+    }
+
     try {
       const result = await signInWithPopup(firebaseAuth, googleProvider);
       const user = result.user;
@@ -130,7 +182,28 @@ export const LoginView: React.FC<LoginViewProps> = ({
       }
     } catch (err: any) {
       console.error("Google Sign-In Error:", err);
-      setLocalError(err.message || "Failed to sign in with Google. Please check your connection.");
+      const errorCode = err.code || '';
+      const errorMsg = err.message || '';
+
+      if (
+        errorCode === 'auth/popup-blocked' ||
+        errorCode === 'auth/cancelled-popup-request' ||
+        errorMsg.includes('popup-blocked')
+      ) {
+        // Automatically attempt direct redirect so the user doesn't get stuck!
+        console.warn("Popup blocked by browser. Attempting direct redirect...");
+        setSuccessMessage("Browser blocked the popup window. Redirecting to Google Sign-In...");
+        try {
+          await signInWithRedirect(firebaseAuth, googleProvider);
+          return;
+        } catch (redirectErr: any) {
+          setLocalError("Your browser blocked the popup. Click 'Sign in via Redirect' below or allow popups in your browser address bar.");
+        }
+      } else if (errorCode === 'auth/popup-closed-by-user') {
+        setLocalError("Google sign-in was closed before completing.");
+      } else {
+        setLocalError(errorMsg || "Failed to sign in with Google. Please check your connection or use mobile login.");
+      }
     } finally {
       setIsFirebaseLoading(false);
     }
@@ -739,7 +812,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         {/* Google 1-Click Sign-In */}
         <button
           type="button"
-          onClick={handleGoogleSignIn}
+          onClick={() => handleGoogleSignIn()}
           disabled={isFirebaseLoading || isAuthLoading}
           className="w-full bg-white hover:bg-gray-100 text-gray-900 font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-3 transition-all duration-200 shadow-md mb-6 border border-gray-300 disabled:opacity-50"
         >
@@ -825,9 +898,25 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
         {/* System & Local Feedback Messages */}
         {(authError || localError) && (
-          <div className="mb-5 p-3 rounded-lg bg-redBrand/10 border border-redBrand/20 text-redBrand text-xs flex items-start gap-2.5 animate-fadeIn">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{localError || authError}</span>
+          <div className="mb-5 p-3.5 rounded-xl bg-redBrand/10 border border-redBrand/20 text-redBrand text-xs flex flex-col gap-2.5 animate-fadeIn">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+              <div className="flex-1">
+                <span className="font-semibold">{localError || authError}</span>
+              </div>
+            </div>
+            {(String(localError || authError).toLowerCase().includes('popup') || String(localError || authError).includes('popup-blocked')) && (
+              <div className="pt-2 border-t border-red-500/20 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleGoogleSignIn(true)}
+                  className="px-3 py-1.5 rounded-lg bg-white text-gray-900 font-bold text-xs hover:bg-gray-100 transition-all flex items-center gap-1.5 shadow"
+                >
+                  <span>🔄 Continue with Google (Full Page Redirect)</span>
+                </button>
+                <span className="text-[11px] text-gray-400">or use Mobile Number & Password below 👇</span>
+              </div>
+            )}
           </div>
         )}
 
