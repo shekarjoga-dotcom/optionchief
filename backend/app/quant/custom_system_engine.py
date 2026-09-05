@@ -1003,8 +1003,12 @@ def run_custom_system_backtest(
     lot_multiplier: int = 25,
     strike_round: int = 50,
     expiry_type: str = "weekly",
-    lots: int = 1
+    lots: int = 1,
+    skip_expiry_days: bool = False,
+    trade_start_time: str = "09:20",
+    trade_end_time: str = "15:00"
 ) -> Dict[str, Any]:
+
     df = pd.DataFrame(all_candles)
     if len(df) < 25:
         return {
@@ -1044,7 +1048,45 @@ def run_custom_system_backtest(
             days_ahead = 7
         return (dt + pd.Timedelta(days=days_ahead)).replace(hour=15, minute=30, second=0)
 
+    def get_monthly_expiry(dt: datetime) -> datetime:
+        """Last Thursday of the current/next month (monthly options expiry)."""
+        import calendar as _cal
+        year, month = dt.year, dt.month
+        last_day = _cal.monthrange(year, month)[1]
+        last_dt = dt.replace(day=last_day)
+        days_back = (last_dt.weekday() - 3) % 7
+        last_thu = last_dt - pd.Timedelta(days=days_back)
+        # If we're already past this month's expiry, roll to next month
+        if dt.date() >= last_thu.date():
+            month = month + 1 if month < 12 else 1
+            year = year + 1 if month == 1 else year
+            last_day = _cal.monthrange(year, month)[1]
+            last_dt = dt.replace(year=year, month=month, day=last_day)
+            days_back = (last_dt.weekday() - 3) % 7
+            last_thu = last_dt - pd.Timedelta(days=days_back)
+        return last_thu.replace(hour=15, minute=30, second=0)
+
+    def get_expiry(dt: datetime) -> datetime:
+        return get_monthly_expiry(dt) if expiry_type == "monthly" else get_weekly_expiry(dt)
+
+    def is_expiry_day(dt: datetime) -> bool:
+        """Returns True if today is the weekly expiry day for this symbol."""
+        sym = symbol.upper()
+        if "BANKNIFTY" in sym: return dt.weekday() == 2   # Wednesday
+        if "FINNIFTY" in sym:  return dt.weekday() == 1   # Tuesday
+        if "MIDCPNIFTY" in sym: return dt.weekday() == 0  # Monday
+        return dt.weekday() == 3                           # Thursday (NIFTY & default)
+
+    # Parse configurable trade window
+    def _parse_hm(t: str) -> int:
+        parts = t.strip().split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+
+    entry_start_mins = _parse_hm(trade_start_time) if trade_start_time else (9 * 60 + 20)
+    entry_end_mins   = _parse_hm(trade_end_time)   if trade_end_time   else (15 * 60 + 0)
+
     current_trade = None
+
 
     for i, row in df.iterrows():
         ts = str(row['timestamp'])
@@ -1138,8 +1180,11 @@ def run_custom_system_backtest(
                 })
                 current_trade = None
 
-        if current_trade is None and (9 * 60 + 20) <= time_mins <= (15 * 60 + 0):
-            if ts in signals_map:
+        if current_trade is None and entry_start_mins <= time_mins <= entry_end_mins:
+            if skip_expiry_days and is_expiry_day(dt_obj):
+                pass  # Skip entry on expiry day
+            elif ts in signals_map:
+
                 sig = signals_map[ts]
                 direction = sig["direction"]
                 m_upper = moneyness.upper()
@@ -1182,7 +1227,7 @@ def run_custom_system_backtest(
                         leg_type = "P"
                         strike = atm_strike - (strike_round if m_upper == "OTM1" else (strike_round * 2 if m_upper == "OTM2" else (-strike_round if m_upper == "ITM" else 0)))
 
-                    expiry_dt = get_weekly_expiry(dt_obj)
+                    expiry_dt = get_expiry(dt_obj)
                     T_years = get_dte(ts, expiry_dt)
                     dist_pct = (strike - spot) / spot
                     try:
@@ -1261,7 +1306,10 @@ def run_option_chart_backtest(
     lot_multiplier: int = 25,
     strike_round: int = 50,
     strikes_range: str = "ATM",
-    lots: int = 1
+    lots: int = 1,
+    skip_expiry_days: bool = False,
+    trade_start_time: str = "09:20",
+    trade_end_time: str = "15:00"
 ) -> Dict[str, Any]:
     """
     Simulates trades by evaluating technical indicators directly on historical Option Premium Candlestick Charts (OHLCV).
@@ -1304,10 +1352,34 @@ def run_option_chart_backtest(
 
     current_trade = None
 
+    # Parse configurable trade window and expiry helpers
+    def _parse_hm(t: str) -> int:
+        parts = t.strip().split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+
+    oc_entry_start = _parse_hm(trade_start_time) if trade_start_time else (9 * 60 + 20)
+    oc_entry_end   = _parse_hm(trade_end_time)   if trade_end_time   else (15 * 60 + 0)
+
+    def oc_is_expiry_day(day_str: str) -> bool:
+        try:
+            dt = datetime.strptime(day_str, "%Y-%m-%d")
+            sym = symbol.upper()
+            if "BANKNIFTY" in sym: return dt.weekday() == 2
+            if "FINNIFTY" in sym:  return dt.weekday() == 1
+            if "MIDCPNIFTY" in sym: return dt.weekday() == 0
+            return dt.weekday() == 3
+        except:
+            return False
+
     for day in days:
+        # Skip entire expiry day if filter enabled
+        if skip_expiry_days and oc_is_expiry_day(day):
+            continue
+
         day_spot = spot_df[spot_df['date'] == day].reset_index(drop=True)
         if len(day_spot) < 3:
             continue
+
         
         # Determine ATM strike for this day
         day_open = float(day_spot.iloc[0]['open'])
@@ -1420,8 +1492,8 @@ def run_option_chart_backtest(
                     })
                     current_trade = None
 
-            # 2. Look for new entry trigger if no open trade and between 09:20 and 15:00
-            if current_trade is None and (9 * 60 + 20) <= time_mins <= (15 * 60 + 0):
+            # 2. Look for new entry trigger if no open trade and within configured trade window
+            if current_trade is None and oc_entry_start <= time_mins <= oc_entry_end:
                 for stream in option_streams:
                     if ts in stream["sig_map"]:
                         opt_close = float(stream["df"].iloc[i]['close'])

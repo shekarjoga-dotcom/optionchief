@@ -203,6 +203,13 @@ SL = 12%
   const [backtestResults, setBacktestResults] = useState<any | null>(null);
   const [backtestError, setBacktestError] = useState<string | null>(null);
 
+  // Timing & Expiry Filters
+  const [expiryType, setExpiryType] = useState<'weekly' | 'monthly'>('weekly');
+  const [skipExpiryDays, setSkipExpiryDays] = useState<boolean>(false);
+  const [tradeStartTime, setTradeStartTime] = useState<string>('09:45');
+  const [tradeEndTime, setTradeEndTime] = useState<string>('14:30');
+
+
   // Optimizer state
   const ETF_TP_DEFAULTS = [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
   const ETF_SL_DEFAULTS = [0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0];
@@ -790,7 +797,11 @@ SL = 12%
           stopLossPct: slPct,
           initialCapital,
           lots: lotSize,
-          slippagePerLeg: 0.5
+          slippagePerLeg: 0.5,
+          expiryType,
+          skipExpiryDays,
+          tradeStartTime,
+          tradeEndTime
         })
       });
       const data = await res.json();
@@ -829,7 +840,11 @@ SL = 12%
           moneynessRange: optMoneynessRange,
           chartTarget,
           optionStrikesRange,
-          objective: optObjective
+          objective: optObjective,
+          expiryType,
+          skipExpiryDays,
+          tradeStartTime,
+          tradeEndTime
         })
       });
       const data = await res.json();
@@ -2347,18 +2362,104 @@ SL = 12%
                 </div>
               </div>
 
-              <button
-                onClick={() => handleRunBacktest()}
-                disabled={isBacktesting}
-                className={`flex items-center gap-2 px-6 py-2.5 text-white font-bold text-xs rounded-xl shadow-lg transition-all ${
-                  chartTarget === 'OPTION_CHARTS'
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/30'
-                    : 'bg-emerald-600 hover:bg-emerald-500'
-                }`}
-              >
-                {isBacktesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                <span>{isBacktesting ? 'Simulating Option Trades...' : (chartTarget === 'OPTION_CHARTS' ? 'Backtest Option Charts 🚀' : 'Run Historical Backtest')}</span>
-              </button>
+              {/* Advanced Quality Filters: Time Window, Monthly Expiry & Expiry Day Filter */}
+              <div className="mt-3 pt-3 border-t border-borderClr/60 flex flex-wrap items-center justify-between gap-3 bg-black/20 p-2.5 rounded-xl border">
+                <div className="flex flex-wrap items-center gap-4">
+                  {/* Trade Time Window */}
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-[11px] font-bold text-gray-300">Trade Window:</span>
+                    <input
+                      type="time"
+                      value={tradeStartTime}
+                      onChange={(e) => setTradeStartTime(e.target.value)}
+                      className="bg-black/60 border border-borderClr rounded px-2 py-0.5 text-[11px] text-white font-mono font-bold w-20"
+                    />
+                    <span className="text-gray-500 text-xs">to</span>
+                    <input
+                      type="time"
+                      value={tradeEndTime}
+                      onChange={(e) => setTradeEndTime(e.target.value)}
+                      className="bg-black/60 border border-borderClr rounded px-2 py-0.5 text-[11px] text-white font-mono font-bold w-20"
+                    />
+                    {/* Quick Window Presets */}
+                    <div className="flex items-center gap-1 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => { setTradeStartTime('09:45'); setTradeEndTime('14:30'); }}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all ${
+                          tradeStartTime === '09:45' && tradeEndTime === '14:30'
+                            ? 'bg-amber-500/30 text-amber-300 border border-amber-500/50'
+                            : 'bg-white/5 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Safe (09:45-14:30)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setTradeStartTime('09:30'); setTradeEndTime('12:00'); }}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all ${
+                          tradeStartTime === '09:30' && tradeEndTime === '12:00'
+                            ? 'bg-amber-500/30 text-amber-300 border border-amber-500/50'
+                            : 'bg-white/5 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        ORB Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setTradeStartTime('09:20'); setTradeEndTime('15:00'); }}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all ${
+                          tradeStartTime === '09:20' && tradeEndTime === '15:00'
+                            ? 'bg-amber-500/30 text-amber-300 border border-amber-500/50'
+                            : 'bg-white/5 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Full Day
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Expiry Cycle: Weekly vs Monthly */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-gray-300">Expiry Cycle:</span>
+                    <select
+                      value={expiryType}
+                      onChange={(e) => setExpiryType(e.target.value as 'weekly' | 'monthly')}
+                      className="bg-black/60 border border-borderClr rounded px-2 py-0.5 text-[11px] text-cyan-300 font-bold"
+                    >
+                      <option value="weekly">Weekly Expiry (High Gamma)</option>
+                      <option value="monthly">Monthly Expiry (Low Theta Decay ✨)</option>
+                    </select>
+                  </div>
+
+                  {/* Skip Expiry Day Checkbox */}
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] font-bold text-gray-300 hover:text-white">
+                    <input
+                      type="checkbox"
+                      checked={skipExpiryDays}
+                      onChange={(e) => setSkipExpiryDays(e.target.checked)}
+                      className="rounded bg-black/40 border-borderClr text-amber-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                    />
+                    <span className={skipExpiryDays ? 'text-amber-400' : 'text-gray-400'}>
+                      Skip Expiry Days (Avoid Thu/Wed Theta Crushes)
+                    </span>
+                  </label>
+                </div>
+
+                <button
+                  onClick={() => handleRunBacktest()}
+                  disabled={isBacktesting}
+                  className={`flex items-center gap-2 px-6 py-2.5 text-white font-bold text-xs rounded-xl shadow-lg transition-all ${
+                    chartTarget === 'OPTION_CHARTS'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/30'
+                      : 'bg-emerald-600 hover:bg-emerald-500'
+                  }`}
+                >
+                  {isBacktesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                  <span>{isBacktesting ? 'Simulating Option Trades...' : (chartTarget === 'OPTION_CHARTS' ? 'Backtest Option Charts 🚀' : 'Run Historical Backtest')}</span>
+                </button>
+              </div>
             </div>
           </div>
 

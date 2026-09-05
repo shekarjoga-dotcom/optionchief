@@ -431,6 +431,11 @@ class BacktestCustomRequest(BaseModel):
     slippagePerLeg: Optional[float] = 0.5
     chartTarget: Optional[str] = "SPOT"  # "SPOT" or "OPTION_CHARTS"
     optionStrikesRange: Optional[str] = "ATM_1"  # "ATM", "ATM_1", "ATM_2"
+    # Trading filters
+    expiryType: Optional[str] = "weekly"          # "weekly" or "monthly"
+    skipExpiryDays: Optional[bool] = False         # skip Wed/Thu expiry days
+    tradeStartTime: Optional[str] = "09:20"        # HH:MM — first candle allowed
+    tradeEndTime: Optional[str] = "15:00"          # HH:MM — last candle allowed
 
 class OptimizeCustomRequest(BaseModel):
     symbol: str = "BANKNIFTY"
@@ -444,6 +449,11 @@ class OptimizeCustomRequest(BaseModel):
     chartTarget: Optional[str] = "SPOT"  # "SPOT" or "OPTION_CHARTS"
     optionStrikesRange: Optional[str] = "ATM_1"  # "ATM", "ATM_1", "ATM_2"
     objective: Optional[str] = "netReturnPct"  # "netReturnPct", "winRate", "profitFactor", "maxDrawdown"
+    # Trading filters
+    expiryType: Optional[str] = "weekly"
+    skipExpiryDays: Optional[bool] = False
+    tradeStartTime: Optional[str] = "09:20"
+    tradeEndTime: Optional[str] = "15:00"
 
 class SaveStrategyRequest(BaseModel):
     id: Optional[str] = None
@@ -842,7 +852,10 @@ def backtest_custom_strategy(req: BacktestCustomRequest):
             lot_multiplier=lot_multiplier,
             strike_round=strike_round,
             strikes_range=req.optionStrikesRange or "ATM_1",
-            lots=req.lots or 1
+            lots=req.lots or 1,
+            skip_expiry_days=req.skipExpiryDays or False,
+            trade_start_time=req.tradeStartTime or "09:20",
+            trade_end_time=req.tradeEndTime or "15:00"
         )
         results["vwapWarning"] = None
         results["chartTarget"] = "OPTION_CHARTS"
@@ -861,8 +874,13 @@ def backtest_custom_strategy(req: BacktestCustomRequest):
         slippage=req.slippagePerLeg or 0.5,
         lot_multiplier=lot_multiplier,
         strike_round=strike_round,
-        lots=req.lots or 1
+        lots=req.lots or 1,
+        expiry_type=req.expiryType or "weekly",
+        skip_expiry_days=req.skipExpiryDays or False,
+        trade_start_time=req.tradeStartTime or "09:20",
+        trade_end_time=req.tradeEndTime or "15:00"
     )
+
 
     # Check VWAP warning for spot index
     vwap_used = ("vwap" in req.code.lower()) or any(ind.get("type", "").lower() == "vwap" for ind in parsed.get("indicators", []))
@@ -927,7 +945,10 @@ def optimize_custom_strategy(req: OptimizeCustomRequest):
                 lot_multiplier=lot_multiplier,
                 strike_round=strike_round,
                 strikes_range=moneyness if moneyness in ["ATM", "ATM_1", "ATM_2"] else (req.optionStrikesRange or "ATM"),
-                lots=1
+                lots=1,
+                skip_expiry_days=req.skipExpiryDays or False,
+                trade_start_time=req.tradeStartTime or "09:20",
+                trade_end_time=req.tradeEndTime or "15:00"
             )
             results.append({
                 "parameters": {
@@ -952,7 +973,11 @@ def optimize_custom_strategy(req: OptimizeCustomRequest):
                 slippage=0.5,
                 lot_multiplier=lot_multiplier,
                 strike_round=strike_round,
-                lots=1
+                lots=1,
+                expiry_type=req.expiryType or "weekly",
+                skip_expiry_days=req.skipExpiryDays or False,
+                trade_start_time=req.tradeStartTime or "09:20",
+                trade_end_time=req.tradeEndTime or "15:00"
             )
             results.append({
                 "parameters": {
