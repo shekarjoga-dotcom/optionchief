@@ -337,6 +337,13 @@ class SaveStrategyRequest(BaseModel):
     tp_pct: float = 25.0
     sl_pct: float = 15.0
 
+class TranspileRequest(BaseModel):
+    condition: str
+    direction: Optional[str] = "BUY_CE"
+    assetClass: Optional[str] = "OPTIONS"  # "STOCKS", "ETFS", "OPTIONS"
+    tpPct: Optional[float] = None
+    slPct: Optional[float] = None
+
 
 # ==========================================
 # API ENDPOINTS
@@ -346,6 +353,53 @@ class SaveStrategyRequest(BaseModel):
 def get_strategy_presets():
     """Returns curated ready-to-run Chartink-style strategy presets."""
     return DEFAULT_PRESETS
+
+
+@router.post("/transpile")
+def transpile_custom_code(req: TranspileRequest):
+    """
+    Compiles raw condition text (Chartink or natural rules) into clean,
+    executable system code with appropriate direction, TP, and SL.
+    """
+    raw = req.condition.strip()
+    if not raw:
+        return {"code": "", "valid": False, "error": "Condition cannot be empty."}
+
+    ac = (req.assetClass or "OPTIONS").upper()
+    default_tp = 2.0 if ac in ["ETFS", "STOCKS"] else 25.0
+    default_sl = 0.8 if ac == "ETFS" else (1.0 if ac == "STOCKS" else 12.0)
+    tp = req.tpPct if (req.tpPct is not None and req.tpPct > 0) else default_tp
+    sl = req.slPct if (req.slPct is not None and req.slPct > 0) else default_sl
+
+    has_prefix = bool(re.search(r'BUY_(?:CE|PE)\s*:', raw, re.IGNORECASE))
+    if has_prefix:
+        full_code = raw
+        if "TP" not in full_code.upper():
+            full_code += f"\n\nTP = {tp}%"
+        if "SL" not in full_code.upper():
+            full_code += f"\nSL = {sl}%"
+    else:
+        dir_tag = "BUY_PE" if req.direction == "BUY_PE" else "BUY_CE"
+        header = f"// === AUTO-GENERATED SYSTEM CODE ({ac}) ===\n"
+        header += f"// Signal: {'BULLISH (BUY CE / Long)' if dir_tag == 'BUY_CE' else 'BEARISH (BUY PE / Short)'}\n\n"
+        full_code = f"{header}{dir_tag}: {raw}\n\nTP = {tp}%\nSL = {sl}%\n"
+
+    try:
+        parsed = CustomRuleParser.parse_system_code(full_code)
+        return {
+            "code": full_code,
+            "parsedCe": parsed.get("buy_ce_expr", ""),
+            "parsedPe": parsed.get("buy_pe_expr", ""),
+            "indicators": parsed.get("indicators", []),
+            "valid": True,
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "code": full_code,
+            "valid": False,
+            "error": str(e)
+        }
 
 
 @router.post("/validate")
@@ -458,6 +512,7 @@ def run_custom_scanner(req: ScanRequest):
             # Determine strike based on moneyness
             m_upper = (req.moneyness or "ATM").upper()
             is_etf_mode = m_upper in ["NIFTYBEES", "BANKBEES", "ETF"]
+            is_equity_mode = m_upper in ["EQUITY", "SHARES", "STOCK", "CASH"]
 
             for sig in matching_signals:
                 is_ce = sig["direction"] == "BULLISH_CE"
@@ -481,7 +536,25 @@ def run_custom_scanner(req: ScanRequest):
                         "estimatedPremium": est_prem,
                         "lotSize": 50 if is_bank else 100,
                         "isEtf": True,
+                        "isEquity": False,
                         "etfSymbol": etf_name,
+                        "indicators": sig.get("indicators", {}),
+                        "candle": sig.get("candle", {})
+                    })
+                elif is_equity_mode:
+                    contract_name = f"{sym_upper} (Cash Equity / Shares)" if is_ce else f"{sym_upper} [BEARISH EXIT / SHORT]"
+                    scanner_results.append({
+                        "symbol": sym_upper,
+                        "direction": sig["direction"],
+                        "triggerTime": sig["timestamp"],
+                        "spotPrice": round(sig["spot_price"], 2),
+                        "strike": "EQUITY",
+                        "optionType": "EQUITY",
+                        "contractName": contract_name,
+                        "estimatedPremium": round(spot, 2),
+                        "lotSize": 10,
+                        "isEtf": False,
+                        "isEquity": True,
                         "indicators": sig.get("indicators", {}),
                         "candle": sig.get("candle", {})
                     })

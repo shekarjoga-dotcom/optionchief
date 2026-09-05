@@ -171,6 +171,15 @@ SL = 12%
     direction: 'asc'
   });
 
+  // Dual-Window & Multi-Asset Foundation State
+  const [scanAssetClass, setScanAssetClass] = useState<'STOCKS' | 'ETFS' | 'OPTIONS'>('OPTIONS');
+  const [rawCondition, setRawCondition] = useState<string>(
+    '([0] 3 minute rsi(3) > 85 and [-3] 3 minute close < [-3] 3 minute open and [-2] 3 minute close > [-2] 3 minute open and [-1] 3 minute close > [-1] 3 minute open and [-1] 3 minute close > [-2] 3 minute close and [-1] 3 minute close > [-4] 3 minute high)'
+  );
+  const [conditionDirection, setConditionDirection] = useState<'BUY_CE' | 'BUY_PE'>('BUY_CE');
+  const [isAutoSync, setIsAutoSync] = useState<boolean>(true);
+  const [isTranspiling, setIsTranspiling] = useState<boolean>(false);
+
   // Scanner state
   const [scanSymbols, setScanSymbols] = useState<string[]>(["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX", "RELIANCE", "HDFCBANK"]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -510,6 +519,129 @@ SL = 12%
   const isIndexSymbol = ['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'SENSEX', 'MIDCPNIFTY'].includes(symbol.toUpperCase());
   const isVwapOnIndex = isVwapUsed && isIndexSymbol;
 
+
+  // Quick Templates for Window 1 (including user's 3-candle breakout setup)
+  const QUICK_TEMPLATES = [
+    {
+      label: '🌟 3-Candle Breakout + RSI',
+      desc: '3 consecutive green candles + RSI(3) > 85 breakout (Dynamic candle offsets)',
+      condition: '([0] 3 minute rsi(3) > 85 and [-3] 3 minute close < [-3] 3 minute open and [-2] 3 minute close > [-2] 3 minute open and [-1] 3 minute close > [-1] 3 minute open and [-1] 3 minute close > [-2] 3 minute close and [-1] 3 minute close > [-4] 3 minute high)',
+      direction: 'BUY_CE' as const
+    },
+    {
+      label: '📈 EMA 9/21 Cross + Supertrend',
+      desc: 'Golden trend cross confirmed with Supertrend(10, 2.0)',
+      condition: 'EMA(9) crosses above EMA(21) and Supertrend(10, 2.0) is Bullish and RSI(14) > 55',
+      direction: 'BUY_CE' as const
+    },
+    {
+      label: '🎯 VWAP Bounce + Pullback',
+      desc: 'Intraday VWAP rejection & reclaim with RSI momentum',
+      condition: 'Close > VWAP and [-1] Close < [-1] VWAP and RSI(14) > 50',
+      direction: 'BUY_CE' as const
+    },
+    {
+      label: '💥 BB Squeeze Breakout',
+      desc: 'Price breaking upper Bollinger Band with volume expansion',
+      condition: 'Close > UpperBB(20, 2.0) and Volume > SMA(Volume, 20)',
+      direction: 'BUY_CE' as const
+    },
+    {
+      label: '🩸 Bearish Supertrend Breakdown',
+      desc: 'Supertrend flips bearish with EMA 20 rejection',
+      condition: 'Supertrend(10, 2.0) is Bearish and Close < EMA(20) and RSI(14) < 45',
+      direction: 'BUY_PE' as const
+    }
+  ];
+
+  // Asset Class Foundation Selector Handler
+  const handleSelectAssetClass = (ac: 'STOCKS' | 'ETFS' | 'OPTIONS') => {
+    setScanAssetClass(ac);
+    if (ac === 'STOCKS') {
+      setMoneyness('EQUITY');
+      setSymbol('RELIANCE');
+      setTpPct(2.0);
+      setSlPct(1.0);
+      setScanSymbols(['RELIANCE', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'TCS', 'INFY', 'TATAMOTORS']);
+      setOptScaleMode('etf');
+    } else if (ac === 'ETFS') {
+      setMoneyness('NIFTYBEES');
+      setSymbol('NIFTY');
+      setTpPct(2.0);
+      setSlPct(0.8);
+      setScanSymbols(['NIFTY', 'BANKNIFTY']);
+      setOptScaleMode('etf');
+    } else {
+      setMoneyness('ATM');
+      setSymbol('BANKNIFTY');
+      setTpPct(25.0);
+      setSlPct(12.0);
+      setScanSymbols(['BANKNIFTY', 'NIFTY', 'FINNIFTY', 'SENSEX']);
+      setOptScaleMode('options');
+    }
+  };
+
+  // Local fallback transpile for instantaneous 0ms UI feedback
+  const fallbackLocalTranspile = (text: string, dir: string, ac: string) => {
+    const hasPrefix = /BUY_(?:CE|PE)\s*:/i.test(text);
+    let newCode = "";
+    if (hasPrefix) {
+      newCode = text;
+      if (!/TP\s*=/i.test(newCode)) newCode += `\n\nTP = ${tpPct}%`;
+      if (!/SL\s*=/i.test(newCode)) newCode += `\nSL = ${slPct}%`;
+    } else {
+      const dirTag = dir === 'BUY_PE' ? 'BUY_PE' : 'BUY_CE';
+      const label = dirTag === 'BUY_CE' ? 'BULLISH (BUY CE / Long)' : 'BEARISH (BUY PE / Short)';
+      newCode = `// === CUSTOM COMPILED STRATEGY (${ac}) ===\n// Signal: ${label}\n\n${dirTag}: ${text}\n\nTP = ${tpPct}%\nSL = ${slPct}%\n`;
+    }
+    setCode(newCode);
+  };
+
+  // Transpile Raw Condition into Executable System Code
+  const handleTranspile = async (
+    rawText?: string,
+    dir?: 'BUY_CE' | 'BUY_PE',
+    ac?: 'STOCKS' | 'ETFS' | 'OPTIONS'
+  ) => {
+    const textToUse = (rawText !== undefined ? rawText : rawCondition).trim();
+    const dirToUse = dir || conditionDirection;
+    const acToUse = ac || scanAssetClass;
+    if (!textToUse) return;
+
+    // Instant local preview
+    fallbackLocalTranspile(textToUse, dirToUse, acToUse);
+
+    setIsTranspiling(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/custom-strategy/transpile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          condition: textToUse,
+          direction: dirToUse,
+          assetClass: acToUse,
+          tpPct: tpPct,
+          slPct: slPct,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCode(data.code);
+        if (data.valid) {
+          setValidation({
+            valid: true,
+            indicators: data.indicators || [],
+            buyCeExpr: data.buyCeExpr,
+            buyPeExpr: data.buyPeExpr,
+          });
+        }
+      }
+    } catch (e) {
+      // Keep local transpile result
+    } finally {
+      setIsTranspiling(false);
+    }
+  };
 
   // 2. Validate User Code
   const handleValidateCode = async () => {
@@ -921,257 +1053,432 @@ SL = 12%
         </div>
       </div>
 
-      {/* SUB-TAB 1: CODE EDITOR */}
+      {/* SUB-TAB 1: DUAL-WINDOW STRATEGY STUDIO & SCANNER BUILDER */}
       {subTab === 'editor' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Main Code Editor Box */}
-          <div className="lg:col-span-2 bg-cardClr border border-borderClr rounded-xl p-5 flex flex-col gap-4">
-            
-            {/* Top Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-borderClr/40 pb-4">
-              <div className="flex-1 min-w-[200px]">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
-                  Strategy Name
-                </label>
-                <input
-                  type="text"
-                  value={strategyName}
-                  onChange={(e) => setStrategyName(e.target.value)}
-                  className="w-full bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-accentBrand"
-                />
-              </div>
+        <div className="flex flex-col gap-6">
 
-              {/* Template Presets */}
-              <div className="min-w-[190px]">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
-                  Load Template Preset
-                </label>
-                <select
-                  value={selectedPresetId}
-                  onChange={(e) => handleSelectPreset(e.target.value)}
-                  className="w-full bg-black/40 border border-borderClr rounded-lg px-3 py-1.5 text-xs text-amber-300 font-semibold focus:outline-none focus:border-accentBrand"
-                >
-                  <option value="">-- Built-in Presets --</option>
-                  {presets.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+          {/* ASSET CLASS FOUNDATION SELECTOR (Stocks vs ETFs vs Options) */}
+          <div className="bg-cardClr border border-borderClr rounded-2xl p-4 shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-accentBrand flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>STEP 1: SELECT ASSET CLASS FOUNDATION</span>
+                </span>
+                <h3 className="text-sm font-bold text-white mt-0.5">
+                  What instrument do you want to scan and trade?
+                </h3>
               </div>
+              <span className="text-[11px] text-gray-400">
+                Engine automatically configures symbols, moneyness, targets, and Greeks simulation.
+              </span>
+            </div>
 
-              {/* My Saved Custom Strategies Library */}
-              <div className="min-w-[220px]">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1">
-                    <FolderHeart className="w-3 h-3" />
-                    <span>My Saved Strategies ({savedStrategies.length})</span>
-                  </label>
-                  {selectedSavedId && (
-                    <button
-                      onClick={(e) => handleDeleteSavedStrategy(selectedSavedId, e)}
-                      title="Delete this saved strategy"
-                      className="text-[10px] text-red-400 hover:text-red-300 font-bold flex items-center gap-0.5 transition-colors"
-                    >
-                      <Trash2 className="w-2.5 h-2.5" /> Delete
-                    </button>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* STOCKS */}
+              <button
+                onClick={() => handleSelectAssetClass('STOCKS')}
+                className={`flex flex-col text-left p-3.5 rounded-xl border transition-all relative ${
+                  scanAssetClass === 'STOCKS'
+                    ? 'bg-blue-500/15 border-blue-500 text-white shadow-lg shadow-blue-500/10'
+                    : 'bg-black/30 border-borderClr/60 text-gray-400 hover:border-gray-600 hover:bg-black/50'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full mb-1">
+                  <span className="text-xs font-black tracking-wide flex items-center gap-1.5 text-blue-400">
+                    <TrendingUp className="w-4 h-4" />
+                    <span>📊 STOCKS (Cash & F&O)</span>
+                  </span>
+                  {scanAssetClass === 'STOCKS' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded border border-blue-500/40">ACTIVE</span>
                   )}
                 </div>
-                <select
-                  value={selectedSavedId}
-                  onChange={(e) => handleSelectSavedStrategy(e.target.value)}
-                  className="w-full bg-black/40 border border-pink-500/30 rounded-lg px-3 py-1.5 text-xs text-pink-300 font-semibold focus:outline-none focus:border-pink-500"
-                >
-                  <option value="">-- {savedStrategies.length > 0 ? "Select Saved Strategy" : "No saved strategies yet"} --</option>
-                  {savedStrategies.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      ★ {s.name} ({s.symbol || 'BANKNIFTY'} {s.timeframe || '5m'})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Save / Update Strategy Button */}
-              <div className="flex items-end gap-2">
-                <button
-                  onClick={handleOpenSaveModal}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-accentBrand hover:bg-accentBrand/90 text-white rounded-lg text-xs font-bold transition-all shadow-md"
-                  title="Save or update custom strategy"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>{selectedSavedId ? "Update / Save As" : "Save Strategy"}</span>
-                </button>
-                {saveSuccessMsg && (
-                  <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
-                    <Check className="w-3 h-3" /> {saveSuccessMsg}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* VWAP on Index Warning Banner */}
-            {isVwapOnIndex && (
-              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-3 shadow-lg">
-                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <div className="font-bold text-amber-200 flex items-center gap-2">
-                    <span>VWAP Traded Volume Notice</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
-                      {symbol} is a Spot Index
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-amber-300/80 mt-1 leading-relaxed">
-                    Spot indices (<strong>{symbol}</strong>, NIFTY, BANKNIFTY) do not have exchange-traded volume in spot cash feeds. 
-                    VWAP calculates as an intraday cumulative typical price average proxy. For true institutional volume-weighted VWAP, 
-                    select high-volume F&O equity stocks or trade index futures contracts.
-                  </div>
-                  <div className="flex items-center gap-2 mt-2.5">
-                    <span className="text-[10px] font-bold text-gray-400">Switch to Volume Stock:</span>
-                    <button
-                      onClick={() => setSymbol('RELIANCE')}
-                      className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold transition-all"
-                    >
-                      RELIANCE
-                    </button>
-                    <button
-                      onClick={() => setSymbol('HDFCBANK')}
-                      className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold transition-all"
-                    >
-                      HDFCBANK
-                    </button>
-                    <button
-                      onClick={() => setSymbol('SBIN')}
-                      className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold transition-all"
-                    >
-                      SBIN
-                    </button>
-                  </div>
+                <p className="text-[11px] text-gray-300 leading-tight">
+                  RELIANCE, HDFCBANK, SBIN, TCS. Pure cash equity or stock options with real exchange-traded volume & VWAP.
+                </p>
+                <div className="mt-2 text-[10px] text-blue-300/80 font-mono">
+                  Default Target: 2.0% · SL: 1.0% · Shares Mode
                 </div>
-              </div>
-            )}
-
-            {/* Code Textarea */}
-            <div className="relative flex flex-col flex-1">
-              <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1 px-1">
-                <span>Rule Syntax: <code className="text-accentBrand font-mono">BUY_CE: [Condition]</code> & <code className="text-pink-400 font-mono">BUY_PE: [Condition]</code></span>
-                <span className="text-gray-500">Supports RSI, EMA, SMA, VWAP, Supertrend, MACD, BB, ATR</span>
-              </div>
-              <textarea
-                value={code}
-                onChange={(e) => { setCode(e.target.value); setValidation(null); }}
-                rows={16}
-                className="w-full bg-black/70 border border-borderClr rounded-xl p-4 font-mono text-xs text-emerald-300 leading-relaxed focus:outline-none focus:border-accentBrand shadow-inner selection:bg-accentBrand/30"
-                placeholder="Paste your Chartink / trading system rules here..."
-                spellCheck={false}
-              />
-            </div>
-
-            {/* Bottom Action Bar */}
-            <div className="flex items-center justify-between pt-2">
-              <button
-                onClick={handleValidateCode}
-                disabled={isValidating}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-accentBrand to-amber-600 hover:from-accentBrand/90 hover:to-amber-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
-              >
-                {isValidating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                <span>Check & Validate Code</span>
               </button>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setSubTab('scanner'); handleRunScan(); }}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gray-800 hover:bg-gray-700 text-xs font-bold rounded-lg border border-borderClr transition-all text-gray-300"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Scan Signals</span>
-                </button>
-                <button
-                  onClick={() => { setSubTab('backtest'); handleRunBacktest(); }}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gray-800 hover:bg-gray-700 text-xs font-bold rounded-lg border border-borderClr transition-all text-gray-300"
-                >
-                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Run Backtest</span>
-                </button>
-              </div>
+              {/* INDEX ETFs */}
+              <button
+                onClick={() => handleSelectAssetClass('ETFS')}
+                className={`flex flex-col text-left p-3.5 rounded-xl border transition-all relative ${
+                  scanAssetClass === 'ETFS'
+                    ? 'bg-emerald-500/15 border-emerald-500 text-white shadow-lg shadow-emerald-500/10'
+                    : 'bg-black/30 border-borderClr/60 text-gray-400 hover:border-gray-600 hover:bg-black/50'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full mb-1">
+                  <span className="text-xs font-black tracking-wide flex items-center gap-1.5 text-emerald-400">
+                    <Zap className="w-4 h-4" />
+                    <span>⚡ INDEX ETFs (Zero Decay)</span>
+                  </span>
+                  {scanAssetClass === 'ETFS' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-500/30 text-emerald-300 rounded border border-emerald-500/40">ACTIVE</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-300 leading-tight">
+                  NIFTYBEES & BANKBEES. Scan index candles, execute ETF units. 100% immune to theta erosion and IV collapse.
+                </p>
+                <div className="mt-2 text-[10px] text-emerald-300/80 font-mono">
+                  Default Target: 2.0% · SL: 0.8% · ETF Units
+                </div>
+              </button>
+
+              {/* INDEX OPTIONS */}
+              <button
+                onClick={() => handleSelectAssetClass('OPTIONS')}
+                className={`flex flex-col text-left p-3.5 rounded-xl border transition-all relative ${
+                  scanAssetClass === 'OPTIONS'
+                    ? 'bg-purple-500/15 border-purple-500 text-white shadow-lg shadow-purple-500/10'
+                    : 'bg-black/30 border-borderClr/60 text-gray-400 hover:border-gray-600 hover:bg-black/50'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full mb-1">
+                  <span className="text-xs font-black tracking-wide flex items-center gap-1.5 text-purple-400">
+                    <Activity className="w-4 h-4" />
+                    <span>🎯 INDEX OPTIONS (Delta Leverage)</span>
+                  </span>
+                  {scanAssetClass === 'OPTIONS' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-purple-500/30 text-purple-300 rounded border border-purple-500/40">ACTIVE</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-300 leading-tight">
+                  ATM / ITM / OTM CE & PE contracts. Fast asymmetric scalping with Black-Scholes Greeks and premium simulation.
+                </p>
+                <div className="mt-2 text-[10px] text-purple-300/80 font-mono">
+                  Default Target: 25.0% · SL: 12.0% · Contracts
+                </div>
+              </button>
             </div>
           </div>
 
-          {/* Right Column: Validation Status & Execution Settings */}
-          <div className="flex flex-col gap-5">
-            
-            {/* Validation Feedback Card */}
-            <div className="bg-cardClr border border-borderClr rounded-xl p-5 flex flex-col gap-3">
-              <h3 className="text-xs font-black tracking-wider text-gray-400 uppercase flex items-center justify-between">
-                <span>Code Validation Status</span>
-                {validation && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold border ${
-                    validation.valid ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'
-                  }`}>
-                    {validation.valid ? 'VALIDATED' : 'SYNTAX ERROR'}
-                  </span>
-                )}
-              </h3>
+          {/* DUAL-WINDOW WORKSPACE */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
-              {!validation && (
-                <div className="p-4 rounded-lg bg-black/20 border border-borderClr/40 text-center text-xs text-gray-500">
-                  Click <strong>"Check & Validate Code"</strong> to test rule parsing and indicator detection.
-                </div>
-              )}
-
-              {validation && validation.valid && (
-                <div className="flex flex-col gap-3">
-                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold">Logic Verified Successfully</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">
-                        Triggered <strong>{validation.recentTriggers || 0} sample signals</strong> on recent {symbol} candles.
-                      </div>
-                    </div>
+            {/* WINDOW 1: CONDITION INPUT & BUILDER */}
+            <div className="bg-cardClr border border-borderClr rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-borderClr/40 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-xs border border-amber-500/40">
+                    1
                   </div>
-
-                  {/* Detected Indicators */}
                   <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-                      Detected Technical Indicators ({validation.indicators.length})
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {validation.indicators.length > 0 ? (
-                        validation.indicators.map((ind, i) => (
-                          <span key={i} className="px-2 py-1 rounded bg-black/40 border border-accentBrand/30 text-accentBrand text-xs font-mono font-bold">
-                            {ind.raw}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-xs text-gray-500">None detected</span>
-                      )}
-                    </div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+                      <span>Window 1: Condition Builder</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">Input</span>
+                    </h4>
+                    <p className="text-[10px] text-gray-400">
+                      Write in Natural Language or paste Chartink syntax
+                    </p>
                   </div>
                 </div>
-              )}
 
-              {validation && !validation.valid && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-bold">Syntax Parsing Error</div>
-                    <div className="text-[11px] text-red-200 mt-0.5 font-mono break-all">{validation.error}</div>
-                  </div>
+                {/* Direction Switcher */}
+                <div className="flex items-center bg-black/50 p-1 rounded-xl border border-borderClr">
+                  <button
+                    onClick={() => {
+                      setConditionDirection('BUY_CE');
+                      if (isAutoSync) handleTranspile(rawCondition, 'BUY_CE');
+                    }}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-black transition-all flex items-center gap-1.5 ${
+                      conditionDirection === 'BUY_CE'
+                        ? 'bg-emerald-500 text-white shadow-md'
+                        : 'text-gray-400 hover:text-emerald-300'
+                    }`}
+                  >
+                    <span>🟢 BUY_CE (Bullish)</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConditionDirection('BUY_PE');
+                      if (isAutoSync) handleTranspile(rawCondition, 'BUY_PE');
+                    }}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-black transition-all flex items-center gap-1.5 ${
+                      conditionDirection === 'BUY_PE'
+                        ? 'bg-rose-500 text-white shadow-md'
+                        : 'text-gray-400 hover:text-rose-300'
+                    }`}
+                  >
+                    <span>🔴 BUY_PE (Bearish)</span>
+                  </button>
                 </div>
-              )}
+              </div>
+
+              {/* Quick Template Chips */}
+              <div>
+                <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                  <span>Quick Templates (1-Click Paste):</span>
+                  <button
+                    onClick={() => { setRawCondition(''); setCode(''); }}
+                    className="text-gray-500 hover:text-gray-300 text-[10px] flex items-center gap-1 font-mono"
+                  >
+                    <Trash2 className="w-3 h-3" /> Clear
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_TEMPLATES.map((tpl, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setRawCondition(tpl.condition);
+                        setConditionDirection(tpl.direction);
+                        handleTranspile(tpl.condition, tpl.direction);
+                      }}
+                      title={tpl.desc}
+                      className="px-2.5 py-1 rounded-lg bg-black/40 hover:bg-black/60 border border-borderClr/80 hover:border-accentBrand/60 text-[11px] font-medium text-gray-300 hover:text-white transition-all text-left"
+                    >
+                      {tpl.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Window 1 Textarea */}
+              <div className="relative flex flex-col flex-1">
+                <textarea
+                  value={rawCondition}
+                  onChange={(e) => {
+                    const text = e.target.value;
+                    setRawCondition(text);
+                    if (isAutoSync) {
+                      handleTranspile(text, conditionDirection);
+                    }
+                  }}
+                  rows={13}
+                  className="w-full bg-black/70 border border-borderClr rounded-xl p-3.5 font-mono text-xs text-amber-200 leading-relaxed focus:outline-none focus:border-accentBrand shadow-inner selection:bg-accentBrand/30 resize-none"
+                  placeholder="Paste or write your condition here... Example:
+( [0] 3 minute rsi( 3 ) > 85 and [-3] 3 minute close < [-3] 3 minute open and [-2] 3 minute close > [-2] 3 minute open and [-1] 3 minute close > [-1] 3 minute open and [-1] 3 minute close > [-2] 3 minute close and [-1] 3 minute close > [-4] 3 minute high )"
+                  spellCheck={false}
+                />
+              </div>
+
+              {/* Supported Tokens Bar */}
+              <div className="bg-black/30 rounded-xl p-3 border border-borderClr/40 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase">
+                  <span>Supported Indicators & Candle Offsets:</span>
+                  <span className="text-emerald-400 font-mono text-[9px]">Bracket Healing & [-N] Active</span>
+                </div>
+                <div className="flex flex-wrap gap-1 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">[-N] close / high / low</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">RSI(period)</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">EMA(period)</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">SMA(period)</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">VWAP</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">Supertrend(p, m)</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">crosses above / below</span>
+                </div>
+              </div>
+
+              {/* Bottom Action Bar for Window 1 */}
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-400 select-none">
+                  <input
+                    type="checkbox"
+                    checked={isAutoSync}
+                    onChange={(e) => setIsAutoSync(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-gray-600 text-accentBrand focus:ring-accentBrand bg-black/40"
+                  />
+                  <span>Live Auto-Sync to Window 2</span>
+                </label>
+
+                <button
+                  onClick={() => handleTranspile(rawCondition, conditionDirection)}
+                  disabled={isTranspiling}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-accentBrand hover:from-amber-400 hover:to-accentBrand/90 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isTranspiling ? 'animate-spin' : ''}`} />
+                  <span>Transpile to System Code ⚡</span>
+                </button>
+              </div>
             </div>
 
-            {/* Execution & Trade Generation Rules */}
-            <div className="bg-cardClr border border-borderClr rounded-xl p-5 flex flex-col gap-4">
-              <h3 className="text-xs font-black tracking-wider text-gray-400 uppercase">
-                Option Trade Rules
-              </h3>
+            {/* WINDOW 2: GENERATED EXECUTABLE SYSTEM CODE */}
+            <div className="bg-cardClr border border-borderClr rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-borderClr/40 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-xs border border-emerald-500/40">
+                    2
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+                      <span>Window 2: Executable System Code</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Output</span>
+                    </h4>
+                    <p className="text-[10px] text-gray-400">
+                      Executable logic with TP/SL targets ready for Scanner & Backtester
+                    </p>
+                  </div>
+                </div>
 
-              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2">
+                  {validation ? (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold border ${
+                      validation.valid
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                    }`}>
+                      {validation.valid ? '✓ VALIDATED' : '✗ SYNTAX ERROR'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-white/5 text-gray-400 border border-white/10">
+                      READY TO RUN
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(code);
+                    }}
+                    title="Copy Code"
+                    className="p-1.5 rounded-lg bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-borderClr transition-all"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Strategy Name & Presets Bar */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                    Strategy Name
+                  </label>
+                  <input
+                    type="text"
+                    value={strategyName}
+                    onChange={(e) => setStrategyName(e.target.value)}
+                    className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-accentBrand"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-amber-300 block mb-1">
+                    Load Built-in Preset
+                  </label>
+                  <select
+                    value={selectedPresetId}
+                    onChange={(e) => handleSelectPreset(e.target.value)}
+                    className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1 text-xs text-amber-300 font-semibold focus:outline-none focus:border-accentBrand"
+                  >
+                    <option value="">-- Presets --</option>
+                    {presets.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-pink-400 block">
+                      My Saved Library ({savedStrategies.length})
+                    </label>
+                    {selectedSavedId && (
+                      <button
+                        onClick={(e) => handleDeleteSavedStrategy(selectedSavedId, e)}
+                        title="Delete this saved strategy"
+                        className="text-[9px] text-red-400 hover:text-red-300 font-bold flex items-center gap-0.5 transition-colors"
+                      >
+                        <Trash2 className="w-2.5 h-2.5" /> Del
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={selectedSavedId}
+                    onChange={(e) => handleSelectSavedStrategy(e.target.value)}
+                    className="w-full bg-black/40 border border-pink-500/30 rounded-lg px-2.5 py-1 text-xs text-pink-300 font-semibold focus:outline-none focus:border-pink-500"
+                  >
+                    <option value="">-- {savedStrategies.length > 0 ? "Saved Strategies" : "None"} --</option>
+                    {savedStrategies.map((s) => (
+                      <option key={s.id} value={s.id}>★ {s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Window 2 Textarea */}
+              <div className="relative flex flex-col flex-1">
+                <textarea
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                    setValidation(null);
+                  }}
+                  rows={13}
+                  className="w-full bg-black/70 border border-borderClr rounded-xl p-3.5 font-mono text-xs text-emerald-300 leading-relaxed focus:outline-none focus:border-accentBrand shadow-inner selection:bg-accentBrand/30 resize-none"
+                  placeholder="Generated system code will appear here..."
+                  spellCheck={false}
+                />
+              </div>
+
+              {/* Bottom Action Bar for Window 2 */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleValidateCode}
+                    disabled={isValidating}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-accentBrand to-amber-600 hover:from-accentBrand/90 hover:to-amber-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
+                  >
+                    {isValidating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    <span>Validate Code</span>
+                  </button>
+                  <button
+                    onClick={handleOpenSaveModal}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/40 text-pink-300 text-xs font-bold rounded-xl transition-all"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save</span>
+                  </button>
+                  {saveSuccessMsg && (
+                    <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
+                      <Check className="w-3 h-3" /> {saveSuccessMsg}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setSubTab('scanner'); handleRunScan(); }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl transition-all"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Scan Signals 🚀</span>
+                  </button>
+                  <button
+                    onClick={() => { setSubTab('backtest'); handleRunBacktest(); }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold rounded-xl transition-all"
+                  >
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Run Backtest 📈</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* LOWER CONFIG & EXECUTION SETTINGS BAR */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            {/* Execution Settings Card */}
+            <div className="lg:col-span-2 bg-cardClr border border-borderClr rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
+              <div className="flex items-center justify-between border-b border-borderClr/40 pb-3">
+                <h3 className="text-xs font-black tracking-wider text-gray-300 uppercase flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-accentBrand" />
+                  <span>Execution & Risk Parameters</span>
+                </h3>
+                <span className="text-[11px] text-cyan-400 font-mono">
+                  Asset Mode: {scanAssetClass}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 block mb-1">
-                    Index / Underlying
+                    Underlying Symbol
                     {isVwapOnIndex && (
-                      <span className="ml-1 text-[9px] text-amber-400 font-normal">⚠️ Spot (No Vol)</span>
+                      <span className="ml-1 text-[9px] text-amber-400 font-normal">⚠️ Spot</span>
                     )}
                   </label>
                   <select
@@ -1205,19 +1512,31 @@ SL = 12%
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 block mb-1">Execution Instrument / Strike</label>
+                  <label className="text-[10px] font-bold text-cyan-400 block mb-1">Execution Instrument</label>
                   <select
                     value={moneyness}
                     onChange={(e) => {
                       const val = e.target.value;
                       setMoneyness(val);
-                      if (val === 'NIFTYBEES' || val === 'BANKBEES' || val === 'ETF') {
+                      if (val === 'EQUITY') {
+                        if (tpPct >= 10) setTpPct(2.0);
+                        if (slPct >= 5) setSlPct(1.0);
+                        setOptScaleMode('etf');
+                      } else if (val === 'NIFTYBEES' || val === 'BANKBEES' || val === 'ETF') {
                         if (tpPct >= 10) setTpPct(2.0);
                         if (slPct >= 5) setSlPct(0.8);
+                        setOptScaleMode('etf');
+                      } else {
+                        if (tpPct <= 5) setTpPct(25.0);
+                        if (slPct <= 2) setSlPct(12.0);
+                        setOptScaleMode('options');
                       }
                     }}
                     className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1.5 text-xs text-cyan-300 font-bold focus:outline-none focus:border-accentBrand"
                   >
+                    <optgroup label="Cash Equity (Real Shares - Zero Decay)">
+                      <option value="EQUITY">Cash Equity (Shares / Stock)</option>
+                    </optgroup>
                     <optgroup label="Index ETFs (Zero Time Decay - High Win-Rate)">
                       <option value="NIFTYBEES">NIFTYBEES (Nifty 50 ETF)</option>
                       <option value="BANKBEES">BANKBEES (BankNifty ETF)</option>
@@ -1233,7 +1552,9 @@ SL = 12%
 
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 block mb-1">
-                    {moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 'Position Lots (×100 Sh)' : 'Lot Size'}
+                    {moneyness === 'EQUITY'
+                      ? 'Share Units (Qty)'
+                      : (moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 'Position Lots (×100 Sh)' : 'Option Lots')}
                   </label>
                   <input
                     type="number"
@@ -1249,7 +1570,7 @@ SL = 12%
                   <input
                     type="number"
                     value={tpPct}
-                    step={moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 0.1 : 1}
+                    step={moneyness === 'EQUITY' || moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 0.1 : 1}
                     onChange={(e) => setTpPct(parseFloat(e.target.value) || 0)}
                     className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1.5 text-xs text-emerald-400 font-bold focus:outline-none focus:border-accentBrand"
                   />
@@ -1260,18 +1581,29 @@ SL = 12%
                   <input
                     type="number"
                     value={slPct}
-                    step={moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 0.1 : 1}
+                    step={moneyness === 'EQUITY' || moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? 0.1 : 1}
                     onChange={(e) => setSlPct(parseFloat(e.target.value) || 0)}
                     className="w-full bg-black/40 border border-borderClr rounded-lg px-2.5 py-1.5 text-xs text-red-400 font-bold focus:outline-none focus:border-accentBrand"
                   />
                 </div>
               </div>
 
-              {(moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF') && (
-                <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-2.5 text-[11px] text-emerald-300">
-                  <div className="p-1 rounded-md bg-emerald-500/20 text-emerald-400 mt-0.5">
-                    <Zap className="w-3.5 h-3.5" />
+              {/* Asset Mode Banner */}
+              {moneyness === 'EQUITY' && (
+                <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-start gap-2.5 text-[11px] text-blue-300">
+                  <TrendingUp className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-white block font-semibold mb-0.5">
+                      📊 CASH EQUITY MODE ACTIVE ({symbol} Shares)
+                    </strong>
+                    Executes directly in cash shares with 1:1 price movement, ₹0.05 slippage, and 0 Greeks decay. Ideal for swing holds and high-volume breakout scanning.
                   </div>
+                </div>
+              )}
+
+              {(moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF') && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-2.5 text-[11px] text-emerald-300">
+                  <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-semibold mb-0.5">
                       ⚡ ZERO THETA DECAY ACTIVE ({moneyness === 'BANKBEES' ? 'BANKBEES' : 'NIFTYBEES'} Mode)
@@ -1280,20 +1612,95 @@ SL = 12%
                   </div>
                 </div>
               )}
+
+              {/* VWAP on Index Warning Banner */}
+              {isVwapOnIndex && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="font-bold text-amber-200">VWAP Traded Volume Notice ({symbol} is a Spot Index)</div>
+                    <div className="text-[11px] text-amber-300/80 mt-0.5">
+                      Spot indices do not have exchange volume feeds. For institutional volume-weighted VWAP, switch to high-volume F&O stocks like RELIANCE, HDFCBANK, or SBIN.
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Quick Tips Box */}
-            <div className="bg-black/30 border border-borderClr/40 rounded-xl p-4 text-[11px] text-gray-400 flex flex-col gap-1.5">
-              <div className="text-white font-bold flex items-center gap-1.5">
-                <HelpCircle className="w-3.5 h-3.5 text-accentBrand" /> Syntax Tips
+            {/* Validation Feedback & Detected Indicators */}
+            <div className="bg-cardClr border border-borderClr rounded-2xl p-5 flex flex-col gap-3 shadow-xl">
+              <h3 className="text-xs font-black tracking-wider text-gray-400 uppercase flex items-center justify-between">
+                <span>Validation & Indicator Feedback</span>
+                {validation && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold border ${
+                    validation.valid ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'
+                  }`}>
+                    {validation.valid ? 'VALIDATED' : 'SYNTAX ERROR'}
+                  </span>
+                )}
+              </h3>
+
+              {!validation && (
+                <div className="p-4 rounded-lg bg-black/20 border border-borderClr/40 text-center text-xs text-gray-500">
+                  Click <strong>"Validate Code"</strong> to check AST rules, candle shifts, and indicator definitions.
+                </div>
+              )}
+
+              {validation && validation.valid && (
+                <div className="flex flex-col gap-3">
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold">Logic Verified Successfully</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">
+                        Triggered <strong>{validation.recentTriggers || 0} sample signals</strong> on recent {symbol} candles.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                      Detected Technical Indicators ({validation.indicators?.length || 0})
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {validation.indicators && validation.indicators.length > 0 ? (
+                        validation.indicators.map((ind, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded bg-black/40 border border-accentBrand/30 text-accentBrand text-xs font-mono font-bold">
+                            {ind.raw}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-gray-500">None detected</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {validation && !validation.valid && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold">Syntax Parsing Error</div>
+                    <div className="text-[11px] text-red-200 mt-0.5 font-mono break-all">{validation.error}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Syntax Tips */}
+              <div className="mt-auto pt-2 text-[11px] text-gray-500 flex flex-col gap-1 border-t border-borderClr/30">
+                <div className="flex items-center gap-1.5 text-gray-400 font-bold text-[10px]">
+                  <HelpCircle className="w-3.5 h-3.5 text-accentBrand" />
+                  <span>Syntax Cheatsheet</span>
+                </div>
+                <div>• Use <code>[-N] close</code> for N candles ago (e.g. <code>[-3] close</code>)</div>
+                <div>• Use <code>crosses above / crosses below</code> for crossovers</div>
+                <div>• Use <code>Supertrend(10, 2) is Bullish</code></div>
               </div>
-              <div>• Chartink clauses like <code>[0] Close &gt; [0] EMA(20)</code> work automatically.</div>
-              <div>• Use <code>crosses above</code> or <code>crosses below</code> for crossovers.</div>
-              <div>• Use <code>Supertrend(10, 3) is Bullish</code> or <code>== 1</code>.</div>
-              <div>• Use <code>High[-1]</code> or <code>Low[-1]</code> for previous candle breakout.</div>
             </div>
 
           </div>
+
         </div>
       )}
 
@@ -1329,26 +1736,57 @@ SL = 12%
           </div>
 
           {/* Scanner Watchlist Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 font-bold">Watchlist:</span>
-            {["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX", "RELIANCE", "HDFCBANK"].map((sym) => {
-              const active = scanSymbols.includes(sym);
-              return (
-                <button
-                  key={sym}
-                  onClick={() => {
-                    setScanSymbols(prev => active ? prev.filter(s => s !== sym) : [...prev, sym]);
-                  }}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${
-                    active
-                      ? 'bg-accentBrand/20 text-accentBrand border-accentBrand/40'
-                      : 'bg-black/30 text-gray-500 border-borderClr hover:text-gray-300'
-                  }`}
-                >
-                  {sym}
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-cardClr/60 border border-borderClr/60 rounded-xl p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-400 font-bold">Quick Presets:</span>
+              <button
+                onClick={() => setScanSymbols(["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX"])}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 transition-all"
+              >
+                🎯 Major Indices (4)
+              </button>
+              <button
+                onClick={() => setScanSymbols(["NIFTY", "BANKNIFTY"])}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-all"
+              >
+                ⚡ ETF Indices (2)
+              </button>
+              <button
+                onClick={() => setScanSymbols(["RELIANCE", "HDFCBANK", "ICICIBANK", "SBIN", "TCS", "INFY", "TATAMOTORS"])}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 transition-all"
+              >
+                📊 F&O Heavyweights (7)
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-400 font-bold">Execution Mode:</span>
+              <span className="px-2 py-0.5 rounded font-mono font-bold bg-white/5 border border-white/10 text-cyan-300">
+                {moneyness === 'EQUITY' ? '📊 Cash Equity (Shares)' : (moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? '⚡ Index ETF Units' : `🎯 Options (${moneyness})`)}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 w-full pt-2 border-t border-borderClr/30">
+              <span className="text-xs text-gray-400 font-bold mr-1">Active Watchlist:</span>
+              {["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX", "RELIANCE", "HDFCBANK", "ICICIBANK", "SBIN", "TCS", "INFY", "TATAMOTORS"].map((sym) => {
+                const active = scanSymbols.includes(sym);
+                return (
+                  <button
+                    key={sym}
+                    onClick={() => {
+                      setScanSymbols(prev => active ? prev.filter(s => s !== sym) : [...prev, sym]);
+                    }}
+                    className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border transition-all ${
+                      active
+                        ? 'bg-accentBrand/20 text-accentBrand border-accentBrand/40'
+                        : 'bg-black/30 text-gray-500 border-borderClr hover:text-gray-300'
+                    }`}
+                  >
+                    {sym}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Scanner Results Table */}

@@ -340,12 +340,41 @@ class CustomRuleParser:
                 # Default to CE rule if no section defined yet
                 raw_ce.append(stmt)
 
+        def balance_parentheses(s: str) -> str:
+            open_count = 0
+            clean_chars = []
+            for ch in s:
+                if ch == '(':
+                    open_count += 1
+                    clean_chars.append(ch)
+                elif ch == ')':
+                    if open_count > 0:
+                        open_count -= 1
+                        clean_chars.append(ch)
+                    else:
+                        continue
+                else:
+                    clean_chars.append(ch)
+            return "".join(clean_chars) + (")" * open_count)
+
         def transform_clause(expr: str) -> str:
             s = expr.strip()
-            # Remove Chartink prefix tags like "[0] 5 minute", "[0]", "[-1] 5 minute"
-            s = re.sub(r'\[\s*0\s*\]\s*(?:\d+\s*(?:minute|min|hour|day)\s*)?', '', s, flags=re.IGNORECASE)
-            s = re.sub(r'\[\s*-1\s*\]\s*(?:\d+\s*(?:minute|min|hour|day)\s*)?', 'PREV_', s, flags=re.IGNORECASE)
-            s = re.sub(r'\[\s*-2\s*\]\s*(?:\d+\s*(?:minute|min|hour|day)\s*)?', 'PREV2_', s, flags=re.IGNORECASE)
+
+            # Normalize spaces inside function calls like "rsi ( 3 )" -> "RSI(3)"
+            s = re.sub(r'([A-Za-z0-9_]+)\s*\(\s*([^)]*?)\s*\)', lambda m: f"{m.group(1).upper()}({m.group(2).replace(' ', '')})", s)
+
+            # Remove Chartink prefix tags like "[0] 5 minute", "[0]", "[0] 3 minute"
+            s = re.sub(r'\[\s*0\s*\]\s*(?:\d+\s*(?:minute|min|hour|day|m|h|d)\s*)?', '', s, flags=re.IGNORECASE)
+
+            # Handle any [-N] offsets like "[-3] 3 minute close", "[-1] high", "[-4] 5 minute open"
+            def replace_offset(m):
+                offset = int(m.group(1))
+                field = m.group(2).upper()
+                return f"PREV_{field}" if offset == 1 else f"PREV{offset}_{field}"
+
+            offset_pat = r'\[\s*-\s*(\d+)\s*\](?:\s*\d+\s*(?:minute|min|hour|day|m|h|d))?\s*([A-Za-z0-9_]+(?:\([^)]*\))?)'
+            s = re.sub(offset_pat, replace_offset, s, flags=re.IGNORECASE)
+            s = re.sub(r'\[\s*-\s*(\d+)\s*\]', r'PREV\1_', s)
 
             # Crosses from Bearish to Bullish / Bullish to Bearish
             s = re.sub(r'([A-Za-z0-9_]+(?:\([^\)]*\))?)(?:\.Direction)?\s+crosses\s+from\s+Bearish\s+to\s+Bullish', r'CROSS_ABOVE(\1, 0)', s, flags=re.IGNORECASE)
@@ -369,10 +398,17 @@ class CustomRuleParser:
 
             s = cls.normalize_indicators(s)
 
+            # Normalize common candle words like close, open, high, low, volume
+            for word in ['close', 'open', 'high', 'low', 'volume']:
+                s = re.sub(rf'\b{word}\b', word.upper(), s, flags=re.IGNORECASE)
+
             # Substitute user variables (longest names first)
             for vname in sorted(variables.keys(), key=lambda x: -len(x)):
                 val = variables[vname]
                 s = re.sub(r'\b' + re.escape(vname) + r'\b', val, s)
+
+            # Auto-balance parentheses
+            s = balance_parentheses(s)
 
             return s
 
@@ -432,6 +468,17 @@ class CustomExecutionContext:
         clean = ind_call.strip().upper()
         if clean in self.variables:
             return self.variables[clean]
+
+        # Dynamic PREV{N}_{FIELD} resolution (e.g. PREV3_CLOSE, PREV4_HIGH, PREV_OPEN)
+        prev_m = re.match(r"^PREV(\d+)?_([A-Za-z0-9_]+(?:\([^)]*\))?)$", clean)
+        if prev_m:
+            shift_n = int(prev_m.group(1)) if prev_m.group(1) else 1
+            base_field = prev_m.group(2)
+            base_series = self.resolve_indicator(base_field)
+            res = np.roll(base_series, shift_n)
+            res[:shift_n] = base_series[0] if len(base_series) > 0 else 0.0
+            self.variables[clean] = res
+            return res
 
         # Check RSI
         m = re.match(r"^RSI\s*\(\s*(\d+)\s*\)$", clean)
@@ -910,25 +957,34 @@ def run_custom_system_backtest(
                 direction = sig["direction"]
                 m_upper = moneyness.upper()
 
-                if m_upper in ["NIFTYBEES", "BANKBEES", "ETF"]:
-                    is_nifty = ("NIFTY" in symbol.upper() and "BANK" not in symbol.upper())
-                    ratio = 87.82 if is_nifty else 100.0
-                    etf_symbol = "NIFTYBEES" if is_nifty else "BANKBEES"
-                    entry_etf = round(spot / ratio, 2) + slippage
-                    trade_qty = max(10, int((initial_capital * 0.35) / entry_etf)) if lots <= 1 else int((initial_capital * 0.35 * lots) / entry_etf)
+                if m_upper in ["NIFTYBEES", "BANKBEES", "ETF", "EQUITY", "SHARES", "STOCK"]:
+                    is_equity = m_upper in ["EQUITY", "SHARES", "STOCK"]
+                    if is_equity:
+                        ratio = 1.0
+                        trade_symbol = symbol.upper()
+                        entry_price = round(spot, 2) + (0.05 if slippage <= 0.1 else slippage)
+                        trade_qty = max(1, int((initial_capital * 0.35) / max(1.0, entry_price))) if lots <= 1 else int((initial_capital * 0.35 * lots) / max(1.0, entry_price))
+                        trade_label = "Equity"
+                    else:
+                        is_nifty = ("NIFTY" in symbol.upper() and "BANK" not in symbol.upper())
+                        ratio = 87.82 if is_nifty else 100.0
+                        trade_symbol = "NIFTYBEES" if is_nifty else "BANKBEES"
+                        entry_price = round(spot / ratio, 2) + (0.05 if slippage <= 0.1 else slippage)
+                        trade_qty = max(10, int((initial_capital * 0.35) / max(1.0, entry_price))) if lots <= 1 else int((initial_capital * 0.35 * lots) / max(1.0, entry_price))
+                        trade_label = "ETF"
                     
                     current_trade = {
                         "entryTime": ts,
                         "direction": direction,
                         "entrySpot": float(spot),
-                        "strike": etf_symbol,
-                        "optionType": "ETF (Long)" if direction == "BULLISH_CE" else "ETF (Short)",
-                        "entryPremium": max(1.0, float(entry_etf)),
+                        "strike": trade_symbol,
+                        "optionType": f"{trade_label} (Long)" if direction == "BULLISH_CE" else f"{trade_label} (Short)",
+                        "entryPremium": max(1.0, float(entry_price)),
                         "expiryDate": dt_obj,
                         "is_etf": True,
                         "qty": trade_qty,
                         "ratio": ratio,
-                        "etf_symbol": etf_symbol
+                        "etf_symbol": trade_symbol
                     }
                 else:
                     atm_strike = round(spot / strike_round) * strike_round
