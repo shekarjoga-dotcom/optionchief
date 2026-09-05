@@ -186,6 +186,34 @@ def calc_orb(df: pd.DataFrame, orb_minutes: int = 15) -> Tuple[np.ndarray, np.nd
         pass
     return orb_high, orb_low
 
+def calc_heikin_ashi(open_: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculates standard Heikin-Ashi (HA) candles:
+      ha_close = (open + high + low + close) / 4.0
+      ha_open[0] = (open[0] + close[0]) / 2.0
+      ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2.0
+      ha_high[i] = max(high[i], ha_open[i], ha_close[i])
+      ha_low[i] = min(low[i], ha_open[i], ha_close[i])
+    """
+    n = len(close)
+    if n == 0:
+        return np.array([]), np.array([]), np.array([]), np.array([])
+    ha_close = (open_ + high + low + close) / 4.0
+    ha_open = np.zeros(n)
+    ha_high = np.zeros(n)
+    ha_low = np.zeros(n)
+    
+    ha_open[0] = (open_[0] + close[0]) / 2.0
+    ha_high[0] = high[0]
+    ha_low[0] = low[0]
+    
+    for i in range(1, n):
+        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
+        ha_high[i] = max(high[i], ha_open[i], ha_close[i])
+        ha_low[i] = min(low[i], ha_open[i], ha_close[i])
+        
+    return ha_open, ha_high, ha_low, ha_close
+
 
 # ==========================================
 # 2. CHARTINK & PINE SCRIPT PARSER
@@ -258,6 +286,8 @@ class CustomRuleParser:
             found.append({"type": "BB_Lower", "params": {"period": int(m.group(1)), "std": float(m.group(2))}, "raw": f"BB_LOWER({m.group(1)}, {m.group(2)})"})
         for m in re.finditer(r"ATR\s*\(\s*(\d+)\s*\)", code_upper):
             found.append({"type": "ATR", "params": {"period": int(m.group(1))}, "raw": f"ATR({m.group(1)})"})
+        if re.search(r"\b(?:HA_|HEIKIN|HA\b)", code_upper):
+            found.append({"type": "Heikin_Ashi", "params": {}, "raw": "Heikin-Ashi (HA)"})
 
         unique = []
         seen = set()
@@ -363,6 +393,12 @@ class CustomRuleParser:
             # Normalize spaces inside function calls like "rsi ( 3 )" -> "RSI(3)"
             s = re.sub(r'([A-Za-z0-9_]+)\s*\(\s*([^)]*?)\s*\)', lambda m: f"{m.group(1).upper()}({m.group(2).replace(' ', '')})", s)
 
+            # Normalize Heikin-Ashi candle names BEFORE candle offset conversion
+            s = re.sub(r'\b(?:HA|HEIKIN[\s_-]*ASHI|HEIKIN)[\s_-]*LOW\b', 'HA_LOW', s, flags=re.IGNORECASE)
+            s = re.sub(r'\b(?:HA|HEIKIN[\s_-]*ASHI|HEIKIN)[\s_-]*HIGH\b', 'HA_HIGH', s, flags=re.IGNORECASE)
+            s = re.sub(r'\b(?:HA|HEIKIN[\s_-]*ASHI|HEIKIN)[\s_-]*OPEN\b', 'HA_OPEN', s, flags=re.IGNORECASE)
+            s = re.sub(r'\b(?:HA|HEIKIN[\s_-]*ASHI|HEIKIN)[\s_-]*CLOSE\b', 'HA_CLOSE', s, flags=re.IGNORECASE)
+
             # Remove Chartink prefix tags like "[0] 5 minute", "[0]", "[0] 3 minute"
             s = re.sub(r'\[\s*0\s*\]\s*(?:\d+\s*(?:minute|min|hour|day|m|h|d)\s*)?', '', s, flags=re.IGNORECASE)
 
@@ -375,6 +411,9 @@ class CustomRuleParser:
             offset_pat = r'\[\s*-\s*(\d+)\s*\](?:\s*\d+\s*(?:minute|min|hour|day|m|h|d))?\s*([A-Za-z0-9_]+(?:\([^)]*\))?)'
             s = re.sub(offset_pat, replace_offset, s, flags=re.IGNORECASE)
             s = re.sub(r'\[\s*-\s*(\d+)\s*\]', r'PREV\1_', s)
+
+            # Convert single = to == for comparisons (ignoring <=, >=, !=, ==, :=)
+            s = re.sub(r'(?<![<>=!:])=(?![=])', '==', s)
 
             # Crosses from Bearish to Bullish / Bullish to Bearish
             s = re.sub(r'([A-Za-z0-9_]+(?:\([^\)]*\))?)(?:\.Direction)?\s+crosses\s+from\s+Bearish\s+to\s+Bullish', r'CROSS_ABOVE(\1, 0)', s, flags=re.IGNORECASE)
@@ -452,6 +491,13 @@ class CustomExecutionContext:
         self.variables['LOW'] = low
         self.variables['VOLUME'] = vol
 
+        # Heikin-Ashi (HA) Candlestick Series
+        ha_open, ha_high, ha_low, ha_close = calc_heikin_ashi(open_, high, low, close)
+        self.variables['HA_OPEN'] = ha_open
+        self.variables['HA_HIGH'] = ha_high
+        self.variables['HA_LOW'] = ha_low
+        self.variables['HA_CLOSE'] = ha_close
+
         # Offsets
         self.variables['PREV_CLOSE'] = np.roll(close, 1)
         self.variables['PREV_OPEN'] = np.roll(open_, 1)
@@ -459,10 +505,20 @@ class CustomExecutionContext:
         self.variables['PREV_LOW'] = np.roll(low, 1)
         self.variables['PREV_VOLUME'] = np.roll(vol, 1)
 
+        self.variables['PREV_HA_OPEN'] = np.roll(ha_open, 1)
+        self.variables['PREV_HA_HIGH'] = np.roll(ha_high, 1)
+        self.variables['PREV_HA_LOW'] = np.roll(ha_low, 1)
+        self.variables['PREV_HA_CLOSE'] = np.roll(ha_close, 1)
+
         self.variables['PREV2_CLOSE'] = np.roll(close, 2)
         self.variables['PREV2_OPEN'] = np.roll(open_, 2)
         self.variables['PREV2_HIGH'] = np.roll(high, 2)
         self.variables['PREV2_LOW'] = np.roll(low, 2)
+
+        self.variables['PREV2_HA_OPEN'] = np.roll(ha_open, 2)
+        self.variables['PREV2_HA_HIGH'] = np.roll(ha_high, 2)
+        self.variables['PREV2_HA_LOW'] = np.roll(ha_low, 2)
+        self.variables['PREV2_HA_CLOSE'] = np.roll(ha_close, 2)
 
     def resolve_indicator(self, ind_call: str) -> np.ndarray:
         clean = ind_call.strip().upper()

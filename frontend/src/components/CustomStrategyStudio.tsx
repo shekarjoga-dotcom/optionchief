@@ -529,6 +529,18 @@ SL = 12%
       direction: 'BUY_CE' as const
     },
     {
+      label: '🕯️ HA Flat Bottom (Strong Bullish)',
+      desc: 'Heikin-Ashi candle has no lower shadow (HA-Low = HA-Open), signaling pure upward momentum',
+      condition: '[0] 5 minute HA-Low = [0] 5 minute HA-Open and HA-Close > HA-Open and Close > EMA(20)',
+      direction: 'BUY_CE' as const
+    },
+    {
+      label: '🩸 HA Flat Top (Strong Bearish)',
+      desc: 'Heikin-Ashi candle has no upper shadow (HA-High = HA-Open), signaling pure downward momentum',
+      condition: '[0] 5 minute HA-High = [0] 5 minute HA-Open and HA-Close < HA-Open and Close < EMA(20)',
+      direction: 'BUY_PE' as const
+    },
+    {
       label: '📈 EMA 9/21 Cross + Supertrend',
       desc: 'Golden trend cross confirmed with Supertrend(10, 2.0)',
       condition: 'EMA(9) crosses above EMA(21) and Supertrend(10, 2.0) is Bullish and RSI(14) > 55',
@@ -1264,6 +1276,7 @@ SL = 12%
                 </div>
                 <div className="flex flex-wrap gap-1 text-[10px] font-mono">
                   <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">[-N] close / high / low</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300">HA-Low / HA-Open / HA-High (Heikin-Ashi)</span>
                   <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">RSI(period)</span>
                   <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">EMA(period)</span>
                   <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">SMA(period)</span>
