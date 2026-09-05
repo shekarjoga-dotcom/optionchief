@@ -247,8 +247,14 @@ class CustomRuleParser:
 
         # Supertrend(Period = 20, Multiplier = 3.0) or Supertrend(20, 3.0)
         s = re.sub(r'\bSupertrend\s*\(\s*(?:period\s*=\s*)?(\d+)\s*,\s*(?:multiplier\s*=\s*)?([\d\.]+)\s*\)', r'SUPERTREND(\1, \2)', s, flags=re.IGNORECASE)
-        # EMA(Close, 20) or EMA(20)
-        s = re.sub(r'\bEMA\s*\(\s*(?:(?:close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'EMA(\1)', s, flags=re.IGNORECASE)
+        # EMA(High, 21), EMA(Low, 21), EMA(Close, 20), EMA(20)
+        def norm_ema(m):
+            src = (m.group(1) or '').upper()
+            period = m.group(2)
+            if src in ['HIGH', 'LOW', 'OPEN']:
+                return f'EMA_{src}({period})'
+            return f'EMA({period})'
+        s = re.sub(r'\bEMA\s*\(\s*(?:(close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', norm_ema, s, flags=re.IGNORECASE)
         # SMA(Close, 20) or SMA(20)
         s = re.sub(r'\bSMA\s*\(\s*(?:(?:close|open|high|low|price|volume)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'SMA(\1)', s, flags=re.IGNORECASE)
         # RSI(Close, 14) or RSI(14)
@@ -270,8 +276,10 @@ class CustomRuleParser:
 
         for m in re.finditer(r"RSI\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE)\s*,\s*)?(\d+)\s*\)", code_upper):
             found.append({"type": "RSI", "params": {"period": int(m.group(1))}, "raw": f"RSI({m.group(1)})"})
-        for m in re.finditer(r"EMA\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE)\s*,\s*)?(\d+)\s*\)", code_upper):
-            found.append({"type": "EMA", "params": {"period": int(m.group(1))}, "raw": f"EMA({m.group(1)})"})
+        for m in re.finditer(r"EMA(?:_(HIGH|LOW|OPEN|CLOSE))?\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE)\s*,\s*)?(\d+)\s*\)", code_upper):
+            src = m.group(1) or "CLOSE"
+            p = m.group(2)
+            found.append({"type": f"EMA_{src}" if src != "CLOSE" else "EMA", "params": {"period": int(p), "source": src}, "raw": f"EMA_{src}({p})" if src != "CLOSE" else f"EMA({p})"})
         for m in re.finditer(r"SMA\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE|VOLUME)\s*,\s*)?(\d+)\s*\)", code_upper):
             found.append({"type": "SMA", "params": {"period": int(m.group(1))}, "raw": f"SMA({m.group(1)})"})
         if "VWAP" in code_upper:
@@ -326,6 +334,10 @@ class CustomRuleParser:
         current_sec = None
 
         for stmt in statements:
+            # Ignore INI Section headers like [STRATEGY_CONFIG], [INDICATORS], [ENTRY_CONDITIONS], [RISK_MANAGEMENT]
+            if re.match(r'^\[\s*[A-Za-z0-9_ -]+\s*\]$', stmt):
+                continue
+
             # Check Risk Management TP / SL
             tp_m = re.match(r'^(?:TP|TAKE_PROFIT)\s*=\s*([0-9\.]+)\s*%?', stmt, re.IGNORECASE)
             if tp_m:
@@ -334,6 +346,24 @@ class CustomRuleParser:
             sl_m = re.match(r'^(?:SL|STOP_LOSS)\s*=\s*([0-9\.]+)\s*%?', stmt, re.IGNORECASE)
             if sl_m:
                 custom_params['SL'] = float(sl_m.group(1))
+                continue
+
+            # Strategy metadata tags
+            meta_name_m = re.match(r'^(?:NAME|STRATEGY_NAME)\s*=\s*(.*)$', stmt, re.IGNORECASE)
+            if meta_name_m:
+                custom_params['NAME'] = meta_name_m.group(1).strip()
+                continue
+            meta_tf_m = re.match(r'^(?:TIMEFRAME|INTERVAL)\s*=\s*(.*)$', stmt, re.IGNORECASE)
+            if meta_tf_m:
+                custom_params['TIMEFRAME'] = meta_tf_m.group(1).strip()
+                continue
+            meta_ct_m = re.match(r'^(?:CANDLE_TYPE)\s*=\s*(.*)$', stmt, re.IGNORECASE)
+            if meta_ct_m:
+                custom_params['CANDLE_TYPE'] = meta_ct_m.group(1).strip()
+                continue
+            meta_tsl_m = re.match(r'^(?:TRAILING_SL)\s*=\s*(.*)$', stmt, re.IGNORECASE)
+            if meta_tsl_m:
+                custom_params['TRAILING_SL'] = meta_tsl_m.group(1).strip()
                 continue
 
             # Check BUY_CE / BUY_CALL header or assignment
@@ -390,6 +420,11 @@ class CustomRuleParser:
         def transform_clause(expr: str) -> str:
             s = expr.strip()
 
+            # Substitute user variables FIRST so that postfix offsets like EMA_HIGH_21[1] turn into EMA_HIGH(21)[1]
+            for vname in sorted(variables.keys(), key=lambda x: -len(x)):
+                val = variables[vname]
+                s = re.sub(r'\b' + re.escape(vname) + r'\b(?!\s*\()', val, s)
+
             # Normalize spaces inside function calls like "rsi ( 3 )" -> "RSI(3)"
             s = re.sub(r'([A-Za-z0-9_]+)\s*\(\s*([^)]*?)\s*\)', lambda m: f"{m.group(1).upper()}({m.group(2).replace(' ', '')})", s)
 
@@ -411,6 +446,9 @@ class CustomRuleParser:
             offset_pat = r'\[\s*-\s*(\d+)\s*\](?:\s*\d+\s*(?:minute|min|hour|day|m|h|d))?\s*([A-Za-z0-9_]+(?:\([^)]*\))?)'
             s = re.sub(offset_pat, replace_offset, s, flags=re.IGNORECASE)
             s = re.sub(r'\[\s*-\s*(\d+)\s*\]', r'PREV\1_', s)
+
+            # Handle Pine Script post-fix bar offset like CLOSE[1], HIGH[2], EMA[1], EMA_HIGH_21[1]
+            s = re.sub(r'([A-Za-z0-9_]+(?:\([^)]*\))?)\s*\[\s*(\d+)\s*\]', lambda m: f"PREV{m.group(2)}_{m.group(1)}" if int(m.group(2)) > 1 else f"PREV_{m.group(1)}", s)
 
             # Convert single = to == for comparisons (ignoring <=, >=, !=, ==, :=)
             s = re.sub(r'(?<![<>=!:])=(?![=])', '==', s)
@@ -444,7 +482,7 @@ class CustomRuleParser:
             # Substitute user variables (longest names first)
             for vname in sorted(variables.keys(), key=lambda x: -len(x)):
                 val = variables[vname]
-                s = re.sub(r'\b' + re.escape(vname) + r'\b', val, s)
+                s = re.sub(r'\b' + re.escape(vname) + r'\b(?!\s*\()', val, s)
 
             # Auto-balance parentheses
             s = balance_parentheses(s)
@@ -544,11 +582,13 @@ class CustomExecutionContext:
             self.variables[clean] = res
             return res
 
-        # Check EMA
-        m = re.match(r"^EMA\s*\(\s*(\d+)\s*\)$", clean)
+        # Check EMA (supports Close, High, Low, Open)
+        m = re.match(r"^EMA(?:_(HIGH|LOW|OPEN|CLOSE))?\s*\(\s*(?:(HIGH|LOW|OPEN|CLOSE)\s*,\s*)?(\d+)\s*\)$", clean)
         if m:
-            period = int(m.group(1))
-            res = calc_ema(self.variables['CLOSE'], period)
+            source = (m.group(1) or m.group(2) or 'CLOSE').upper()
+            period = int(m.group(3))
+            base_data = self.variables.get(source, self.variables['CLOSE'])
+            res = calc_ema(base_data, period)
             self.variables[clean] = res
             return res
 
@@ -589,17 +629,30 @@ class CustomExecutionContext:
             self.variables[f"{clean}_LINE"] = st
             return dir_
 
-        # Check MACD
-        m = re.match(r"^MACD\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$", clean)
+        # Check MACD / MACD_LINE / MACD_SIGNAL / MACD_HIST
+        m = re.match(r"^MACD(?:_(LINE|SIGNAL|HIST))?(?:\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\))?$", clean)
         if m:
-            f = int(m.group(1))
-            s = int(m.group(2))
-            sig = int(m.group(3))
-            ml, sl, hist = calc_macd(self.variables['CLOSE'], f, s, sig)
-            self.variables[clean] = hist
-            self.variables[f"{clean}_LINE"] = ml
-            self.variables[f"{clean}_SIGNAL"] = sl
-            return hist
+            comp = (m.group(1) or "HIST").upper()
+            f = int(m.group(2)) if m.group(2) else 12
+            s = int(m.group(3)) if m.group(3) else 26
+            sig = int(m.group(4)) if m.group(4) else 9
+            cache_key = f"MACD({f},{s},{sig})"
+            if f"{cache_key}_LINE" not in self.variables:
+                ml, sl, hist = calc_macd(self.variables['CLOSE'], f, s, sig)
+                self.variables[cache_key] = hist
+                self.variables[f"{cache_key}_LINE"] = ml
+                self.variables[f"{cache_key}_SIGNAL"] = sl
+                self.variables[f"{cache_key}_HIST"] = hist
+                self.variables["MACD_LINE"] = ml
+                self.variables["MACD_SIGNAL"] = sl
+                self.variables["MACD_HIST"] = hist
+                self.variables["MACD"] = hist
+            if comp == "LINE":
+                return self.variables.get(f"{cache_key}_LINE", self.variables.get("MACD_LINE"))
+            elif comp == "SIGNAL":
+                return self.variables.get(f"{cache_key}_SIGNAL", self.variables.get("MACD_SIGNAL"))
+            else:
+                return self.variables.get(f"{cache_key}_HIST", self.variables.get("MACD_HIST"))
 
         # Check BB_UPPER / LOWER / MIDDLE
         m = re.match(r"^BB_(UPPER|LOWER|MIDDLE)\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)$", clean)
@@ -655,8 +708,12 @@ class SafeEvaluator(ast.NodeVisitor):
         if not expr_str.strip():
             return np.zeros(self.ctx.n, dtype=bool)
 
+        clean_expr = re.sub(r'\bAND\b', 'and', expr_str, flags=re.IGNORECASE)
+        clean_expr = re.sub(r'\bOR\b', 'or', clean_expr, flags=re.IGNORECASE)
+        clean_expr = re.sub(r'\bNOT\b', 'not', clean_expr, flags=re.IGNORECASE)
+
         try:
-            tree = ast.parse(expr_str, mode='eval')
+            tree = ast.parse(clean_expr, mode='eval')
         except SyntaxError as e:
             raise ValueError(f"Invalid condition syntax: '{expr_str}'. Detail: {str(e)}")
 
@@ -724,17 +781,47 @@ class SafeEvaluator(ast.NodeVisitor):
                 cross[0] = False
                 return cross
 
+            prev_fn_m = re.match(r"^PREV(\d+)?_(.+)$", fname)
+            if prev_fn_m:
+                shift_n = int(prev_fn_m.group(1)) if prev_fn_m.group(1) else 1
+                base_fname = prev_fn_m.group(2)
+                if base_fname == 'RSI':
+                    p = int(args[0][0]) if args else 14
+                    base_s = self.ctx.resolve_indicator(f'RSI({p})')
+                elif base_fname.startswith('EMA') or base_fname.startswith('SMA'):
+                    p = int(args[0][0]) if args else 20
+                    base_s = self.ctx.resolve_indicator(f'{base_fname}({p})')
+                elif base_fname == 'VWAP':
+                    base_s = self.ctx.resolve_indicator('VWAP')
+                elif base_fname == 'MACD' or base_fname.startswith('MACD_'):
+                    if len(args) >= 3:
+                        f, s, sig = int(args[0][0]), int(args[1][0]), int(args[2][0])
+                        base_s = self.ctx.resolve_indicator(f'{base_fname}({f}, {s}, {sig})')
+                    else:
+                        base_s = self.ctx.resolve_indicator(base_fname)
+                elif base_fname.startswith('BB_'):
+                    p, dev = int(args[0][0]), float(args[1][0])
+                    base_s = self.ctx.resolve_indicator(f'{base_fname}({p}, {dev})')
+                elif base_fname == 'ATR':
+                    p = int(args[0][0]) if args else 14
+                    base_s = self.ctx.resolve_indicator(f'ATR({p})')
+                else:
+                    base_s = self.ctx.resolve_indicator(base_fname)
+                res = np.roll(base_s, shift_n)
+                res[:shift_n] = base_s[0] if len(base_s) > 0 else 0.0
+                return res
+
             elif fname == 'RSI':
                 period = int(args[0][0])
                 return self.ctx.resolve_indicator(f'RSI({period})')
 
-            elif fname == 'EMA':
+            elif fname == 'EMA' or fname.startswith('EMA_'):
                 period = int(args[0][0])
-                return self.ctx.resolve_indicator(f'EMA({period})')
+                return self.ctx.resolve_indicator(f'{fname}({period})')
 
-            elif fname == 'SMA':
+            elif fname == 'SMA' or fname.startswith('SMA_'):
                 period = int(args[0][0])
-                return self.ctx.resolve_indicator(f'SMA({period})')
+                return self.ctx.resolve_indicator(f'{fname}({period})')
 
             elif fname == 'VWAP':
                 return self.ctx.resolve_indicator('VWAP')
@@ -748,9 +835,11 @@ class SafeEvaluator(ast.NodeVisitor):
                 mult = float(args[1][0])
                 return self.ctx.resolve_indicator(f'SUPERTREND({p}, {mult})')
 
-            elif fname == 'MACD':
-                f, s, sig = int(args[0][0]), int(args[1][0]), int(args[2][0])
-                return self.ctx.resolve_indicator(f'MACD({f}, {s}, {sig})')
+            elif fname == 'MACD' or fname.startswith('MACD_'):
+                if len(args) >= 3:
+                    f, s, sig = int(args[0][0]), int(args[1][0]), int(args[2][0])
+                    return self.ctx.resolve_indicator(f'{fname}({f}, {s}, {sig})')
+                return self.ctx.resolve_indicator(fname)
 
             elif fname.startswith('BB_'):
                 p, dev = int(args[0][0]), float(args[1][0])

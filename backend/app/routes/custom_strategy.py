@@ -308,6 +308,27 @@ BUY_PE: [0] 5 minute HA-Low == [0] 5 minute HA-Open and [0] Close > [0] EMA(20) 
 TP = 25%
 SL = 12%
 """
+    },
+    {
+        "id": "animesh_ema_band_macd",
+        "name": "📊 Animesh EMA Band (21 High/Low) + MACD Momentum",
+        "description": "Crosses EMA 21 envelope with MACD confirmation. Buy Call on Close crossing above 21 EMA(High); Buy Put on Close crossing below 21 EMA(Low).",
+        "symbol": "BANKNIFTY",
+        "timeframe": "5m",
+        "moneyness": "ATM",
+        "tp_pct": 30.0,
+        "sl_pct": 15.0,
+        "code": """// === ANIMESH EMA BAND (21 HIGH/LOW) + MACD MOMENTUM ===
+// Bullish Entry (Buy Call when Close crosses above 21 EMA of High with positive MACD):
+BUY_CE: Close crosses above EMA(HIGH, 21) and MACD_LINE(12, 26, 9) > MACD_SIGNAL(12, 26, 9) and MACD_HIST(12, 26, 9) > 0
+
+// Bearish Entry (Buy Put when Close crosses below 21 EMA of Low with negative MACD):
+BUY_PE: Close crosses below EMA(LOW, 21) and MACD_LINE(12, 26, 9) < MACD_SIGNAL(12, 26, 9) and MACD_HIST(12, 26, 9) < 0
+
+// Risk Management:
+TP = 30%
+SL = 15%
+"""
     }
 ]
 
