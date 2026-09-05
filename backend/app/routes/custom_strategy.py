@@ -757,6 +757,7 @@ def backtest_custom_strategy(req: BacktestCustomRequest):
             lots=req.lots or 1
         )
         results["vwapWarning"] = None
+        results["chartTarget"] = "OPTION_CHARTS"
         return results
 
     results = run_custom_system_backtest(
@@ -785,6 +786,7 @@ def backtest_custom_strategy(req: BacktestCustomRequest):
             f"test on liquid F&O stocks (e.g. RELIANCE, HDFCBANK) or Index Futures."
         )
 
+    results["chartTarget"] = "SPOT"
     results["vwapWarning"] = vwap_warning
     return results
 

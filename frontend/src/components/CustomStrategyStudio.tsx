@@ -765,10 +765,14 @@ SL = 12%
   };
 
   // 5. Run Backtest
-  const handleRunBacktest = async () => {
+  const handleRunBacktest = async (
+    targetOverride?: 'SPOT' | 'OPTION_CHARTS',
+    strikesOverride?: 'ATM' | 'ATM_1' | 'ATM_2'
+  ) => {
+    const activeTarget = targetOverride || chartTarget;
+    const activeStrikes = strikesOverride || optionStrikesRange;
     setIsBacktesting(true);
     setBacktestError(null);
-    setBacktestResults(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/custom-strategy/backtest`, {
         method: 'POST',
@@ -780,8 +784,8 @@ SL = 12%
           endDate,
           timeframe,
           moneyness,
-          chartTarget,
-          optionStrikesRange,
+          chartTarget: activeTarget,
+          optionStrikesRange: activeStrikes,
           takeProfitPct: tpPct,
           stopLossPct: slPct,
           initialCapital,
@@ -791,7 +795,11 @@ SL = 12%
       });
       const data = await res.json();
       if (res.ok) {
-        setBacktestResults(data);
+        setBacktestResults({
+          ...data,
+          chartTarget: activeTarget,
+          strikesRange: activeStrikes
+        });
       } else {
         setBacktestError(data.detail || "Backtest failed.");
       }
@@ -2181,7 +2189,12 @@ SL = 12%
                 <div className="flex items-center bg-black/60 p-0.5 rounded-lg border border-borderClr">
                   <button
                     type="button"
-                    onClick={() => setChartTarget('SPOT')}
+                    onClick={() => {
+                      setChartTarget('SPOT');
+                      if (backtestResults) {
+                        handleRunBacktest('SPOT');
+                      }
+                    }}
                     className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
                       chartTarget === 'SPOT'
                         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
@@ -2197,6 +2210,9 @@ SL = 12%
                       setScanAssetClass('OPTIONS');
                       if (['NIFTYBEES', 'BANKBEES', 'ETF', 'EQUITY'].includes(moneyness)) {
                         setMoneyness('ATM');
+                      }
+                      if (backtestResults) {
+                        handleRunBacktest('OPTION_CHARTS');
                       }
                     }}
                     className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -2216,7 +2232,13 @@ SL = 12%
                     <span>Strikes:</span>
                     <select
                       value={optionStrikesRange}
-                      onChange={(e) => setOptionStrikesRange(e.target.value as any)}
+                      onChange={(e) => {
+                        const val = e.target.value as any;
+                        setOptionStrikesRange(val);
+                        if (backtestResults && chartTarget === 'OPTION_CHARTS') {
+                          handleRunBacktest('OPTION_CHARTS', val);
+                        }
+                      }}
                       className="bg-black/60 border border-purple-500/40 rounded-lg px-2.5 py-1 text-xs text-purple-200 font-bold focus:outline-none"
                     >
                       <option value="ATM">ATM Only (ATM CE & PE)</option>
@@ -2326,7 +2348,7 @@ SL = 12%
               </div>
 
               <button
-                onClick={handleRunBacktest}
+                onClick={() => handleRunBacktest()}
                 disabled={isBacktesting}
                 className={`flex items-center gap-2 px-6 py-2.5 text-white font-bold text-xs rounded-xl shadow-lg transition-all ${
                   chartTarget === 'OPTION_CHARTS'
@@ -2350,6 +2372,71 @@ SL = 12%
           {backtestResults && (
             <div className="flex flex-col gap-6">
               
+              {/* Backtest Mode Status Banner */}
+              {backtestResults.chartTarget === 'OPTION_CHARTS' || backtestResults.metrics?.chartSource?.includes('OPTION') ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-purple-500/15 border border-purple-500/40 text-purple-200 shadow-lg shadow-purple-950/30">
+                  <div className="flex items-center gap-3">
+                    <span className="p-2 rounded-lg bg-purple-500/20 text-purple-300 text-lg">🎯</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-black text-xs uppercase tracking-wider">Direct Option Charts Backtest</span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-purple-500/30 text-purple-200 border border-purple-500/50">
+                          {backtestResults.strikesRange || optionStrikesRange}
+                        </span>
+                      </div>
+                      <span className="text-purple-300/80 text-[11px] block mt-0.5">
+                        Signals evaluated directly on Call & Put premium OHLCV candles via Dhan HQ API / Option Engine
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] px-2.5 py-1 rounded-md font-mono font-bold bg-purple-500/25 text-purple-300 border border-purple-500/40">
+                      Direct Option LTPs
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-200 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <span className="p-2 rounded-lg bg-cyan-500/20 text-cyan-300 text-lg">📈</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-black text-xs uppercase tracking-wider">Spot Index Backtest</span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-cyan-500/30 text-cyan-200 border border-cyan-500/50">
+                          {moneyness}
+                        </span>
+                      </div>
+                      <span className="text-cyan-300/80 text-[11px] block mt-0.5">
+                        Signals evaluated on underlying Index Spot candles, executed with Black-Scholes Greeks Pricing
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] px-2.5 py-1 rounded-md font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      Spot Price Signals
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Stale Target Warning if user selected target doesn't match results */}
+              {backtestResults.chartTarget && backtestResults.chartTarget !== chartTarget && (
+                <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>
+                      You switched to <strong>{chartTarget === 'OPTION_CHARTS' ? 'Direct Option Charts' : 'Spot Index Chart'}</strong>, but the metrics below are from the previous <strong>{backtestResults.chartTarget === 'OPTION_CHARTS' ? 'Direct Option Charts' : 'Spot Index'}</strong> run.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleRunBacktest(chartTarget)}
+                    className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-xs shrink-0 transition-all"
+                  >
+                    Recalculate Now 🚀
+                  </button>
+                </div>
+              )}
+
               {/* Performance Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
                 <div className="bg-cardClr border border-borderClr rounded-xl p-3.5">
