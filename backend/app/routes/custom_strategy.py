@@ -17,6 +17,7 @@ from app.quant.custom_system_engine import (
     CustomRuleParser,
     generate_custom_signals,
     run_custom_system_backtest,
+    build_option_chart_df,
     bs_pricing
 )
 from app.quant.stockan_engine import analyze_quant_market
@@ -283,6 +284,29 @@ BUY_PE: RSI(14) crosses below 40 and Close < EMA(20)
 TP = 20%
 SL = 10%
 """
+    },
+    {
+        "id": "option_chart_ha_breakout",
+        "name": "🔥 Option Chart: Heikin-Ashi Flat-Base Breakout",
+        "description": "Scans ATM & nearby Option Premium Charts directly. Enters when option candle shows strong trend with HA-Low == HA-Open (no bottom wick) and momentum expansion.",
+        "symbol": "NIFTY",
+        "timeframe": "5m",
+        "moneyness": "ATM",
+        "chart_target": "OPTION_CHARTS",
+        "option_strikes_range": "ATM_1",
+        "tp_pct": 25.0,
+        "sl_pct": 12.0,
+        "code": """// === OPTION PREMIUM CHART: HEIKIN-ASHI BREAKOUT ===
+// Scans directly on ATM & nearby CE/PE option premium candlestick charts!
+// Bullish Option Premium Breakout (HA-Low == HA-Open = No bottom wick on option candle):
+BUY_CE: [0] 5 minute HA-Low == [0] 5 minute HA-Open and [0] Close > [0] EMA(20) and RSI(14) > 55
+
+// Alternative Breakout Rule for Put Option Charts:
+BUY_PE: [0] 5 minute HA-Low == [0] 5 minute HA-Open and [0] Close > [0] EMA(20) and RSI(14) > 55
+
+TP = 25%
+SL = 12%
+"""
     }
 ]
 
@@ -294,12 +318,15 @@ class ValidateCodeRequest(BaseModel):
     code: str
     symbol: Optional[str] = "BANKNIFTY"
     timeframe: Optional[str] = "5m"
+    chartTarget: Optional[str] = "SPOT"  # "SPOT" or "OPTION_CHARTS"
 
 class ScanRequest(BaseModel):
     code: str
     symbols: Optional[List[str]] = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"]
     timeframe: Optional[str] = "5m"
     moneyness: Optional[str] = "ATM"
+    chartTarget: Optional[str] = "SPOT"  # "SPOT" or "OPTION_CHARTS"
+    optionStrikesRange: Optional[str] = "ATM_1"  # "ATM", "ATM_1", "ATM_2"
 
 class BacktestCustomRequest(BaseModel):
     symbol: str = "BANKNIFTY"
@@ -313,6 +340,7 @@ class BacktestCustomRequest(BaseModel):
     initialCapital: Optional[float] = 100000.0
     lots: Optional[int] = 1
     slippagePerLeg: Optional[float] = 0.5
+    chartTarget: Optional[str] = "SPOT"  # "SPOT" or "OPTION_CHARTS"
 
 class OptimizeCustomRequest(BaseModel):
     symbol: str = "BANKNIFTY"
@@ -447,6 +475,11 @@ def validate_custom_code(req: ValidateCodeRequest):
     test_signals = []
     if raw_candles and len(raw_candles) >= 10:
         df = pd.DataFrame(raw_candles[-80:])
+        if (req.chartTarget or "").upper() == "OPTION_CHARTS":
+            last_spot = float(df.iloc[-1]['close'])
+            strike_rnd = STRIKE_ROUND_INTERVALS.get(symbol_upper, 50)
+            atm_strk = round(last_spot / strike_rnd) * strike_rnd
+            df = build_option_chart_df(df, atm_strk, 'C')
         try:
             test_signals = generate_custom_signals(df, parsed["buy_ce_expr"], parsed["buy_pe_expr"])
             recent_triggers = len(test_signals)
@@ -509,6 +542,80 @@ def run_custom_scanner(req: ScanRequest):
             spot = float(last_candle['close'])
             atm_strike = round(spot / strike_round) * strike_round
 
+            # Check if Direct Option Chart Scanning is requested
+            chart_target = (req.chartTarget or "SPOT").upper()
+            is_option_chart_scan = (chart_target == "OPTION_CHARTS") or ((req.moneyness or "").upper() == "OPTION_CHARTS")
+
+            if is_option_chart_scan:
+                rng = (req.optionStrikesRange or "ATM_1").upper()
+                if rng == "ATM":
+                    strike_offsets = [0]
+                elif rng == "ATM_2":
+                    strike_offsets = [0, 1, -1, 2, -2]
+                else:
+                    strike_offsets = [0, 1, -1]  # ATM_1 default (ATM, OTM1, ITM1)
+
+                for off in strike_offsets:
+                    # 1. Evaluate CALL Option Chart
+                    call_strike = atm_strike + (off * strike_round)
+                    call_m_label = "ATM" if off == 0 else (f"OTM{off}" if off > 0 else f"ITM{-off}")
+                    ce_df = build_option_chart_df(df, call_strike, 'C')
+
+                    ce_signals = generate_custom_signals(ce_df, parsed["buy_ce_expr"], "")
+                    ce_recent = [s for s in ce_signals if s["timestamp"] in recent_candles_ts]
+
+                    for sig in ce_recent:
+                        current_prem = float(ce_df.iloc[-1]['close'])
+                        scanner_results.append({
+                            "symbol": sym_upper,
+                            "direction": "BULLISH_CE",
+                            "triggerTime": sig["timestamp"],
+                            "spotPrice": round(spot, 2),
+                            "strike": int(call_strike),
+                            "optionType": "CE",
+                            "contractName": f"{sym_upper} {int(call_strike)} CE ({call_m_label} Option Chart)",
+                            "estimatedPremium": round(current_prem, 2),
+                            "lotSize": lot_mult,
+                            "isEtf": False,
+                            "isEquity": False,
+                            "chartSource": "OPTION_CHART",
+                            "isOptionChart": True,
+                            "indicators": sig.get("indicators", {}),
+                            "candle": sig.get("candle", {})
+                        })
+
+                    # 2. Evaluate PUT Option Chart
+                    put_strike = atm_strike - (off * strike_round)
+                    put_m_label = "ATM" if off == 0 else (f"OTM{off}" if off > 0 else f"ITM{-off}")
+                    pe_df = build_option_chart_df(df, put_strike, 'P')
+
+                    # On Put option chart: if buy_pe_expr exists, evaluate it; otherwise evaluate the primary rule
+                    pe_rule = parsed["buy_pe_expr"] if parsed["buy_pe_expr"] else parsed["buy_ce_expr"]
+                    pe_signals = generate_custom_signals(pe_df, pe_rule, "")
+                    pe_recent = [s for s in pe_signals if s["timestamp"] in recent_candles_ts]
+
+                    for sig in pe_recent:
+                        current_prem = float(pe_df.iloc[-1]['close'])
+                        scanner_results.append({
+                            "symbol": sym_upper,
+                            "direction": "BULLISH_PE",
+                            "triggerTime": sig["timestamp"],
+                            "spotPrice": round(spot, 2),
+                            "strike": int(put_strike),
+                            "optionType": "PE",
+                            "contractName": f"{sym_upper} {int(put_strike)} PE ({put_m_label} Option Chart)",
+                            "estimatedPremium": round(current_prem, 2),
+                            "lotSize": lot_mult,
+                            "isEtf": False,
+                            "isEquity": False,
+                            "chartSource": "OPTION_CHART",
+                            "isOptionChart": True,
+                            "indicators": sig.get("indicators", {}),
+                            "candle": sig.get("candle", {})
+                        })
+                continue
+
+            # Standard Spot Chart Scan Mode
             # Determine strike based on moneyness
             m_upper = (req.moneyness or "ATM").upper()
             is_etf_mode = m_upper in ["NIFTYBEES", "BANKBEES", "ETF"]

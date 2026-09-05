@@ -858,6 +858,45 @@ def bs_pricing(S: float, K: float, T: float, r: float, sigma: float, option_type
         return 0.0
 
 
+def build_option_chart_df(spot_df: pd.DataFrame, strike: float, option_type: str = 'C', iv: float = 0.15, days_to_exp: float = 4.0) -> pd.DataFrame:
+    """
+    Constructs high-fidelity intraday candlestick charts (OHLCV) directly for an Option Strike (CE or PE).
+    Enables applying technical indicators (RSI, VWAP, EMA, Heikin-Ashi) directly to Option Premium Charts.
+    """
+    T = max(1.0 / 365.0, days_to_exp / 365.0)
+    r = 0.065
+    opt_candles = []
+    is_call = option_type.upper().startswith('C')
+    
+    for _, row in spot_df.iterrows():
+        so = float(row['open'])
+        sh = float(row['high'])
+        sl = float(row['low'])
+        sc = float(row['close'])
+        
+        if is_call:
+            oo = bs_pricing(so, strike, T, r, iv, 'C')
+            oh = bs_pricing(sh, strike, T, r, iv, 'C')
+            ol = bs_pricing(sl, strike, T, r, iv, 'C')
+            oc = bs_pricing(sc, strike, T, r, iv, 'C')
+        else:
+            oo = bs_pricing(so, strike, T, r, iv, 'P')
+            oh = bs_pricing(sl, strike, T, r, iv, 'P')  # Put price peak is when spot drops to low
+            ol = bs_pricing(sh, strike, T, r, iv, 'P')  # Put price trough is when spot peaks to high
+            oc = bs_pricing(sc, strike, T, r, iv, 'P')
+            
+        opt_candles.append({
+            'timestamp': row['timestamp'],
+            'open': round(max(0.05, oo), 2),
+            'high': round(max(0.05, max(oo, oh, oc)), 2),
+            'low': round(max(0.05, min(oo, ol, oc)), 2),
+            'close': round(max(0.05, oc), 2),
+            'volume': max(100, int(row.get('volume', 10000)) // 2)
+        })
+        
+    return pd.DataFrame(opt_candles)
+
+
 def run_custom_system_backtest(
     all_candles: List[dict],
     vix_series: pd.Series,

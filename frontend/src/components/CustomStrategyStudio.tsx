@@ -24,6 +24,8 @@ interface Preset {
   tp_pct: number;
   sl_pct: number;
   code: string;
+  chart_target?: string;
+  option_strikes_range?: string;
 }
 
 interface SavedStrategy {
@@ -37,6 +39,8 @@ interface SavedStrategy {
   lot_size: number;
   tp_pct: number;
   sl_pct: number;
+  chart_target?: string;
+  option_strikes_range?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -173,6 +177,8 @@ SL = 12%
 
   // Dual-Window & Multi-Asset Foundation State
   const [scanAssetClass, setScanAssetClass] = useState<'STOCKS' | 'ETFS' | 'OPTIONS'>('OPTIONS');
+  const [chartTarget, setChartTarget] = useState<'SPOT' | 'OPTION_CHARTS'>('SPOT');
+  const [optionStrikesRange, setOptionStrikesRange] = useState<'ATM' | 'ATM_1' | 'ATM_2'>('ATM_1');
   const [rawCondition, setRawCondition] = useState<string>(
     '([0] 3 minute rsi(3) > 85 and [-3] 3 minute close < [-3] 3 minute open and [-2] 3 minute close > [-2] 3 minute open and [-1] 3 minute close > [-1] 3 minute open and [-1] 3 minute close > [-2] 3 minute close and [-1] 3 minute close > [-4] 3 minute high)'
   );
@@ -279,11 +285,26 @@ SL = 12%
       setTpPct(p.tp_pct);
       setSlPct(p.sl_pct);
       setValidation(null);
+      if (p.chart_target) {
+        setChartTarget(p.chart_target as any);
+      } else {
+        setChartTarget('SPOT');
+      }
+      if (p.option_strikes_range) {
+        setOptionStrikesRange(p.option_strikes_range as any);
+      }
       if (p.moneyness === 'NIFTYBEES' || p.moneyness === 'BANKBEES' || p.moneyness === 'ETF') {
+        setScanAssetClass('ETFS');
         setOptScaleMode('etf');
         setOptMoneynessRange([p.moneyness]);
         setOptTpRange([1.0, 1.5, 2.0, 2.5]);
         setOptSlRange([0.5, 0.8, 1.0]);
+      } else if (p.moneyness === 'EQUITY') {
+        setScanAssetClass('STOCKS');
+        setOptScaleMode('etf');
+      } else {
+        setScanAssetClass('OPTIONS');
+        setOptScaleMode('options');
       }
     }
   };
@@ -302,11 +323,26 @@ SL = 12%
       if (strat.tp_pct !== undefined) setTpPct(strat.tp_pct);
       if (strat.sl_pct !== undefined) setSlPct(strat.sl_pct);
       setValidation(null);
+      if (strat.chart_target) {
+        setChartTarget(strat.chart_target as any);
+      } else {
+        setChartTarget('SPOT');
+      }
+      if (strat.option_strikes_range) {
+        setOptionStrikesRange(strat.option_strikes_range as any);
+      }
       if (strat.moneyness === 'NIFTYBEES' || strat.moneyness === 'BANKBEES' || strat.moneyness === 'ETF') {
+        setScanAssetClass('ETFS');
         setOptScaleMode('etf');
         setOptMoneynessRange([strat.moneyness]);
         setOptTpRange([1.0, 1.5, 2.0, 2.5]);
         setOptSlRange([0.5, 0.8, 1.0]);
+      } else if (strat.moneyness === 'EQUITY') {
+        setScanAssetClass('STOCKS');
+        setOptScaleMode('etf');
+      } else {
+        setScanAssetClass('OPTIONS');
+        setOptScaleMode('options');
       }
     }
   };
@@ -333,6 +369,8 @@ SL = 12%
       lot_size: lotSize,
       tp_pct: tpPct,
       sl_pct: slPct,
+      chart_target: chartTarget,
+      option_strikes_range: optionStrikesRange,
       updated_at: new Date().toISOString()
     };
 
@@ -570,6 +608,7 @@ SL = 12%
   const handleSelectAssetClass = (ac: 'STOCKS' | 'ETFS' | 'OPTIONS') => {
     setScanAssetClass(ac);
     if (ac === 'STOCKS') {
+      setChartTarget('SPOT');
       setMoneyness('EQUITY');
       setSymbol('RELIANCE');
       setTpPct(2.0);
@@ -577,6 +616,7 @@ SL = 12%
       setScanSymbols(['RELIANCE', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'TCS', 'INFY', 'TATAMOTORS']);
       setOptScaleMode('etf');
     } else if (ac === 'ETFS') {
+      setChartTarget('SPOT');
       setMoneyness('NIFTYBEES');
       setSymbol('NIFTY');
       setTpPct(2.0);
@@ -584,7 +624,9 @@ SL = 12%
       setScanSymbols(['NIFTY', 'BANKNIFTY']);
       setOptScaleMode('etf');
     } else {
-      setMoneyness('ATM');
+      if (['NIFTYBEES', 'BANKBEES', 'ETF', 'EQUITY'].includes(moneyness)) {
+        setMoneyness('ATM');
+      }
       setSymbol('BANKNIFTY');
       setTpPct(25.0);
       setSlPct(12.0);
@@ -663,7 +705,13 @@ SL = 12%
       const res = await fetch(`${BACKEND_URL}/api/custom-strategy/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, symbol, timeframe })
+        body: JSON.stringify({
+          code,
+          symbol,
+          timeframe,
+          chartTarget,
+          optionStrikesRange
+        })
       });
       const data = await res.json();
       if (res.ok) {
@@ -697,7 +745,9 @@ SL = 12%
           code,
           symbols: scanSymbols,
           timeframe,
-          moneyness
+          moneyness,
+          chartTarget,
+          optionStrikesRange
         })
       });
       const data = await res.json();
@@ -730,6 +780,8 @@ SL = 12%
           endDate,
           timeframe,
           moneyness,
+          chartTarget,
+          optionStrikesRange,
           takeProfitPct: tpPct,
           stopLossPct: slPct,
           initialCapital,
@@ -1481,9 +1533,71 @@ SL = 12%
                   <Sliders className="w-4 h-4 text-accentBrand" />
                   <span>Execution & Risk Parameters</span>
                 </h3>
-                <span className="text-[11px] text-cyan-400 font-mono">
-                  Asset Mode: {scanAssetClass}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-cyan-400 font-mono">
+                    Asset Mode: {scanAssetClass}
+                  </span>
+                  {chartTarget === 'OPTION_CHARTS' && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      🎯 OPTION CHARTS
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Chart Target Switcher */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-black/40 border border-borderClr/60">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5 text-accentBrand" />
+                    <span>Chart Target:</span>
+                  </span>
+                  <div className="flex items-center bg-black/60 p-0.5 rounded-lg border border-borderClr">
+                    <button
+                      type="button"
+                      onClick={() => setChartTarget('SPOT')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        chartTarget === 'SPOT'
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <span>📈 Spot Index Chart</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChartTarget('OPTION_CHARTS');
+                        setScanAssetClass('OPTIONS');
+                        if (['NIFTYBEES', 'BANKBEES', 'ETF', 'EQUITY'].includes(moneyness)) {
+                          setMoneyness('ATM');
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        chartTarget === 'OPTION_CHARTS'
+                          ? 'bg-purple-500/25 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-500/20'
+                          : 'text-gray-400 hover:text-purple-300'
+                      }`}
+                    >
+                      <span>🎯 Direct Option Charts (ATM & Nearby)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {chartTarget === 'OPTION_CHARTS' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-purple-300">Option Strikes:</span>
+                    <select
+                      value={optionStrikesRange}
+                      onChange={(e) => setOptionStrikesRange(e.target.value as any)}
+                      className="bg-black/60 border border-purple-500/40 rounded-lg px-2.5 py-1 text-xs text-purple-200 font-bold focus:outline-none focus:border-purple-400"
+                    >
+                      <option value="ATM">ATM Only (ATM CE & PE)</option>
+                      <option value="ATM_1">ATM ± 1 Strike (ATM, OTM1, ITM1) [Recommended]</option>
+                      <option value="ATM_2">ATM ± 2 Strikes (5 Strikes CE & PE)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1532,14 +1646,19 @@ SL = 12%
                       const val = e.target.value;
                       setMoneyness(val);
                       if (val === 'EQUITY') {
+                        setScanAssetClass('STOCKS');
+                        setChartTarget('SPOT');
                         if (tpPct >= 10) setTpPct(2.0);
                         if (slPct >= 5) setSlPct(1.0);
                         setOptScaleMode('etf');
                       } else if (val === 'NIFTYBEES' || val === 'BANKBEES' || val === 'ETF') {
+                        setScanAssetClass('ETFS');
+                        setChartTarget('SPOT');
                         if (tpPct >= 10) setTpPct(2.0);
                         if (slPct >= 5) setSlPct(0.8);
                         setOptScaleMode('etf');
                       } else {
+                        setScanAssetClass('OPTIONS');
                         if (tpPct <= 5) setTpPct(25.0);
                         if (slPct <= 2) setSlPct(12.0);
                         setOptScaleMode('options');
@@ -1622,6 +1741,18 @@ SL = 12%
                       ⚡ ZERO THETA DECAY ACTIVE ({moneyness === 'BANKBEES' ? 'BANKBEES' : 'NIFTYBEES'} Mode)
                     </strong>
                     Strategy scans <strong>{symbol}</strong> Index spot candles for signals, but executes directly in <strong>{moneyness === 'BANKBEES' ? 'BANKBEES' : 'NIFTYBEES'}</strong> ETF shares. Eliminates 100% of expiry theta erosion and Greeks volatility drag!
+                  </div>
+                </div>
+              )}
+
+              {chartTarget === 'OPTION_CHARTS' && (
+                <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl flex items-start gap-2.5 text-[11px] text-purple-200">
+                  <Activity className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-white block font-semibold mb-0.5">
+                      🎯 DIRECT OPTION CHART SCANNING ACTIVE ({symbol} ATM & Nearby Strikes)
+                    </strong>
+                    The engine computes technical indicators and Heikin-Ashi formulas <strong>directly on the option premium candlestick charts (OHLCV)</strong>. Captures pure option chart momentum and breakout structures without spot divergence.
                   </div>
                 </div>
               )}
@@ -1740,10 +1871,14 @@ SL = 12%
               <button
                 onClick={handleRunScan}
                 disabled={isScanning}
-                className="flex items-center gap-2 px-5 py-2.5 bg-accentBrand hover:bg-accentBrand/90 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
+                className={`flex items-center gap-2 px-5 py-2.5 text-white font-bold text-xs rounded-xl shadow-lg transition-all ${
+                  chartTarget === 'OPTION_CHARTS'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/30'
+                    : 'bg-accentBrand hover:bg-accentBrand/90'
+                }`}
               >
                 <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
-                <span>{isScanning ? 'Scanning Watchlist...' : 'Scan Now'}</span>
+                <span>{isScanning ? 'Scanning...' : (chartTarget === 'OPTION_CHARTS' ? 'Scan Option Charts 🚀' : 'Scan Spot Watchlist')}</span>
               </button>
             </div>
           </div>
@@ -1751,7 +1886,64 @@ SL = 12%
           {/* Scanner Watchlist Filter */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-cardClr/60 border border-borderClr/60 rounded-xl p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-400 font-bold">Quick Presets:</span>
+              <span className="text-xs text-gray-400 font-bold">Chart Target:</span>
+              <div className="flex items-center bg-black/60 p-0.5 rounded-lg border border-borderClr">
+                <button
+                  type="button"
+                  onClick={() => setChartTarget('SPOT')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+                    chartTarget === 'SPOT'
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  📈 Spot Index
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChartTarget('OPTION_CHARTS');
+                    setScanAssetClass('OPTIONS');
+                    if (['NIFTYBEES', 'BANKBEES', 'ETF', 'EQUITY'].includes(moneyness)) {
+                      setMoneyness('ATM');
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+                    chartTarget === 'OPTION_CHARTS'
+                      ? 'bg-purple-500/25 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-500/20'
+                      : 'text-gray-400 hover:text-purple-300'
+                  }`}
+                >
+                  🎯 Option Charts (ATM & Nearby)
+                </button>
+              </div>
+
+              {chartTarget === 'OPTION_CHARTS' && (
+                <select
+                  value={optionStrikesRange}
+                  onChange={(e) => setOptionStrikesRange(e.target.value as any)}
+                  className="bg-black/60 border border-purple-500/40 rounded-lg px-2 py-1 text-xs text-purple-200 font-bold focus:outline-none"
+                >
+                  <option value="ATM">ATM Only</option>
+                  <option value="ATM_1">ATM ± 1 Strike</option>
+                  <option value="ATM_2">ATM ± 2 Strikes</option>
+                </select>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-400 font-bold">Execution Mode:</span>
+              <span className="px-2 py-0.5 rounded font-mono font-bold bg-white/5 border border-white/10 text-cyan-300">
+                {chartTarget === 'OPTION_CHARTS'
+                  ? `🎯 Direct Option Charts (${optionStrikesRange})`
+                  : moneyness === 'EQUITY'
+                  ? '📊 Cash Equity (Shares)'
+                  : (moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? '⚡ Index ETF Units' : `🎯 Options (${moneyness})`)}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full pt-2 border-t border-borderClr/30">
+              <span className="text-xs text-gray-400 font-bold mr-1">Presets:</span>
               <button
                 onClick={() => setScanSymbols(["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX"])}
                 className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 transition-all"
@@ -1772,14 +1964,7 @@ SL = 12%
               </button>
             </div>
 
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-gray-400 font-bold">Execution Mode:</span>
-              <span className="px-2 py-0.5 rounded font-mono font-bold bg-white/5 border border-white/10 text-cyan-300">
-                {moneyness === 'EQUITY' ? '📊 Cash Equity (Shares)' : (moneyness === 'NIFTYBEES' || moneyness === 'BANKBEES' || moneyness === 'ETF' ? '⚡ Index ETF Units' : `🎯 Options (${moneyness})`)}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 w-full pt-2 border-t border-borderClr/30">
+            <div className="flex flex-wrap items-center gap-1.5 w-full pt-1">
               <span className="text-xs text-gray-400 font-bold mr-1">Active Watchlist:</span>
               {["BANKNIFTY", "NIFTY", "FINNIFTY", "SENSEX", "RELIANCE", "HDFCBANK", "ICICIBANK", "SBIN", "TCS", "INFY", "TATAMOTORS"].map((sym) => {
                 const active = scanSymbols.includes(sym);
@@ -1824,16 +2009,21 @@ SL = 12%
                     sortedScanResults.map((sig, idx) => {
                       const isCe = sig.direction === 'BULLISH_CE';
                       const isEtf = sig.isEtf || sig.optionType === 'ETF';
+                      const isOptChart = sig.chartSource === 'OPTION_CHART' || sig.isOptionChart;
                       return (
                         <tr key={idx} className="hover:bg-white/5 transition-colors">
                           <td className="p-3.5 font-bold text-white">
                             <div className="flex items-center gap-1.5">
                               <span>{sig.symbol}</span>
-                              {isEtf && (
+                              {isOptChart ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                  🎯 OPTION CHART
+                                </span>
+                              ) : isEtf ? (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                                   ETF
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                           <td className="p-3.5 font-bold">
@@ -1921,7 +2111,7 @@ SL = 12%
                                       {
                                         id: `opt_${Date.now()}`,
                                         strike: sig.strike,
-                                        optionType: sig.optionType,
+                                        optionType: (sig.optionType === 'PE' || sig.optionType === 'P') ? 'P' : 'C',
                                         expiry: 'WEEKLY',
                                         action: 'BUY',
                                         quantity: lotMultiplier,
@@ -1934,12 +2124,14 @@ SL = 12%
                                 }
                               }}
                               className={`px-3 py-1 text-white text-[11px] font-bold rounded-md transition-all shadow ${
-                                isEtf 
+                                isOptChart
+                                  ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/30'
+                                  : isEtf 
                                   ? 'bg-emerald-600 hover:bg-emerald-500' 
                                   : 'bg-accentBrand hover:bg-accentBrand/90'
                               }`}
                             >
-                              {isEtf ? 'Paper Trade ETF' : 'Paper Trade'}
+                              {isOptChart ? 'Trade Option Chart' : (isEtf ? 'Paper Trade ETF' : 'Paper Trade')}
                             </button>
                           </td>
                         </tr>
