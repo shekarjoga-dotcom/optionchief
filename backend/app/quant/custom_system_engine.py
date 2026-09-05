@@ -284,10 +284,13 @@ class CustomRuleParser:
             found.append({"type": "SMA", "params": {"period": int(m.group(1))}, "raw": f"SMA({m.group(1)})"})
         if "VWAP" in code_upper:
             found.append({"type": "VWAP", "params": {}, "raw": "VWAP"})
-        for m in re.finditer(r"SUPERTREND\s*\(\s*(?:PERIOD\s*=\s*)?(\d+)\s*,\s*(?:MULTIPLIER\s*=\s*)?([\d\.]+)\s*\)", code_upper):
-            found.append({"type": "Supertrend", "params": {"period": int(m.group(1)), "multiplier": float(m.group(2))}, "raw": f"SUPERTREND({m.group(1)}, {m.group(2)})"})
-        for m in re.finditer(r"MACD\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)", code_upper):
-            found.append({"type": "MACD", "params": {"fast": int(m.group(1)), "slow": int(m.group(2)), "signal": int(m.group(3))}, "raw": f"MACD({m.group(1)}, {m.group(2)}, {m.group(3)})"})
+        for m in re.finditer(r"\bMACD(?:_(?:LINE|SIGNAL|HIST))?(?:\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\))?", code_upper):
+            raw_m = m.group(0).strip()
+            if raw_m:
+                f = int(m.group(1)) if m.group(1) else 12
+                s = int(m.group(2)) if m.group(2) else 26
+                sig = int(m.group(3)) if m.group(3) else 9
+                found.append({"type": "MACD", "params": {"fast": f, "slow": s, "signal": sig}, "raw": f"MACD({f}, {s}, {sig})"})
         for m in re.finditer(r"BB_UPPER\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)", code_upper):
             found.append({"type": "BB_Upper", "params": {"period": int(m.group(1)), "std": float(m.group(2))}, "raw": f"BB_UPPER({m.group(1)}, {m.group(2)})"})
         for m in re.finditer(r"BB_LOWER\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)", code_upper):
