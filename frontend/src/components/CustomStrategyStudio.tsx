@@ -41,6 +41,7 @@ interface SavedStrategy {
   sl_pct: number;
   chart_target?: string;
   option_strikes_range?: string;
+  is_alert_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -191,6 +192,8 @@ SL = 12%
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanResults, setScanResults] = useState<any[]>([]);
   const [scanTimestamp, setScanTimestamp] = useState<string>("");
+  const [pushedAlerts, setPushedAlerts] = useState<Record<string, boolean>>({});
+  const [alertFeedbackMsg, setAlertFeedbackMsg] = useState<string>("");
 
   // Backtester state
   const [startDate, setStartDate] = useState<string>(() => {
@@ -365,6 +368,7 @@ SL = 12%
     setIsSaving(true);
     const stratId = (!asNew && selectedSavedId) ? selectedSavedId : `strat_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const finalName = saveModalName.trim() || strategyName.trim() || "My Custom Strategy";
+    const existing = savedStrategies.find(s => s.id === stratId);
     const strategyData: SavedStrategy = {
       id: stratId,
       name: finalName,
@@ -378,6 +382,7 @@ SL = 12%
       sl_pct: slPct,
       chart_target: chartTarget,
       option_strikes_range: optionStrikesRange,
+      is_alert_active: existing?.is_alert_active || false,
       updated_at: new Date().toISOString()
     };
 
@@ -407,7 +412,8 @@ SL = 12%
             moneyness: strategyData.moneyness,
             lot_size: strategyData.lot_size,
             tp_pct: strategyData.tp_pct,
-            sl_pct: strategyData.sl_pct
+            sl_pct: strategyData.sl_pct,
+            is_alert_active: strategyData.is_alert_active
           })
         });
       } catch (e) {
@@ -419,6 +425,121 @@ SL = 12%
     setShowSaveModal(false);
     setSaveSuccessMsg(`Strategy "${finalName}" saved!`);
     setTimeout(() => setSaveSuccessMsg(""), 3500);
+  };
+
+  const handleToggleAlertRule = async (stratId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const strat = savedStrategies.find(s => s.id === stratId);
+    if (!strat) return;
+    const nextState = !strat.is_alert_active;
+    const updatedList = savedStrategies.map(s => s.id === stratId ? { ...s, is_alert_active: nextState } : s);
+    setSavedStrategies(updatedList);
+    localStorage.setItem(LOCAL_STORAGE_SAVED_KEY, JSON.stringify(updatedList));
+
+    if (token) {
+      try {
+        await fetch(`${BACKEND_URL}/api/custom-strategy/toggle-alert-rule`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            strategyId: stratId,
+            isActive: nextState
+          })
+        });
+      } catch (err) {
+        console.warn("Could not toggle alert rule on server:", err);
+      }
+    }
+    setAlertFeedbackMsg(nextState ? `🔔 Background Alerts activated for "${strat.name}"!` : `🔕 Alerts deactivated for "${strat.name}".`);
+    setTimeout(() => setAlertFeedbackMsg(""), 3500);
+  };
+
+  const handlePushSignalToAlerts = async (sig: any) => {
+    const key = `${sig.symbol}_${sig.triggerTime}_${sig.strike}`;
+    const activeStratName = (selectedSavedId && savedStrategies.find(s => s.id === selectedSavedId)?.name)
+      || (selectedPresetId && presets.find(p => p.id === selectedPresetId)?.name)
+      || 'Custom Algo Radar';
+
+    const isEtf = sig.isEtf || sig.optionType === 'ETF';
+    const lotMultiplier = isEtf ? (sig.lotSize || 100) : (sig.lotSize || 25);
+    const estPrem = sig.estimatedPremium || 100.0;
+    const estLoss = Math.round(estPrem * lotMultiplier * (slPct / 100));
+    const estProfit = Math.round(estPrem * lotMultiplier * (tpPct / 100));
+
+    const payload = {
+      strategyName: activeStratName,
+      symbol: sig.symbol,
+      direction: sig.direction,
+      timeframe: timeframe,
+      spotPrice: sig.spotPrice,
+      strike: isEtf ? (sig.symbol === 'BANKNIFTY' ? 'BANKBEES' : 'NIFTYBEES') : sig.strike,
+      optionType: isEtf ? 'ETF' : sig.optionType,
+      triggerTime: sig.triggerTime,
+      unitsPerLot: lotMultiplier,
+      pop: 65.0,
+      rrRatio: parseFloat((tpPct / Math.max(1, slPct)).toFixed(1)),
+      estimatedPrice: estPrem,
+      maxProfit: `+${tpPct}% (~₹${estProfit})`,
+      maxLoss: `-${slPct}% (~₹${estLoss})`
+    };
+
+    // 1. Sync to local storage triggered alerts immediately for 0ms UI update
+    try {
+      const existingAlerts = JSON.parse(localStorage.getItem("options_oracle_triggered_alerts") || "[]");
+      const newAlertItem = {
+        id: `custom_${Date.now()}`,
+        symbol: sig.symbol,
+        strategy_name: `⚡ ${activeStratName} [${sig.direction === 'BULLISH_CE' ? 'BUY CE' : 'BUY PE'}]`,
+        expiry: 'INTRADAY',
+        pop: 65.0,
+        max_profit: `+${tpPct}% (~₹${estProfit})`,
+        max_loss: `-${slPct}% (~₹${estLoss})`,
+        rr_ratio: parseFloat((tpPct / Math.max(1, slPct)).toFixed(1)),
+        timestamp: sig.triggerTime || new Date().toLocaleTimeString(),
+        current_pnl: '₹0.00',
+        spot_price: sig.spotPrice,
+        legs: [
+          {
+            id: `leg_${Date.now()}`,
+            strike: isEtf ? 0.0 : sig.strike,
+            optionType: isEtf ? 'F' : ((sig.optionType === 'PE' || sig.optionType === 'P') ? 'P' : 'C'),
+            expiry: 'INTRADAY',
+            action: 'BUY',
+            quantity: lotMultiplier,
+            entryPrice: estPrem,
+            currentPrice: estPrem,
+            iv: 0.18
+          }
+        ],
+        rule_id: 'CUSTOM_ALGO_STUDIO'
+      };
+      localStorage.setItem("options_oracle_triggered_alerts", JSON.stringify([newAlertItem, ...existingAlerts]));
+    } catch (e) {
+      console.warn("Could not save to local triggered alerts:", e);
+    }
+
+    // 2. Call backend push-to-alerts endpoint if token available
+    if (token) {
+      try {
+        await fetch(`${BACKEND_URL}/api/custom-strategy/push-to-alerts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        console.warn("Backend alert push error:", e);
+      }
+    }
+
+    setPushedAlerts(prev => ({ ...prev, [key]: true }));
+    setAlertFeedbackMsg(`🔔 Signal for ${sig.symbol} (${sig.direction === 'BULLISH_CE' ? 'BUY CE' : 'BUY PE'}) pushed to Strategy Alerts & Notifications!`);
+    setTimeout(() => setAlertFeedbackMsg(""), 4500);
   };
 
   const handleDeleteSavedStrategy = async (idToDelete: string, e?: React.MouseEvent) => {
@@ -1464,15 +1585,36 @@ SL = 12%
                     <label className="text-[9px] font-bold uppercase tracking-wider text-pink-400 block">
                       My Saved Library ({savedStrategies.length})
                     </label>
-                    {selectedSavedId && (
-                      <button
-                        onClick={(e) => handleDeleteSavedStrategy(selectedSavedId, e)}
-                        title="Delete this saved strategy"
-                        className="text-[9px] text-red-400 hover:text-red-300 font-bold flex items-center gap-0.5 transition-colors"
-                      >
-                        <Trash2 className="w-2.5 h-2.5" /> Del
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {selectedSavedId && (
+                        <>
+                          {(() => {
+                            const curStrat = savedStrategies.find(s => s.id === selectedSavedId);
+                            const isActive = curStrat?.is_alert_active;
+                            return (
+                              <button
+                                onClick={(e) => handleToggleAlertRule(selectedSavedId, e)}
+                                title={isActive ? "Background Live Alert Active (Click to pause)" : "Click to activate background live scanner alerts"}
+                                className={`text-[9px] px-1.5 py-0.5 rounded font-bold flex items-center gap-1 transition-all border ${
+                                  isActive
+                                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse"
+                                    : "bg-black/40 text-gray-400 border-borderClr hover:text-white"
+                                }`}
+                              >
+                                <span>🔔 {isActive ? "Alert: ON" : "Alert: OFF"}</span>
+                              </button>
+                            );
+                          })()}
+                          <button
+                            onClick={(e) => handleDeleteSavedStrategy(selectedSavedId, e)}
+                            title="Delete this saved strategy"
+                            className="text-[9px] text-red-400 hover:text-red-300 font-bold flex items-center gap-0.5 transition-colors"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" /> Del
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <select
                     value={selectedSavedId}
@@ -1481,7 +1623,9 @@ SL = 12%
                   >
                     <option value="">-- {savedStrategies.length > 0 ? "Saved Strategies" : "None"} --</option>
                     {savedStrategies.map((s) => (
-                      <option key={s.id} value={s.id}>★ {s.name}</option>
+                      <option key={s.id} value={s.id}>
+                        {s.is_alert_active ? '🔔' : '★'} {s.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -2012,6 +2156,21 @@ SL = 12%
             </div>
           </div>
 
+          {alertFeedbackMsg && (
+            <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-between shadow-lg animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🔔</span>
+                <span>{alertFeedbackMsg}</span>
+              </div>
+              <button
+                onClick={() => setAlertFeedbackMsg("")}
+                className="text-gray-400 hover:text-white p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Scanner Results Table */}
           <div className="bg-cardClr border border-borderClr rounded-xl overflow-hidden shadow-lg">
             <div className="overflow-x-auto">
@@ -2079,8 +2238,26 @@ SL = 12%
                             ))}
                           </td>
                           <td className="p-3.5 text-right">
-                            <button
-                              onClick={() => {
+                            <div className="flex items-center justify-end gap-2">
+                              {(() => {
+                                const sigKey = `${sig.symbol}_${sig.triggerTime}_${sig.strike}`;
+                                const isPushed = pushedAlerts[sigKey];
+                                return (
+                                  <button
+                                    onClick={() => handlePushSignalToAlerts(sig)}
+                                    title="Push this live scan signal directly to Strategy Alerts & Notifications"
+                                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 border ${
+                                      isPushed
+                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                        : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/30'
+                                    }`}
+                                  >
+                                    <span>{isPushed ? '✅ Alert Created' : '🔔 Push to Alerts'}</span>
+                                  </button>
+                                );
+                              })()}
+                              <button
+                                onClick={() => {
                                 const activeStratName = (selectedSavedId && savedStrategies.find(s => s.id === selectedSavedId)?.name)
                                   || (selectedPresetId && presets.find(p => p.id === selectedPresetId)?.name)
                                   || 'Index Scanner';
@@ -2158,6 +2335,7 @@ SL = 12%
                             >
                               {isOptChart ? 'Trade Option Chart' : (isEtf ? 'Paper Trade ETF' : 'Paper Trade')}
                             </button>
+                            </div>
                           </td>
                         </tr>
                       );

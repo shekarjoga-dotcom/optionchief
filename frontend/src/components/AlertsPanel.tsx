@@ -250,27 +250,73 @@ export const AlertsPanel: React.FC = () => {
     localStorage.setItem("options_oracle_alert_recipient_email", alertRecipientEmail);
   }, [alertRecipientEmail]);
 
-  // Load triggered alerts from localStorage periodically
-  const loadTriggers = () => {
+  // Load triggered alerts from localStorage & backend periodically
+  const loadTriggers = async () => {
+    let localList: TriggeredAlert[] = [];
     try {
       const saved = localStorage.getItem("options_oracle_triggered_alerts");
-      const list = saved ? JSON.parse(saved) : [];
-      setTriggeredAlerts(list);
-      // Auto-select first alert if none selected
-      if (list.length > 0 && !selectedAlert) {
-        setSelectedAlert(list[0]);
-      }
+      localList = saved ? JSON.parse(saved) : [];
     } catch (e) {
       console.error(e);
+    }
+
+    if (token) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/alerts/triggered`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const serverList = await res.json();
+          const map = new Map<string, TriggeredAlert>();
+          serverList.forEach((item: any) => {
+            map.set(item.id, {
+              id: item.id,
+              userId: item.user_id,
+              symbol: item.symbol,
+              strategyName: item.strategy_name,
+              expiry: item.expiry,
+              pop: item.pop,
+              maxProfit: item.max_profit,
+              maxLoss: item.max_loss,
+              rrRatio: item.rr_ratio,
+              timestamp: item.timestamp,
+              currentPnL: item.current_pnl,
+              spotPrice: item.spot_price,
+              legs: item.legs || [],
+              ruleId: item.rule_id,
+              delta: item.delta,
+              gamma: item.gamma,
+              theta: item.theta
+            });
+          });
+          localList.forEach(item => {
+            if (!map.has(item.id)) map.set(item.id, item);
+          });
+          const merged = Array.from(map.values());
+          setTriggeredAlerts(merged);
+          localStorage.setItem("options_oracle_triggered_alerts", JSON.stringify(merged));
+          if (merged.length > 0 && !selectedAlert) {
+            setSelectedAlert(merged[0]);
+          }
+          return;
+        }
+      } catch (err) {
+        // Fall back to local list
+      }
+    }
+
+    setTriggeredAlerts(localList);
+    if (localList.length > 0 && !selectedAlert) {
+      setSelectedAlert(localList[0]);
     }
   };
 
   useEffect(() => {
     loadTriggers();
-    // Poll local triggers for updates in background
+    // Poll triggers for updates in background
     const timer = setInterval(loadTriggers, 5000);
     return () => clearInterval(timer);
-  }, [selectedAlert]);
+  }, [selectedAlert, token]);
 
   // Countdown ticker effect
   useEffect(() => {
@@ -393,6 +439,45 @@ export const AlertsPanel: React.FC = () => {
   const renderDirectionBadge = (stratName: string) => {
     if (!stratName) return null;
     const name = stratName.toUpperCase();
+    const isCustom = stratName.startsWith("⚡") || name.includes("CUSTOM");
+
+    if (name.includes("BUY CALL") || name.includes("BUY CE") || name.includes("BULLISH_CE")) {
+      return (
+        <div className="flex items-center gap-1">
+          {isCustom && (
+            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-sm shrink-0">
+              ⚡ ALGO
+            </span>
+          )}
+          <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-greenBrand/15 text-greenBrand border border-greenBrand/40 flex items-center gap-1 shadow-sm shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-greenBrand animate-pulse" />
+            🟢 BUY CE
+          </span>
+        </div>
+      );
+    }
+    if (name.includes("BUY PUT") || name.includes("BUY PE") || name.includes("BEARISH_PE")) {
+      return (
+        <div className="flex items-center gap-1">
+          {isCustom && (
+            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-sm shrink-0">
+              ⚡ ALGO
+            </span>
+          )}
+          <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-redBrand/15 text-redBrand border border-redBrand/40 flex items-center gap-1 shadow-sm shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-redBrand animate-pulse" />
+            🔴 BUY PE
+          </span>
+        </div>
+      );
+    }
+    if (name.includes("BUY ETF") || name.includes("NIFTYBEES") || name.includes("BANKBEES")) {
+      return (
+        <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-sm shrink-0">
+          ⚡ BUY ETF (ZERO DECAY)
+        </span>
+      );
+    }
     if (name.includes("BULL-SKEWED") || name.includes("BULLISH") || name.includes("BULL DRIFT") || name.includes("CALL RATIO FLY")) {
       return (
         <span className="px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase bg-greenBrand/15 text-greenBrand border border-greenBrand/40 flex items-center gap-1 shadow-sm shrink-0">

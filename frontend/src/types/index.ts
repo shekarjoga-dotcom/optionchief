@@ -96,6 +96,7 @@ export interface AlertRule {
 
 export interface TriggeredAlert {
   id: string;
+  userId?: number | string;
   symbol: string;
   strategyName: string;
   expiry: string;
@@ -104,6 +105,7 @@ export interface TriggeredAlert {
   maxLoss: string | number;
   rrRatio: number;
   timestamp: string;
+  currentPnL?: string;
   ruleId: string;
   legs: StrategyLeg[];
   spotPrice?: number;

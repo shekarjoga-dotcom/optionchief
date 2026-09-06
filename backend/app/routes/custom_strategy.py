@@ -1,14 +1,16 @@
 import uuid
+import os
 import itertools
+from datetime import datetime
 import pandas as pd
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.db.session import get_db
-from app.db.models import CustomStrategyConfig, User
+from app.db.models import CustomStrategyConfig, User, TriggeredAlert
 from app.routes.auth import get_current_user
 from app.services.market_data import MarketDataService
 
@@ -22,6 +24,7 @@ from app.quant.custom_system_engine import (
     bs_pricing
 )
 from app.quant.stockan_engine import analyze_quant_market
+
 
 router = APIRouter(prefix="/api/custom-strategy", tags=["Custom Strategy Studio"])
 
@@ -470,6 +473,28 @@ class SaveStrategyRequest(BaseModel):
     lot_size: int = 1
     tp_pct: float = 25.0
     sl_pct: float = 15.0
+    is_alert_active: Optional[bool] = False
+
+class PushSignalToAlertsRequest(BaseModel):
+    symbol: str
+    strategyName: str
+    direction: str  # "BULLISH_CE" or "BEARISH_PE"
+    spotPrice: float
+    strike: Optional[Union[float, int, str]] = None
+    optionType: Optional[str] = "CE"
+    triggerTime: Optional[str] = None
+    estimatedPrice: Optional[float] = None
+    unitsPerLot: Optional[int] = None
+    indicators: Optional[dict] = None
+    pop: Optional[float] = 65.0
+    maxProfit: Optional[str] = "Unlimited"
+    maxLoss: Optional[str] = None
+    rrRatio: Optional[float] = 2.5
+    expiry: Optional[str] = None
+
+class ToggleAlertRuleRequest(BaseModel):
+    strategyId: str
+    active: bool
 
 class TranspileRequest(BaseModel):
     condition: str
@@ -477,6 +502,7 @@ class TranspileRequest(BaseModel):
     assetClass: Optional[str] = "OPTIONS"  # "STOCKS", "ETFS", "OPTIONS"
     tpPct: Optional[float] = None
     slPct: Optional[float] = None
+
 
 
 # ==========================================
@@ -1041,6 +1067,7 @@ async def save_custom_strategy(
         existing.lot_size = req.lot_size
         existing.tp_pct = req.tp_pct
         existing.sl_pct = req.sl_pct
+        existing.is_alert_active = req.is_alert_active or False
         await db.commit()
         await db.refresh(existing)
         return {"status": "updated", "id": existing.id}
@@ -1056,7 +1083,8 @@ async def save_custom_strategy(
             moneyness=req.moneyness,
             lot_size=req.lot_size,
             tp_pct=req.tp_pct,
-            sl_pct=req.sl_pct
+            sl_pct=req.sl_pct,
+            is_alert_active=req.is_alert_active or False
         )
         db.add(new_config)
         await db.commit()
@@ -1098,6 +1126,121 @@ async def delete_saved_strategy(
     await db.delete(existing)
     await db.commit()
     return {"status": "deleted", "id": strategy_id}
+
+
+@router.post("/toggle-alert-rule")
+async def toggle_custom_alert_rule(
+    req: ToggleAlertRuleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Toggles background automated alert scanning for a saved custom strategy."""
+    result = await db.execute(
+        select(CustomStrategyConfig).where(
+            CustomStrategyConfig.id == req.strategyId,
+            CustomStrategyConfig.user_id == current_user.id
+        )
+    )
+    strat = result.scalar_one_or_none()
+    if not strat:
+        raise HTTPException(status_code=404, detail="Custom strategy not found")
+    strat.is_alert_active = req.active
+    await db.commit()
+    return {"status": "success", "strategyId": strat.id, "is_alert_active": strat.is_alert_active}
+
+
+@router.post("/push-to-alerts")
+async def push_signal_to_alerts(
+    req: PushSignalToAlertsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Pushes a detected live scan signal directly into the user's Strategy Alerts feed.
+    """
+    alert_id = str(uuid.uuid4())
+    now_str = datetime.now().strftime("%I:%M:%S %p")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Determine expiry date
+    expiry = req.expiry or today_str
+
+    # Construct legs representation
+    is_etf = str(req.strike).upper().endswith("BEES") or str(req.optionType).upper() == "ETF"
+    leg_type = "F" if is_etf else ("C" if req.direction == "BULLISH_CE" or str(req.optionType).upper() == "CE" else "P")
+    action = "BUY"
+    entry_p = float(req.estimatedPrice or 100.0)
+
+    legs = [{
+        "id": alert_id[:8],
+        "strike": float(req.strike) if isinstance(req.strike, (int, float)) else req.spotPrice,
+        "optionType": leg_type,
+        "expiry": expiry,
+        "action": action,
+        "quantity": int(req.unitsPerLot or 1),
+        "entryPrice": entry_p,
+        "currentPrice": entry_p,
+        "iv": 0.20,
+        "status": "ACTIVE",
+        "realizedPnL": 0.0,
+        "contractName": f"{req.symbol} {req.strike} {req.optionType}" if not is_etf else f"{req.strike}"
+    }]
+
+    cur = "₹"
+    max_profit_str = req.maxProfit or "Unlimited"
+    max_loss_val = entry_p * (req.unitsPerLot or 1)
+    max_loss_str = req.maxLoss or f"{cur}{max_loss_val:.2f}"
+
+    direction_label = "BUY CE" if req.direction == "BULLISH_CE" else ("BUY PE" if req.direction == "BEARISH_PE" else req.direction)
+    strat_display_name = f"⚡ {req.strategyName} [{direction_label}]"
+
+    triggered = TriggeredAlert(
+        id=alert_id,
+        user_id=current_user.id,
+        symbol=req.symbol.upper(),
+        strategy_name=strat_display_name,
+        expiry=expiry,
+        pop=float(req.pop or 65.0),
+        max_profit=max_profit_str,
+        max_loss=max_loss_str,
+        rr_ratio=float(req.rrRatio or 2.5),
+        timestamp=req.triggerTime or now_str,
+        current_pnl=f"{cur}0.00",
+        spot_price=float(req.spotPrice),
+        legs=legs,
+        rule_id="CUSTOM_ALGO_STUDIO"
+    )
+
+    db.add(triggered)
+    await db.commit()
+    await db.refresh(triggered)
+
+    # Optional Telegram Alert Dispatch
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if bot_token and chat_id:
+        try:
+            from app.routes.notifications import send_alert_telegram
+            tg_msg = (
+                f"<b>⚡ OptionChief Live Scan Alert!</b>\n\n"
+                f"🎯 <b>Strategy:</b> {req.strategyName}\n"
+                f"📈 <b>Symbol:</b> {req.symbol.upper()}\n"
+                f"🚦 <b>Signal:</b> {direction_label}\n"
+                f"💲 <b>Spot Price:</b> {cur}{req.spotPrice:,.2f}\n"
+                f"🏷️ <b>Recommended Asset:</b> {req.strike} {req.optionType}\n"
+                f"💵 <b>Est Price:</b> {cur}{entry_p:,.2f}\n"
+                f"⏰ <b>Trigger Time:</b> {req.triggerTime or now_str}"
+            )
+            await send_alert_telegram(bot_token, chat_id, tg_msg)
+        except Exception as e:
+            print(f"[Custom Alert] Telegram error: {e}")
+
+    return {
+        "status": "success",
+        "alertId": alert_id,
+        "message": f"Live signal pushed to Strategy Alerts successfully!"
+    }
+
 
 
 # ==========================================

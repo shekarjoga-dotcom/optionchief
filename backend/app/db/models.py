@@ -178,10 +178,12 @@ class CustomStrategyConfig(Base):
     lot_size = Column(Integer, default=1, nullable=False)
     tp_pct = Column(Float, default=25.0, nullable=False)
     sl_pct = Column(Float, default=15.0, nullable=False)
+    is_alert_active = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     user = relationship("User")
+
 
 
 

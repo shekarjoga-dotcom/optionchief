@@ -11,9 +11,10 @@ from sqlalchemy.future import select
 from sqlalchemy import update
 from app.db.session import async_session
 import uuid
-from app.db.models import AlertRule, User, Portfolio, TriggeredAlert
+from app.db.models import AlertRule, User, Portfolio, TriggeredAlert, CustomStrategyConfig
 from app.services.market_data import MarketDataService
 from app.quant.black_scholes import bs_pricing, bs_greeks, calculate_pop
+from app.quant.custom_system_engine import generate_custom_signals
 from app.routes.notifications import TriggerAlertSchema
 import json
 import time
@@ -1564,5 +1565,146 @@ async def active_alerts_scanner_loop():
                     
         except Exception as e:
             print(f"[Alert Scanner] Error in main scan cycle: {e}")
+
+        # -------------------------------------------------------------------
+        # 4. SCAN ACTIVE CUSTOM STRATEGY ALGO RULES (Custom Algo Studio)
+        # -------------------------------------------------------------------
+        try:
+            async with async_session() as session_custom:
+                custom_res = await session_custom.execute(
+                    select(CustomStrategyConfig, User.phone_number)
+                    .join(User, CustomStrategyConfig.user_id == User.id)
+                    .where(CustomStrategyConfig.is_alert_active == True)
+                )
+                custom_rules = custom_res.all()
+
+            if custom_rules:
+                print(f"[Alert Scanner] Scanning {len(custom_rules)} active custom strategy alert rules...")
+                for strat_cfg, phone in custom_rules:
+                    try:
+                        sym = (strat_cfg.symbol or "BANKNIFTY").upper()
+                        tf_str = strat_cfg.timeframe or "5m"
+                        tf_int = 5
+                        if "15" in tf_str:
+                            tf_int = 15
+                        elif "3" in tf_str:
+                            tf_int = 3
+                        elif "1" in tf_str:
+                            tf_int = 1
+
+                        candles = await asyncio.to_thread(
+                            market_service.get_historical_intraday_candles,
+                            symbol=sym,
+                            interval=tf_int
+                        )
+                        if not candles or len(candles) < 20:
+                            continue
+
+                        df_raw = pd.DataFrame(candles)
+                        for col in ["open", "high", "low", "close", "volume"]:
+                            if col in df_raw.columns:
+                                df_raw[col] = pd.to_numeric(df_raw[col], errors="coerce")
+
+                        signals = generate_custom_signals(df_raw, strat_cfg.code)
+                        if signals is None or len(signals) == 0:
+                            continue
+
+                        last_sig = int(signals.iloc[-1])
+                        trigger_idx = -1 if last_sig != 0 else -2
+                        sig_val = int(signals.iloc[trigger_idx])
+
+                        if sig_val != 0:
+                            last_bar = df_raw.iloc[trigger_idx]
+                            bar_time = str(last_bar.get("timestamp") or last_bar.get("date") or datetime.now().strftime("%H:%M"))
+                            cache_key = f"custom_alert_{strat_cfg.id}_{bar_time}_{sig_val}"
+
+                            if cache_key not in triggered_alerts_cache:
+                                triggered_alerts_cache[cache_key] = time.time()
+                                spot = float(last_bar.get("close", 0.0))
+                                is_etf = (strat_cfg.moneyness or "").upper() in ["NIFTYBEES", "BANKBEES", "ETF"]
+                                is_ce = (sig_val == 1)
+
+                                step = 100 if "BANK" in sym or "SENSEX" in sym else (50 if "NIFTY" in sym else 10)
+                                if is_etf:
+                                    strike_str = "NIFTYBEES" if "NIFTY" in sym and "BANK" not in sym else "BANKBEES"
+                                    opt_type_str = "ETF"
+                                    strike_val = 0.0
+                                    est_price = spot if spot < 500 else 250.0
+                                else:
+                                    strike_num = round(spot / step) * step
+                                    strike_str = str(int(strike_num))
+                                    strike_val = float(strike_num)
+                                    opt_type_str = "CE" if is_ce else "PE"
+                                    est_price = max(10.0, spot * 0.015)
+
+                                dir_name = "BUY CALL (CE)" if is_ce else "BUY PUT (PE)"
+                                if is_etf:
+                                    dir_name = "BUY ETF" if is_ce else "EXIT/HEDGE ETF"
+
+                                cur = get_currency_symbol_py(sym)
+                                max_profit_str = f"+{strat_cfg.tp_pct}%"
+                                max_loss_str = f"-{strat_cfg.sl_pct}%"
+                                now_str = datetime.now().strftime("%I:%M:%S %p")
+                                today_str = datetime.now().strftime("%Y-%m-%d")
+
+                                legs = [{
+                                    "id": str(uuid.uuid4())[:8],
+                                    "strike": strike_val,
+                                    "optionType": "F" if is_etf else ("C" if is_ce else "P"),
+                                    "expiry": today_str,
+                                    "action": "BUY",
+                                    "quantity": int(strat_cfg.lot_size or 1),
+                                    "entryPrice": est_price,
+                                    "currentPrice": est_price,
+                                    "iv": 0.20,
+                                    "status": "ACTIVE",
+                                    "realizedPnL": 0.0,
+                                    "contractName": f"{sym} {strike_str} {opt_type_str}"
+                                }]
+
+                                db_triggered = TriggeredAlert(
+                                    id=str(uuid.uuid4()),
+                                    user_id=strat_cfg.user_id,
+                                    symbol=sym,
+                                    strategy_name=f"⚡ {strat_cfg.name} [{dir_name}]",
+                                    expiry=today_str,
+                                    pop=65.0,
+                                    max_profit=max_profit_str,
+                                    max_loss=max_loss_str,
+                                    rr_ratio=round(strat_cfg.tp_pct / max(1.0, strat_cfg.sl_pct), 1),
+                                    timestamp=now_str,
+                                    current_pnl=f"{cur}0.00",
+                                    spot_price=spot,
+                                    legs=legs,
+                                    rule_id="CUSTOM_ALGO_STUDIO"
+                                )
+                                async with async_session() as session_trig:
+                                    session_trig.add(db_triggered)
+                                    await session_trig.commit()
+
+                                print(f"[Alert Scanner] Triggered persistent custom alert for {strat_cfg.name} on {sym}!")
+
+                                bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+                                chat_id = os.getenv("TELEGRAM_CHAT_ID")
+                                if bot_token and chat_id:
+                                    from app.routes.notifications import send_alert_telegram
+                                    tg_html = (
+                                        f"<b>⚡ OptionChief Custom Algo Alert!</b>\n\n"
+                                        f"🎯 <b>Strategy:</b> {strat_cfg.name}\n"
+                                        f"📈 <b>Symbol:</b> {sym} ({tf_str})\n"
+                                        f"🚦 <b>Signal:</b> {dir_name}\n"
+                                        f"💲 <b>Spot Price:</b> {cur}{spot:,.2f}\n"
+                                        f"🏷️ <b>Asset:</b> {strike_str} {opt_type_str}\n"
+                                        f"🎯 <b>Target / SL:</b> +{strat_cfg.tp_pct}% / -{strat_cfg.sl_pct}%\n"
+                                        f"⏰ <b>Trigger Time:</b> {now_str}"
+                                    )
+                                    try:
+                                        await send_alert_telegram(bot_token, chat_id, tg_html)
+                                    except Exception as err:
+                                        print(f"[Alert Scanner] Telegram alert dispatch error: {err}")
+                    except Exception as err:
+                        print(f"[Alert Scanner] Error scanning custom rule {strat_cfg.id}: {err}")
+        except Exception as e:
+            print(f"[Alert Scanner] Error in custom strategy scan loop: {e}")
             
         await asyncio.sleep(60) # Scan every 60 seconds
