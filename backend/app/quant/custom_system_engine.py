@@ -255,8 +255,15 @@ class CustomRuleParser:
                 return f'EMA_{src}({period})'
             return f'EMA({period})'
         s = re.sub(r'\bEMA\s*\(\s*(?:(close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', norm_ema, s, flags=re.IGNORECASE)
-        # SMA(Close, 20) or SMA(20)
-        s = re.sub(r'\bSMA\s*\(\s*(?:(?:close|open|high|low|price|volume)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'SMA(\1)', s, flags=re.IGNORECASE)
+        # SMA(High, 20), SMA(Volume, 20), SMA(Close, 20), SMA(20)
+        def norm_sma(m):
+            src = (m.group(1) or '').upper()
+            period = m.group(2)
+            if src in ['HIGH', 'LOW', 'OPEN', 'VOLUME', 'VOL']:
+                src_tag = 'VOL' if src in ['VOLUME', 'VOL'] else src
+                return f'SMA_{src_tag}({period})'
+            return f'SMA({period})'
+        s = re.sub(r'\bSMA\s*\(\s*(?:(close|open|high|low|price|volume|vol)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', norm_sma, s, flags=re.IGNORECASE)
         # RSI(Close, 14) or RSI(14)
         s = re.sub(r'\bRSI\s*\(\s*(?:(?:close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'RSI(\1)', s, flags=re.IGNORECASE)
         # MACD(12, 26, 9)
@@ -280,8 +287,11 @@ class CustomRuleParser:
             src = m.group(1) or "CLOSE"
             p = m.group(2)
             found.append({"type": f"EMA_{src}" if src != "CLOSE" else "EMA", "params": {"period": int(p), "source": src}, "raw": f"EMA_{src}({p})" if src != "CLOSE" else f"EMA({p})"})
-        for m in re.finditer(r"SMA\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE|VOLUME)\s*,\s*)?(\d+)\s*\)", code_upper):
-            found.append({"type": "SMA", "params": {"period": int(m.group(1))}, "raw": f"SMA({m.group(1)})"})
+        for m in re.finditer(r"SMA(?:_(HIGH|LOW|OPEN|CLOSE|VOLUME|VOL))?\s*\(\s*(?:(?:CLOSE|OPEN|HIGH|LOW|PRICE|VOLUME|VOL)\s*,\s*)?(\d+)\s*\)", code_upper):
+            src = m.group(1) or "CLOSE"
+            p = m.group(2)
+            found.append({"type": f"SMA_{src}" if src != "CLOSE" else "SMA", "params": {"period": int(p), "source": src}, "raw": f"SMA_{src}({p})" if src != "CLOSE" else f"SMA({p})"})
+
         if "VWAP" in code_upper:
             found.append({"type": "VWAP", "params": {}, "raw": "VWAP"})
         for m in re.finditer(r"\bMACD(?:_(?:LINE|SIGNAL|HIST))?(?:\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\))?", code_upper):
@@ -460,10 +470,11 @@ class CustomRuleParser:
             s = re.sub(r'([A-Za-z0-9_]+(?:\([^\)]*\))?)(?:\.Direction)?\s+crosses\s+from\s+Bearish\s+to\s+Bullish', r'CROSS_ABOVE(\1, 0)', s, flags=re.IGNORECASE)
             s = re.sub(r'([A-Za-z0-9_]+(?:\([^\)]*\))?)(?:\.Direction)?\s+crosses\s+from\s+Bullish\s+to\s+Bearish', r'CROSS_BELOW(\1, 0)', s, flags=re.IGNORECASE)
 
-            # Standard crosses above / below
+            # Standard crosses above / below and crossed above / below
             TERM_PAT = r'([A-Za-z0-9_]+(?:\([^\)]*\))?(?:\[[^\]]*\])?)'
-            s = re.sub(TERM_PAT + r'\s+crosses\s+above\s+' + TERM_PAT, r'CROSS_ABOVE(\1, \2)', s, flags=re.IGNORECASE)
-            s = re.sub(TERM_PAT + r'\s+crosses\s+below\s+' + TERM_PAT, r'CROSS_BELOW(\1, \2)', s, flags=re.IGNORECASE)
+            s = re.sub(TERM_PAT + r'\s+cross(?:es|ed)?\s+above\s+' + TERM_PAT, r'CROSS_ABOVE(\1, \2)', s, flags=re.IGNORECASE)
+            s = re.sub(TERM_PAT + r'\s+cross(?:es|ed)?\s+below\s+' + TERM_PAT, r'CROSS_BELOW(\1, \2)', s, flags=re.IGNORECASE)
+
 
             # .Direction and Bullish / Bearish states
             s = re.sub(r'\.Direction\s*==\s*Bullish', ' == 1', s, flags=re.IGNORECASE)
@@ -595,13 +606,18 @@ class CustomExecutionContext:
             self.variables[clean] = res
             return res
 
-        # Check SMA
-        m = re.match(r"^SMA\s*\(\s*(\d+)\s*\)$", clean)
+        # Check SMA (supports Close, Volume, High, Low, Open)
+        m = re.match(r"^SMA(?:_(HIGH|LOW|OPEN|CLOSE|VOLUME|VOL))?\s*\(\s*(?:(HIGH|LOW|OPEN|CLOSE|VOLUME|VOL)\s*,\s*)?(\d+)\s*\)$", clean)
         if m:
-            period = int(m.group(1))
-            res = calc_sma(self.variables['CLOSE'], period)
+            source = (m.group(1) or m.group(2) or 'CLOSE').upper()
+            if source in ['VOLUME', 'VOL']:
+                source = 'VOLUME'
+            period = int(m.group(3))
+            base_data = self.variables.get(source, self.variables.get('CLOSE'))
+            res = calc_sma(base_data, period)
             self.variables[clean] = res
             return res
+
 
         # Check VWAP
         if clean in ["VWAP", "VWAP()"]:
