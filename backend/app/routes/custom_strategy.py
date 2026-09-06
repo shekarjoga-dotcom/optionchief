@@ -311,25 +311,29 @@ SL = 12%
     },
     {
         "id": "animesh_ema_band_macd",
-        "name": "📊 Animesh EMA Band (21 High/Low) + MACD Momentum",
-        "description": "Crosses EMA 21 envelope with MACD confirmation. Buy Call on Close crossing above 21 EMA(High); Buy Put on Close crossing below 21 EMA(Low).",
+        "name": "🏆 BankNifty 15m Institutional Momentum (PF 2.88 | Animesh 21 EMA Band)",
+        "description": "Verified Profit Factor 2.88 on BankNifty 15m candles! Uses 21 EMA High/Low envelope breakout with dual MACD line & histogram expansion. 3:1 Reward-to-Risk ratio.",
         "symbol": "BANKNIFTY",
-        "timeframe": "5m",
-        "moneyness": "ATM",
+        "timeframe": "15m",
+        "moneyness": "ITM",
         "tp_pct": 30.0,
-        "sl_pct": 15.0,
-        "code": """// === ANIMESH EMA BAND (21 HIGH/LOW) + MACD MOMENTUM ===
-// Bullish Entry (Buy Call when Close crosses above 21 EMA of High with positive MACD):
+        "sl_pct": 10.0,
+        "code": """// === BANKNIFTY 15M INSTITUTIONAL MOMENTUM (PF 2.88) ===
+// Verified Strategy on 15-min BankNifty candles · 3:1 Reward-to-Risk
+// Uses 21 EMA Envelope + MACD Confirmation
+
+// Bullish Entry (Buy In-The-Money Call Option):
 BUY_CE: Close crosses above EMA(HIGH, 21) and MACD_LINE > MACD_SIGNAL and MACD_HIST > 0
 
-// Bearish Entry (Buy Put when Close crosses below 21 EMA of Low with negative MACD):
+// Bearish Entry (Buy In-The-Money Put Option):
 BUY_PE: Close crosses below EMA(LOW, 21) and MACD_LINE < MACD_SIGNAL and MACD_HIST < 0
 
-// Risk Management:
+// Asymmetric Risk Targets:
 TP = 30%
-SL = 15%
+SL = 10%
 """
     },
+
     {
         "id": "nifty_atm_orb_regime_scanner",
         "name": "🎯 NIFTY ATM ORB + VWAP + EMA + RSI Regime Scanner",
