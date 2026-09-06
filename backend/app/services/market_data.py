@@ -6,8 +6,10 @@ from bs4 import BeautifulSoup
 import math
 import random
 from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any, Tuple
 from app.quant.black_scholes import bs_implied_volatility, bs_pricing, bs_greeks
 import os
+
 
 # Map user-friendly symbols to Yahoo tickers
 SYMBOL_MAPPING = {
