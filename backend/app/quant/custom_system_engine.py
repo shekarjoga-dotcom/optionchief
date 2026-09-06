@@ -1084,6 +1084,13 @@ def run_custom_system_backtest(
 
     entry_start_mins = _parse_hm(trade_start_time) if trade_start_time else (9 * 60 + 20)
     entry_end_mins   = _parse_hm(trade_end_time)   if trade_end_time   else (15 * 60 + 0)
+    # Intraday force exit cutoff: Square off all open positions by 14:45 (or trade_end_time + 15 mins)
+    if entry_end_mins <= (14 * 60 + 30):
+        force_exit_mins = 14 * 60 + 45
+    elif entry_end_mins <= (14 * 60 + 45):
+        force_exit_mins = 14 * 60 + 45
+    else:
+        force_exit_mins = min(15 * 60 + 15, entry_end_mins + 15)
 
     current_trade = None
 
@@ -1114,8 +1121,8 @@ def run_custom_system_backtest(
                 elif stop_loss_pct and entry_cost > 0 and (trade_pnl <= -entry_cost * (stop_loss_pct / 100.0)):
                     exit_reason = f"Stop Loss (-{stop_loss_pct}%)"
                     sl_hits += 1
-                elif time_mins >= (15 * 60 + 20):
-                    exit_reason = "Intraday EOD Squareoff"
+                elif time_mins >= force_exit_mins:
+                    exit_reason = f"Intraday Squareoff ({h:02d}:{m:02d})"
                 elif ts in signals_map and signals_map[ts]["direction"] != current_trade["direction"]:
                     exit_reason = "Opposite Reversal Signal"
             else:
@@ -1142,10 +1149,11 @@ def run_custom_system_backtest(
                 elif stop_loss_pct and entry_cost > 0 and (trade_pnl <= -entry_cost * (stop_loss_pct / 100.0)):
                     exit_reason = f"Stop Loss (-{stop_loss_pct}%)"
                     sl_hits += 1
-                elif time_mins >= (15 * 60 + 20):
-                    exit_reason = "Intraday EOD Squareoff"
+                elif time_mins >= force_exit_mins:
+                    exit_reason = f"Intraday Squareoff ({h:02d}:{m:02d})"
                 elif ts in signals_map and signals_map[ts]["direction"] != current_trade["direction"]:
                     exit_reason = "Opposite Reversal Signal"
+
 
             if exit_reason is not None:
                 actual_qty = current_trade.get("qty", total_qty)
@@ -1359,6 +1367,13 @@ def run_option_chart_backtest(
 
     oc_entry_start = _parse_hm(trade_start_time) if trade_start_time else (9 * 60 + 20)
     oc_entry_end   = _parse_hm(trade_end_time)   if trade_end_time   else (15 * 60 + 0)
+    # Intraday force exit cutoff: Square off all open positions by 14:45 (or trade_end_time + 15 mins)
+    if oc_entry_end <= (14 * 60 + 30):
+        oc_force_exit_mins = 14 * 60 + 45
+    elif oc_entry_end <= (14 * 60 + 45):
+        oc_force_exit_mins = 14 * 60 + 45
+    else:
+        oc_force_exit_mins = min(15 * 60 + 15, oc_entry_end + 15)
 
     def oc_is_expiry_day(day_str: str) -> bool:
         try:
@@ -1452,10 +1467,11 @@ def run_option_chart_backtest(
                         exit_price = sl_price
                         sl_hits += 1
 
-                # Check EOD Squareoff at 15:20
-                if exit_reason is None and time_mins >= (15 * 60 + 20):
-                    exit_reason = "Intraday EOD Squareoff"
+                # Check EOD Squareoff at configured cutoff (max 14:45)
+                if exit_reason is None and time_mins >= oc_force_exit_mins:
+                    exit_reason = f"Intraday Squareoff ({h:02d}:{m:02d})"
                     exit_price = opt_close
+
 
                 # If exited, log trade and update capital
                 if exit_reason is not None:
