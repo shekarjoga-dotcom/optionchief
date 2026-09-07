@@ -19,6 +19,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { ProFeatureGate } from './components/ProFeatureGate';
 import { TrialReminderModal } from './components/TrialReminderModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   TrendingUp,
   Layers,
@@ -950,71 +951,93 @@ const App: React.FC = () => {
         {/* Tab Contents */}
         <div className="flex flex-col gap-6 min-h-[400px]">
           <div style={{ display: activeTab === 'chain' ? 'block' : 'none' }}>
-            <div className="flex flex-col gap-6">
-              <ExpirySelector />
-              <OptionChainTable />
-            </div>
+            <ErrorBoundary fallbackTitle="Option Chain Matrix">
+              <div className="flex flex-col gap-6">
+                <ExpirySelector />
+                <OptionChainTable />
+              </div>
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'scanner' ? 'block' : 'none' }}>
-            <ScannerPanel />
+            <ErrorBoundary fallbackTitle="Strategy Scanner">
+              <ScannerPanel />
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'alerts' ? 'block' : 'none' }}>
-            {user?.is_pro ? (
-              <AlertsPanel />
-            ) : (
-              <ProFeatureGate 
-                title="24/7 Telegram Instant Alerts & Live Scanner" 
-                description="Receive instant market notifications on your mobile phone via Telegram the moment favorable regime ratios trigger in live market hours." 
-                onUpgrade={() => setShowSubscriptionModal(true)} 
-              />
-            )}
+            <ErrorBoundary fallbackTitle="Strategy Alerts">
+              {user?.is_pro ? (
+                <AlertsPanel />
+              ) : (
+                <ProFeatureGate 
+                  title="24/7 Telegram Instant Alerts & Live Scanner" 
+                  description="Receive instant market notifications on your mobile phone via Telegram the moment favorable regime ratios trigger in live market hours." 
+                  onUpgrade={() => setShowSubscriptionModal(true)} 
+                />
+              )}
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'backtest' ? 'block' : 'none' }}>
-            <BacktesterPanel />
+            <ErrorBoundary fallbackTitle="Backtester">
+              <BacktesterPanel />
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'builder' ? 'block' : 'none' }}>
-            <div className="flex flex-col gap-6">
-              <ExpirySelector />
-              <LegManager />
-              <HedgingAdvisor />
-              <PayoffChart />
-            </div>
+            <ErrorBoundary fallbackTitle="Strategy Analyzer">
+              <div className="flex flex-col gap-6">
+                <ExpirySelector />
+                <LegManager />
+                <HedgingAdvisor />
+                <PayoffChart />
+              </div>
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'cone' ? 'block' : 'none' }}>
-            <VolatilityCone />
+            <ErrorBoundary fallbackTitle="Volatility Cone">
+              <VolatilityCone />
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'portfolios' ? 'block' : 'none' }}>
-            <PortfolioManager />
+            <ErrorBoundary fallbackTitle="Paper Trading Book">
+              <PortfolioManager />
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'algo_studio' ? 'block' : 'none' }}>
-            <CustomStrategyStudio />
+            <ErrorBoundary fallbackTitle="Custom Algo Studio">
+              <CustomStrategyStudio />
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'rsi_scanner' ? 'block' : 'none' }}>
-            {user?.is_pro ? (
-              <RsiScannerPanel onNavigateToBacktest={() => setActiveTab('backtest')} />
-            ) : (
-              <ProFeatureGate 
-                title="RSI Options Momentum Scalper" 
-                description="Unlock real-time 5m & 15m RSI breakout detection for high-velocity scalping trades with trailing SL and auto targets." 
-                onUpgrade={() => setShowSubscriptionModal(true)} 
-              />
-            )}
+            <ErrorBoundary fallbackTitle="RSI Scanner">
+              {user?.is_pro ? (
+                <RsiScannerPanel onNavigateToBacktest={() => setActiveTab('backtest')} />
+              ) : (
+                <ProFeatureGate 
+                  title="RSI Options Momentum Scalper" 
+                  description="Unlock real-time 5m & 15m RSI breakout detection for high-velocity scalping trades with trailing SL and auto targets." 
+                  onUpgrade={() => setShowSubscriptionModal(true)} 
+                />
+              )}
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'admin' ? 'block' : 'none' }}>
-            <AdminPanel />
+            <ErrorBoundary fallbackTitle="Admin Dashboard">
+              <AdminPanel />
+            </ErrorBoundary>
           </div>
 
           <div style={{ display: activeTab === 'help' ? 'block' : 'none' }}>
-            <HelpPanel />
+            <ErrorBoundary fallbackTitle="Help & Videos">
+              <HelpPanel />
+            </ErrorBoundary>
           </div>
         </div>
 

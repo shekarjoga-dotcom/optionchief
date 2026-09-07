@@ -184,12 +184,17 @@ export const AlertsPanel: React.FC = () => {
   }, [triggeredAlerts, symbol, underlying]);
 
   const getAlertCurrentPnL = (trig: TriggeredAlert) => {
-    const activeSpot = alertSpotPrices[trig.symbol.toUpperCase()] || trig.spotPrice || (trig.legs[0]?.strike || 100);
+    if (!trig || !trig.legs || !Array.isArray(trig.legs) || trig.legs.length === 0) return 0;
+    const sym = (trig.symbol || "NIFTY").toUpperCase();
+    const activeSpot = alertSpotPrices[sym] || trig.spotPrice || (trig.legs[0]?.strike || 100);
 
     let totalPnL = 0;
     for (const leg of trig.legs) {
+      if (!leg) continue;
       const pnlData = projectLegPnL(leg, activeSpot, 0, 0);
-      totalPnL += pnlData.pnl;
+      if (pnlData && typeof pnlData.pnl === 'number' && !isNaN(pnlData.pnl)) {
+        totalPnL += pnlData.pnl;
+      }
     }
     return Math.round(totalPnL * 100) / 100;
   };
@@ -255,7 +260,12 @@ export const AlertsPanel: React.FC = () => {
     let localList: TriggeredAlert[] = [];
     try {
       const saved = localStorage.getItem("options_oracle_triggered_alerts");
-      localList = saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          localList = parsed.filter(item => item && item.id && item.strategyName);
+        }
+      }
     } catch (e) {
       console.error(e);
     }
@@ -267,38 +277,44 @@ export const AlertsPanel: React.FC = () => {
         });
         if (res.ok) {
           const serverList = await res.json();
-          const map = new Map<string, TriggeredAlert>();
-          serverList.forEach((item: any) => {
-            map.set(item.id, {
-              id: item.id,
-              userId: item.user_id,
-              symbol: item.symbol,
-              strategyName: item.strategy_name,
-              expiry: item.expiry,
-              pop: item.pop,
-              maxProfit: item.max_profit,
-              maxLoss: item.max_loss,
-              rrRatio: item.rr_ratio,
-              timestamp: item.timestamp,
-              currentPnL: item.current_pnl,
-              spotPrice: item.spot_price,
-              legs: item.legs || [],
-              ruleId: item.rule_id,
-              delta: item.delta,
-              gamma: item.gamma,
-              theta: item.theta
+          if (Array.isArray(serverList)) {
+            const map = new Map<string, TriggeredAlert>();
+            serverList.forEach((item: any) => {
+              if (!item || !item.id) return;
+              map.set(item.id, {
+                id: item.id,
+                userId: item.user_id,
+                symbol: item.symbol || "NIFTY",
+                strategyName: item.strategy_name || "Custom Strategy",
+                expiry: item.expiry || "INTRADAY",
+                pop: typeof item.pop === 'number' ? item.pop : 65.0,
+                maxProfit: item.max_profit || "Unlimited",
+                maxLoss: item.max_loss || "₹0.00",
+                rrRatio: typeof item.rr_ratio === 'number' ? item.rr_ratio : 2.5,
+                timestamp: item.timestamp || "",
+                currentPnL: item.current_pnl || "₹0.00",
+                spotPrice: typeof item.spot_price === 'number' ? item.spot_price : undefined,
+                legs: Array.isArray(item.legs) ? item.legs : [],
+                ruleId: item.rule_id || "CUSTOM",
+                delta: item.delta,
+                gamma: item.gamma,
+                theta: item.theta
+              });
             });
-          });
-          localList.forEach(item => {
-            if (!map.has(item.id)) map.set(item.id, item);
-          });
-          const merged = Array.from(map.values());
-          setTriggeredAlerts(merged);
-          localStorage.setItem("options_oracle_triggered_alerts", JSON.stringify(merged));
-          if (merged.length > 0 && !selectedAlert) {
-            setSelectedAlert(merged[0]);
+            localList.forEach(item => {
+              if (item && item.id && !map.has(item.id)) map.set(item.id, item);
+            });
+            const merged = Array.from(map.values());
+            setTriggeredAlerts(merged);
+            localStorage.setItem("options_oracle_triggered_alerts", JSON.stringify(merged));
+            setSelectedAlert(prev => {
+              if (prev) {
+                return merged.find(m => m.id === prev.id) || merged[0] || null;
+              }
+              return merged[0] || null;
+            });
+            return;
           }
-          return;
         }
       } catch (err) {
         // Fall back to local list
@@ -306,17 +322,20 @@ export const AlertsPanel: React.FC = () => {
     }
 
     setTriggeredAlerts(localList);
-    if (localList.length > 0 && !selectedAlert) {
-      setSelectedAlert(localList[0]);
-    }
+    setSelectedAlert(prev => {
+      if (prev) {
+        return localList.find(m => m.id === prev.id) || localList[0] || null;
+      }
+      return localList[0] || null;
+    });
   };
 
   useEffect(() => {
     loadTriggers();
     // Poll triggers for updates in background
-    const timer = setInterval(loadTriggers, 5000);
+    const timer = setInterval(loadTriggers, 8000);
     return () => clearInterval(timer);
-  }, [selectedAlert, token]);
+  }, [token]);
 
   // Countdown ticker effect
   useEffect(() => {
@@ -524,33 +543,40 @@ export const AlertsPanel: React.FC = () => {
 
   // Determine correct underlying spot price for payoff simulation
   const alertSpotPrice = useMemo(() => {
-    if (!selectedAlert || selectedAlert.legs.length === 0) return 100;
-    // 1. If we have live spot price, use it
-    const liveSpot = alertSpotPrices[selectedAlert.symbol.toUpperCase()];
+    if (!selectedAlert || !selectedAlert.legs || !Array.isArray(selectedAlert.legs) || selectedAlert.legs.length === 0) return 100;
+    const sym = (selectedAlert.symbol || "NIFTY").toUpperCase();
+    const liveSpot = alertSpotPrices[sym];
     if (liveSpot) return liveSpot;
-    // 2. If alert object has spotPrice, use it
     if (selectedAlert.spotPrice) return selectedAlert.spotPrice;
-    // 3. If the alert is for the currently selected symbol in store, use current store spot
     if (selectedAlert.symbol === symbol && underlying?.spot) {
       return underlying.spot;
     }
-    // 4. Fallback: average strike of the legs (which is ATM center of strategy)
-    const strikes = selectedAlert.legs.map(l => l.strike);
-    return strikes.reduce((a, b) => a + b, 0) / strikes.length;
+    const strikes = selectedAlert.legs.map(l => l?.strike || 0).filter(s => typeof s === 'number' && s > 0);
+    return strikes.length > 0 ? (strikes.reduce((a, b) => a + b, 0) / strikes.length) : 100;
   }, [selectedAlert, symbol, underlying, alertSpotPrices]);
 
   // Payoff calculations for selected alert
   const payoffData = useMemo(() => {
-    if (!selectedAlert || selectedAlert.legs.length === 0) return { payoff: [], metrics: null };
-    return projectStrategy(selectedAlert.legs, alertSpotPrice, alertDaysPassed, alertIvOffset, 0.05, selectedAlert.symbol);
+    if (!selectedAlert || !selectedAlert.legs || !Array.isArray(selectedAlert.legs) || selectedAlert.legs.length === 0) return { payoff: [], metrics: null };
+    try {
+      return projectStrategy(selectedAlert.legs, alertSpotPrice, alertDaysPassed, alertIvOffset, 0.05, selectedAlert.symbol || "NIFTY");
+    } catch (e) {
+      console.warn("Payoff calculation error:", e);
+      return { payoff: [], metrics: null };
+    }
   }, [selectedAlert, alertSpotPrice, alertDaysPassed, alertIvOffset]);
 
   const totalDays = useMemo(() => {
     if (!selectedAlert || !selectedAlert.expiry) return 10;
-    const today = new Date();
-    const expiryDate = new Date(selectedAlert.expiry);
-    const diffTime = expiryDate.getTime() - today.getTime();
-    return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    try {
+      const today = new Date();
+      const expiryDate = new Date(selectedAlert.expiry);
+      if (isNaN(expiryDate.getTime())) return 10;
+      const diffTime = expiryDate.getTime() - today.getTime();
+      return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    } catch {
+      return 10;
+    }
   }, [selectedAlert]);
 
   // Execute trade backend F&O caller
@@ -1393,18 +1419,22 @@ export const AlertsPanel: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedAlert.legs.map((leg, index) => {
+                        {(selectedAlert.legs || []).map((leg, index) => {
+                          if (!leg) return null;
                           const isBuy = leg.action === 'BUY';
                           const typeChar = leg.optionType === 'C' ? 'Call' : leg.optionType === 'P' ? 'Put' : 'Future';
-                          const cur = getCurrencySymbol(selectedAlert.symbol);
+                          const cur = getCurrencySymbol(selectedAlert.symbol || 'NIFTY');
+                          const strikeNum = typeof leg.strike === 'number' ? leg.strike : parseFloat(String(leg.strike)) || 0;
+                          const entryP = typeof leg.entryPrice === 'number' ? leg.entryPrice : parseFloat(String(leg.entryPrice)) || 0;
+                          const ivVal = typeof leg.iv === 'number' ? (leg.iv * 100).toFixed(1) : '0';
                           return (
                             <tr key={leg.id || index} className="border-b border-borderClr/10 text-gray-300">
-                              <td className={`py-1.5 font-bold ${isBuy ? 'text-greenBrand' : 'text-redBrand'}`}>{leg.action}</td>
-                              <td className="py-1.5">{leg.quantity}</td>
+                              <td className={`py-1.5 font-bold ${isBuy ? 'text-greenBrand' : 'text-redBrand'}`}>{leg.action || 'BUY'}</td>
+                              <td className="py-1.5">{leg.quantity || 1}</td>
                               <td className="py-1.5">{typeChar}</td>
-                              <td className="py-1.5 font-bold text-white">{cur}{leg.strike.toLocaleString()}</td>
-                              <td className="py-1.5">{cur}{leg.entryPrice}</td>
-                              <td className="py-1.5 text-right text-accentCyan">{(leg.iv * 100).toFixed(1)}%</td>
+                              <td className="py-1.5 font-bold text-white">{cur}{strikeNum.toLocaleString()}</td>
+                              <td className="py-1.5">{cur}{entryP}</td>
+                              <td className="py-1.5 text-right text-accentCyan">{ivVal}%</td>
                             </tr>
                           );
                         })}
