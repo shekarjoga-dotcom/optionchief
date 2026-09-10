@@ -419,10 +419,19 @@ def generate_payoff_png(legs: list, spot_price: float, symbol: str) -> bytes:
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, facecolor=fig.get_facecolor(), edgecolor='none')
         plt.close(fig)
+        plt.close('all')
         
-        return buf.getvalue()
+        val = buf.getvalue()
+        buf.close()
+        del buf, fig, ax
+        return val
     except Exception as e:
         print(f"[PNG Gen] Error generating payoff diagram: {e}")
+        try:
+            import matplotlib.pyplot as plt
+            plt.close('all')
+        except Exception:
+            pass
         return b""
 
 def generate_layman_analysis(strategy_name: str, symbol: str, spot_price: float, legs: list, pop: float) -> str:

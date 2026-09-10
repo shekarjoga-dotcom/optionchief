@@ -1366,39 +1366,37 @@ async def active_alerts_scanner_loop():
                 )
                 rules_list = result.all()
                 
-            if not rules_list:
-                await asyncio.sleep(60)
-                continue
-
-            # Fetch all triggered alerts created today to prevent duplicate legs alerts today
-            today_start = datetime.combine(datetime.now().date(), datetime.min.time())
-            async with async_session() as session:
-                from app.db.models import TriggeredAlert
-                result_alerts = await session.execute(
-                    select(TriggeredAlert).where(TriggeredAlert.created_at >= today_start)
-                )
-                today_alerts = list(result_alerts.scalars().all())
-                
-            print(f"[Alert Scanner] Scanning {len(rules_list)} active server-side rules...")
-            
-            # Group rules by symbol to minimize HTTP requests
-            symbols_to_scan = set()
-            for rule, phone in rules_list:
-                if rule.symbol == "ALL":
-                    symbols_to_scan.add("NIFTY") # default core scanning symbol
-                elif rule.symbol == "ALL_NSE":
-                    for s in NSE_FO_STOCKS:
-                        symbols_to_scan.add(s)
-                else:
-                    symbols_to_scan.add(rule.symbol.upper())
+            today_alerts = []
+            if rules_list:
+                # Fetch all triggered alerts created today to prevent duplicate legs alerts today
+                today_start = datetime.combine(datetime.now().date(), datetime.min.time())
+                async with async_session() as session:
+                    from app.db.models import TriggeredAlert
+                    result_alerts = await session.execute(
+                        select(TriggeredAlert).where(TriggeredAlert.created_at >= today_start)
+                    )
+                    today_alerts = list(result_alerts.scalars().all())
                     
-            for sym in symbols_to_scan:
-                try:
-                    # 2. Fetch options chain
-                    chain = await asyncio.to_thread(market_service.get_option_chain, sym)
-                    options = chain.get("options", [])
-                    spot = chain.get("underlying", {}).get("spot", 0.0)
-                    expiry = chain.get("selected_expiry")
+                print(f"[Alert Scanner] Scanning {len(rules_list)} active server-side rules...")
+                
+                # Group rules by symbol to minimize HTTP requests
+                symbols_to_scan = set()
+                for rule, phone in rules_list:
+                    if rule.symbol == "ALL":
+                        symbols_to_scan.add("NIFTY") # default core scanning symbol
+                    elif rule.symbol == "ALL_NSE":
+                        for s in NSE_FO_STOCKS:
+                            symbols_to_scan.add(s)
+                    else:
+                        symbols_to_scan.add(rule.symbol.upper())
+                        
+                for sym in symbols_to_scan:
+                    try:
+                        # 2. Fetch options chain
+                        chain = await asyncio.to_thread(market_service.get_option_chain, sym)
+                        options = chain.get("options", [])
+                        spot = chain.get("underlying", {}).get("spot", 0.0)
+                        expiry = chain.get("selected_expiry")
                     
                     if not options or spot == 0.0:
                         continue
@@ -1707,4 +1705,11 @@ async def active_alerts_scanner_loop():
         except Exception as e:
             print(f"[Alert Scanner] Error in custom strategy scan loop: {e}")
             
+        # Clean up unreferenced objects and DataFrames to keep memory footprint below 150MB
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+
         await asyncio.sleep(60) # Scan every 60 seconds

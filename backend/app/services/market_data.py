@@ -83,9 +83,44 @@ class MarketDataService:
         self.dhan_client_id = os.getenv("DHAN_CLIENT_ID")
         self._cached_token = None
         self._dhan_client = None
+        self._last_dhan_db_check = 0.0
+        self._cached_db_creds = None
+        self._sync_engine = None
+        
+        # In-memory fast cache for underlying quotes (spot, ohlc, change) with TTL
+        self._underlying_cache = {}
+
+    def _get_sync_engine(self):
+        if self._sync_engine is None:
+            try:
+                from app.db.session import DATABASE_URL
+                from sqlalchemy import create_engine
+                sync_url = DATABASE_URL
+                if "sqlite+aiosqlite:///" in sync_url:
+                    sync_url = sync_url.replace("sqlite+aiosqlite:///", "sqlite:///")
+                elif "postgresql+asyncpg://" in sync_url:
+                    sync_url = sync_url.replace("postgresql+asyncpg://", "postgresql://")
+                elif "postgres://" in sync_url:
+                    sync_url = sync_url.replace("postgres://", "postgresql://")
+
+                if "sqlite" in sync_url:
+                    self._sync_engine = create_engine(sync_url, connect_args={"check_same_thread": False})
+                else:
+                    self._sync_engine = create_engine(
+                        sync_url,
+                        pool_size=1,
+                        max_overflow=0,
+                        pool_recycle=300,
+                        pool_pre_ping=True
+                    )
+            except Exception as e:
+                print(f"[Sync Engine Init] Error: {e}")
+                self._sync_engine = None
+        return self._sync_engine
 
     @property
     def dhan(self):
+        import time
         token_path = "/data/dhan_token.txt" if os.path.exists("/data") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "dhan_token.txt")
         
         active_token = None
@@ -105,32 +140,34 @@ class MarketDataService:
         if not client_id:
             client_id = getattr(self, "dhan_client_id", None) or os.getenv("DHAN_CLIENT_ID")
 
-        # Persistent DB fallback check if environment variables are blank after deployment restart
+        # Persistent DB fallback check (throttled to once every 60 seconds to prevent connection churn)
+        now_ts = time.time()
         if not active_token or not client_id:
-            try:
-                from app.db.session import DATABASE_URL
-                from sqlalchemy import create_engine, text
-                sync_url = DATABASE_URL
-                if "sqlite+aiosqlite:///" in sync_url:
-                    sync_url = sync_url.replace("sqlite+aiosqlite:///", "sqlite:///")
-                elif "postgresql+asyncpg://" in sync_url:
-                    sync_url = sync_url.replace("postgresql+asyncpg://", "postgresql://")
-                elif "postgres://" in sync_url:
-                    sync_url = sync_url.replace("postgres://", "postgresql://")
-
-                engine_db = create_engine(sync_url)
-                with engine_db.connect() as conn_db:
-                    res = conn_db.execute(text("SELECT dhan_client_id, dhan_access_token FROM users WHERE dhan_access_token IS NOT NULL AND dhan_access_token != '' ORDER BY id DESC LIMIT 1")).fetchone()
-                    if res and res[1]:
-                        if not client_id:
-                            client_id = str(res[0])
-                        if not active_token:
-                            active_token = str(res[1])
-                            os.environ["DHAN_ACCESS_TOKEN"] = active_token
-                        if client_id:
-                            os.environ["DHAN_CLIENT_ID"] = client_id
-            except Exception as e:
-                print(f"[Dhan DB Lookup] Error: {e}")
+            if (now_ts - self._last_dhan_db_check) > 60.0:
+                self._last_dhan_db_check = now_ts
+                try:
+                    engine_db = self._get_sync_engine()
+                    if engine_db:
+                        from sqlalchemy import text
+                        with engine_db.connect() as conn_db:
+                            res = conn_db.execute(text("SELECT dhan_client_id, dhan_access_token FROM users WHERE dhan_access_token IS NOT NULL AND dhan_access_token != '' ORDER BY id DESC LIMIT 1")).fetchone()
+                            if res and res[1]:
+                                self._cached_db_creds = (str(res[0]), str(res[1]))
+                                if not client_id:
+                                    client_id = str(res[0])
+                                    os.environ["DHAN_CLIENT_ID"] = client_id
+                                if not active_token:
+                                    active_token = str(res[1])
+                                    os.environ["DHAN_ACCESS_TOKEN"] = active_token
+                            else:
+                                self._cached_db_creds = None
+                except Exception as e:
+                    print(f"[Dhan DB Lookup] Error: {e}")
+            elif self._cached_db_creds:
+                if not client_id:
+                    client_id = self._cached_db_creds[0]
+                if not active_token:
+                    active_token = self._cached_db_creds[1]
 
         if active_token != self._cached_token or self._dhan_client is None:
             self._cached_token = active_token
@@ -173,9 +210,18 @@ class MarketDataService:
     def get_underlying_data(self, symbol: str) -> dict:
         """
         Fetches the current spot price, day high, day low, bid/ask and price change.
+        Includes a 15-second in-memory TTL cache to eliminate redundant network queries & memory thrashing.
         """
+        import time
         symbol_clean = self._clean_symbol(symbol)
+        now_ts = time.time()
         
+        # 1. In-memory cache hit
+        cached = self._underlying_cache.get(symbol_clean)
+        if cached and (now_ts - cached[0]) < 15.0:
+            return dict(cached[1])
+        
+        # 2. Try Dhan Live API if active
         if self.is_dhan_enabled and symbol_clean != "SENSEX":
             scrip_info = self._get_dhan_scrip_info(symbol_clean)
             if scrip_info:
@@ -199,7 +245,7 @@ class MarketDataService:
                             change = spot - prev_close
                             pct_change = (change / prev_close * 100.0) if prev_close > 0 else 0.0
                             
-                            return {
+                            res = {
                                 "symbol": symbol.upper(),
                                 "ticker": symbol_clean,
                                 "spot": spot,
@@ -211,10 +257,12 @@ class MarketDataService:
                                 "pct_change": round(pct_change, 2),
                                 "volume": int(data_map.get("volume", 0))
                             }
+                            self._underlying_cache[symbol_clean] = (now_ts, res)
+                            return res
                 except Exception as e:
                     print(f"[Dhan API] Error fetching underlying data from Dhan: {str(e)}")
                     
-        # Real-time Live NSE Index API (api/allIndices)
+        # 3. Real-time Live NSE Index API (api/allIndices)
         if symbol_clean in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYIT", "NIFTYCPSE"]:
             try:
                 if self._nse_session:
@@ -240,7 +288,7 @@ class MarketDataService:
                                 pct_change = float(item.get("percentChange", (change / prev_close * 100) if prev_close else 0.0))
 
                                 if spot > 1000:
-                                    return {
+                                    res = {
                                         "symbol": symbol.upper(),
                                         "ticker": symbol_clean,
                                         "spot": spot,
@@ -252,10 +300,12 @@ class MarketDataService:
                                         "pct_change": round(pct_change, 2),
                                         "volume": 0
                                     }
+                                    self._underlying_cache[symbol_clean] = (now_ts, res)
+                                    return res
             except Exception as e:
                 print(f"[NSE Index Feed] Error querying allIndices: {e}")
 
-        # Real-time yfinance Index Ticker Fallback
+        # 4. Real-time yfinance Index Ticker Fallback
         yf_index_map = {
             "NIFTY": "^NSEI",
             "BANKNIFTY": "^NSEBANK",
@@ -276,7 +326,7 @@ class MarketDataService:
                     low_p = float(getattr(fast_info, 'day_low', spot) or spot)
                     change = spot - prev_close
                     pct_change = (change / prev_close * 100.0) if prev_close else 0.0
-                    return {
+                    res = {
                         "symbol": symbol.upper(),
                         "ticker": symbol_clean,
                         "spot": round(spot, 2),
@@ -288,16 +338,19 @@ class MarketDataService:
                         "pct_change": round(pct_change, 2),
                         "volume": 0
                     }
+                    self._underlying_cache[symbol_clean] = (now_ts, res)
+                    return res
             except Exception as e:
                 print(f"[yfinance Index Feed] Error fetching {symbol_clean}: {e}")
 
-        # Direct Scrape Fallback
+        # 5. Direct Scrape Fallback
         if symbol_clean in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"]:
             try:
                 nse_data = self._try_scrape_nse(symbol_clean)
                 if nse_data and nse_data.get("underlying") and nse_data["underlying"].get("spot"):
                     u = nse_data["underlying"]
                     if float(u["spot"]) > 1000:
+                        self._underlying_cache[symbol_clean] = (now_ts, u)
                         return u
             except Exception as e:
                 print(f"[NSE Scraper] Scrape error for {symbol_clean}: {e}")
@@ -311,7 +364,7 @@ class MarketDataService:
                 "MIDCPNIFTY": 12500.0
             }
             spot_val = fallback_map.get(symbol_clean, 24585.75)
-            return {
+            res = {
                 "symbol": symbol.upper(),
                 "ticker": symbol_clean,
                 "spot": spot_val,
@@ -323,16 +376,42 @@ class MarketDataService:
                 "pct_change": 0.0,
                 "volume": 0
             }
+            self._underlying_cache[symbol_clean] = (now_ts, res)
+            return res
 
+        # 6. Stocks and Commodities
         ticker_symbol = SYMBOL_MAPPING.get(symbol_clean, symbol_clean)
         if symbol_clean in NSE_FO_STOCKS and not ticker_symbol.endswith(".NS"):
             ticker_symbol = f"{symbol_clean}.NS"
         try:
             ticker = yf.Ticker(ticker_symbol)
-            info = ticker.info
+            spot = 0.0
+            prev_close = 0.0
+            open_val = 0.0
+            high_val = 0.0
+            low_val = 0.0
+            volume = 0
             
-            spot = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose") or 100.0
-            prev_close = info.get("regularMarketPreviousClose") or spot
+            # Prioritize fast_info: 10x faster, zero memory bloat, avoids 401 Unauthorized crumb errors
+            try:
+                fast_info = ticker.fast_info
+                spot = float(fast_info.last_price or 0.0)
+                prev_close = float(fast_info.previous_close or spot)
+                open_val = float(getattr(fast_info, 'open', spot) or spot)
+                high_val = float(getattr(fast_info, 'day_high', spot) or spot)
+                low_val = float(getattr(fast_info, 'day_low', spot) or spot)
+                volume = int(getattr(fast_info, 'last_volume', 0) or 0)
+            except Exception:
+                pass
+                
+            if spot <= 0:
+                info = ticker.info
+                spot = float(info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose") or 100.0)
+                prev_close = float(info.get("regularMarketPreviousClose") or spot)
+                open_val = float(info.get("regularMarketOpen") or spot)
+                high_val = float(info.get("regularMarketDayHigh") or spot)
+                low_val = float(info.get("regularMarketDayLow") or spot)
+                volume = int(info.get("regularMarketVolume") or 0)
             
             # Convert commodity prices from USD to INR using unit-specific multipliers
             multiplier = 1.0
@@ -344,38 +423,38 @@ class MarketDataService:
                 elif symbol_clean in ["NATURALGAS", "NATGASMINI"]:
                     multiplier = usd_inr
                 elif symbol_clean in ["GOLD", "GOLDM"]:
-                    # 1 troy ounce = 31.1035 grams, priced per 10g in India. Adjusting by ~1.314 to account for import duty, cess, and local taxes.
                     multiplier = ((usd_inr * 10) / 31.1035) * 1.314
                 elif symbol_clean in ["SILVER", "SILVERM"]:
-                    # Priced per kg in India. Adjusting by ~1.324 to account for import duty, local taxes, and freight premiums.
                     multiplier = ((usd_inr * 1000) / 31.1035) * 1.324
                     
             spot = spot * multiplier
             prev_close = prev_close * multiplier
-            
-            open_val = (info.get("regularMarketOpen") or (spot / multiplier)) * multiplier
-            high_val = (info.get("regularMarketDayHigh") or (spot / multiplier)) * multiplier
-            low_val = (info.get("regularMarketDayLow") or (spot / multiplier)) * multiplier
+            open_val = open_val * multiplier
+            high_val = high_val * multiplier
+            low_val = low_val * multiplier
             
             change = spot - prev_close
             pct_change = (change / prev_close) * 100 if prev_close else 0.0
 
-            return {
+            res = {
                 "symbol": symbol.upper(),
                 "ticker": ticker_symbol,
-                "spot": float(spot),
-                "open": float(open_val),
-                "high": float(high_val),
-                "low": float(low_val),
-                "previous_close": float(prev_close),
-                "change": float(change),
-                "pct_change": float(pct_change),
-                "volume": int(info.get("regularMarketVolume") or 0)
+                "spot": float(round(spot, 2)),
+                "open": float(round(open_val, 2)),
+                "high": float(round(high_val, 2)),
+                "low": float(round(low_val, 2)),
+                "previous_close": float(round(prev_close, 2)),
+                "change": float(round(change, 2)),
+                "pct_change": float(round(pct_change, 2)),
+                "volume": int(volume)
             }
+            self._underlying_cache[symbol_clean] = (now_ts, res)
+            return res
         except Exception as e:
             print(f"Error fetching data for {symbol}: {str(e)}")
-            # Return simulation data if backend fetch fails
-            return self._generate_mock_underlying(symbol)
+            mock_res = self._generate_mock_underlying(symbol)
+            self._underlying_cache[symbol_clean] = (now_ts, mock_res)
+            return mock_res
 
     def get_historical_prices(self, symbol: str, period: str = "1y") -> list:
         """
