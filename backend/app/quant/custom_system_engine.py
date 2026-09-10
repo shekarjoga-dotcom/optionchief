@@ -247,15 +247,15 @@ class CustomRuleParser:
 
         # Supertrend(Period = 20, Multiplier = 3.0) or Supertrend(20, 3.0)
         s = re.sub(r'\bSupertrend\s*\(\s*(?:period\s*=\s*)?(\d+)\s*,\s*(?:multiplier\s*=\s*)?([\d\.]+)\s*\)', r'SUPERTREND(\1, \2)', s, flags=re.IGNORECASE)
-        # EMA(High, 21), EMA(Low, 21), EMA(Close, 20), EMA(20)
+        # EMA(High, 21), EMA(Low, 21), EMA(Close, 20), EMA(Daily Close, 20), EMA(20)
         def norm_ema(m):
             src = (m.group(1) or '').upper()
             period = m.group(2)
             if src in ['HIGH', 'LOW', 'OPEN']:
                 return f'EMA_{src}({period})'
             return f'EMA({period})'
-        s = re.sub(r'\bEMA\s*\(\s*(?:(close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', norm_ema, s, flags=re.IGNORECASE)
-        # SMA(High, 20), SMA(Volume, 20), SMA(Close, 20), SMA(20)
+        s = re.sub(r'\bEMA\s*\(\s*(?:(?:Daily|Weekly|Monthly|\d+\s*(?:minute|min|hour|m|h))\s*)?(?:(close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', norm_ema, s, flags=re.IGNORECASE)
+        # SMA(High, 20), SMA(Volume, 20), SMA(Close, 20), SMA(Daily Volume, 20), SMA(20)
         def norm_sma(m):
             src = (m.group(1) or '').upper()
             period = m.group(2)
@@ -263,9 +263,9 @@ class CustomRuleParser:
                 src_tag = 'VOL' if src in ['VOLUME', 'VOL'] else src
                 return f'SMA_{src_tag}({period})'
             return f'SMA({period})'
-        s = re.sub(r'\bSMA\s*\(\s*(?:(close|open|high|low|price|volume|vol)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', norm_sma, s, flags=re.IGNORECASE)
+        s = re.sub(r'\bSMA\s*\(\s*(?:(?:Daily|Weekly|Monthly|\d+\s*(?:minute|min|hour|m|h))\s*)?(?:(close|open|high|low|price|volume|vol)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', norm_sma, s, flags=re.IGNORECASE)
         # RSI(Close, 14) or RSI(14)
-        s = re.sub(r'\bRSI\s*\(\s*(?:(?:close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'RSI(\1)', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bRSI\s*\(\s*(?:(?:Daily|Weekly|Monthly|\d+\s*(?:minute|min|hour|m|h))\s*)?(?:(?:close|open|high|low|price)\s*,\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'RSI(\1)', s, flags=re.IGNORECASE)
         # MACD(12, 26, 9)
         s = re.sub(r'\bMACD\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)', r'MACD(\1, \2, \3)', s, flags=re.IGNORECASE)
         # Bollinger Bands
@@ -273,7 +273,7 @@ class CustomRuleParser:
         s = re.sub(r'\bBB_LOWER\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)', r'BB_LOWER(\1, \2)', s, flags=re.IGNORECASE)
         s = re.sub(r'\bBB_MIDDLE\s*\(\s*(\d+)\s*,\s*([\d\.]+)\s*\)', r'BB_MIDDLE(\1, \2)', s, flags=re.IGNORECASE)
         # ATR
-        s = re.sub(r'\bATR\s*\(\s*(?:period\s*=\s*)?(\d+)\s*\)', r'ATR(\1)', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bATR\s*\(\s*(?:(?:Daily|Weekly|Monthly|\d+\s*(?:minute|min|hour|m|h))\s*)?(?:period\s*=\s*)?(\d+)\s*\)', r'ATR(\1)', s, flags=re.IGNORECASE)
         return s
 
     @staticmethod
@@ -447,18 +447,33 @@ class CustomRuleParser:
             s = re.sub(r'\b(?:HA|HEIKIN[\s_-]*ASHI|HEIKIN)[\s_-]*OPEN\b', 'HA_OPEN', s, flags=re.IGNORECASE)
             s = re.sub(r'\b(?:HA|HEIKIN[\s_-]*ASHI|HEIKIN)[\s_-]*CLOSE\b', 'HA_CLOSE', s, flags=re.IGNORECASE)
 
-            # Remove Chartink prefix tags like "[0] 5 minute", "[0]", "[0] 3 minute"
-            s = re.sub(r'\[\s*0\s*\]\s*(?:\d+\s*(?:minute|min|hour|day|m|h|d)\s*)?', '', s, flags=re.IGNORECASE)
+            # Normalize Chartink natural language comparison phrases
+            s = re.sub(r'\bGreater\s+than\s+equal\s+to\b', '>=', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bLess\s+than\s+equal\s+to\b', '<=', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bGreater\s+than\b', '>', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bLess\s+than\b', '<', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bEqual\s+to\b', '==', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bNumber\s+([\d\.]+)\b', r'\1', s, flags=re.IGNORECASE)
 
-            # Handle any [-N] offsets like "[-3] 3 minute close", "[-1] high", "[-4] 5 minute open"
+            # Remove Chartink prefix tags like "[0] 5 minute", "[0] Daily", "[0]"
+            s = re.sub(r'\[\s*0\s*\]\s*(?:\d+\s*(?:minute|min|hour|day|m|h|d|days\s*ago)\s*)?', '', s, flags=re.IGNORECASE)
+            s = re.sub(r'\bDaily\s+', '', s, flags=re.IGNORECASE)
+
+            # Handle any [N] or [-N] or "N days ago" offsets like "[10] Close", "[3] Close", "[-1] High", "[5] ATR(14)", "10 days ago Close"
             def replace_offset(m):
                 offset = int(m.group(1))
                 field = m.group(2).upper()
                 return f"PREV_{field}" if offset == 1 else f"PREV{offset}_{field}"
 
-            offset_pat = r'\[\s*-\s*(\d+)\s*\](?:\s*\d+\s*(?:minute|min|hour|day|m|h|d))?\s*([A-Za-z0-9_]+(?:\([^)]*\))?)'
-            s = re.sub(offset_pat, replace_offset, s, flags=re.IGNORECASE)
-            s = re.sub(r'\[\s*-\s*(\d+)\s*\]', r'PREV\1_', s)
+            offset_pat = r'(?:\[\s*-?(\d+)\s*\]|\b(\d+)\s*(?:days?\s*ago|candles?\s*ago|bars?\s*ago)\b)(?:\s*\d+\s*(?:minute|min|hour|day|m|h|d))?\s*([A-Za-z0-9_]+(?:\([^)]*\))?)'
+            def offset_sub(m):
+                num = m.group(1) or m.group(2)
+                field = m.group(3).upper()
+                offset = int(num)
+                return f"PREV_{field}" if offset == 1 else f"PREV{offset}_{field}"
+
+            s = re.sub(offset_pat, offset_sub, s, flags=re.IGNORECASE)
+            s = re.sub(r'\[\s*-?(\d+)\s*\]', r'PREV\1_', s)
 
             # Handle Pine Script post-fix bar offset like CLOSE[1], HIGH[2], EMA[1], EMA_HIGH_21[1]
             s = re.sub(r'([A-Za-z0-9_]+(?:\([^)]*\))?)\s*\[\s*(\d+)\s*\]', lambda m: f"PREV{m.group(2)}_{m.group(1)}" if int(m.group(2)) > 1 else f"PREV_{m.group(1)}", s)
