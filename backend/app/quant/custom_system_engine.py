@@ -109,6 +109,69 @@ def calc_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int =
         )
     return calc_ema(tr, period)
 
+def calc_adx(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+    """
+    Computes Average Directional Index (ADX) over specified period (default 14).
+    """
+    n = len(close)
+    if n < period + 1:
+        return np.full(n, 20.0)
+    
+    tr = np.zeros(n)
+    plus_dm = np.zeros(n)
+    minus_dm = np.zeros(n)
+    
+    for i in range(1, n):
+        h_diff = high[i] - high[i - 1]
+        l_diff = low[i - 1] - low[i]
+        
+        if h_diff > l_diff and h_diff > 0:
+            plus_dm[i] = h_diff
+        if l_diff > h_diff and l_diff > 0:
+            minus_dm[i] = l_diff
+            
+        tr[i] = max(
+            high[i] - low[i],
+            abs(high[i] - close[i - 1]),
+            abs(low[i] - close[i - 1])
+        )
+        
+    tr_smooth = np.zeros(n)
+    plus_dm_smooth = np.zeros(n)
+    minus_dm_smooth = np.zeros(n)
+    
+    tr_smooth[period] = np.sum(tr[1:period + 1])
+    plus_dm_smooth[period] = np.sum(plus_dm[1:period + 1])
+    minus_dm_smooth[period] = np.sum(minus_dm[1:period + 1])
+    
+    for i in range(period + 1, n):
+        tr_smooth[i] = tr_smooth[i - 1] - (tr_smooth[i - 1] / period) + tr[i]
+        plus_dm_smooth[i] = plus_dm_smooth[i - 1] - (plus_dm_smooth[i - 1] / period) + plus_dm[i]
+        minus_dm_smooth[i] = minus_dm_smooth[i - 1] - (minus_dm_smooth[i - 1] / period) + minus_dm[i]
+        
+    plus_di = np.where(tr_smooth > 0, 100.0 * (plus_dm_smooth / np.maximum(tr_smooth, 1e-9)), 0.0)
+    minus_di = np.where(tr_smooth > 0, 100.0 * (minus_dm_smooth / np.maximum(tr_smooth, 1e-9)), 0.0)
+    
+    di_sum = plus_di + minus_di
+    dx = np.where(di_sum > 0, 100.0 * (np.abs(plus_di - minus_di) / np.maximum(di_sum, 1e-9)), 0.0)
+    
+    adx = np.full(n, 20.0)
+    start_idx = min(n - 1, 2 * period)
+    if n > start_idx:
+        adx[start_idx] = np.mean(dx[period:start_idx + 1])
+        for i in range(start_idx + 1, n):
+            adx[i] = (adx[i - 1] * (period - 1) + dx[i]) / period
+            
+    return np.nan_to_num(adx, nan=20.0)
+
+def calc_rvol(volume: np.ndarray, period: int = 20) -> np.ndarray:
+    """
+    Calculates Relative Volume (RVOL) = Volume / SMA(Volume, period).
+    """
+    s_vol = pd.Series(volume)
+    sma_vol = s_vol.rolling(window=period, min_periods=1).mean().to_numpy()
+    return np.where(sma_vol > 0, volume / np.maximum(sma_vol, 1.0), 1.0)
+
 def calc_supertrend(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 10, multiplier: float = 3.0) -> Tuple[np.ndarray, np.ndarray]:
     n = len(close)
     atr = calc_atr(high, low, close, period)
@@ -587,6 +650,23 @@ class CustomExecutionContext:
         self.variables['PREV2_HA_LOW'] = np.roll(ha_low, 2)
         self.variables['PREV2_HA_CLOSE'] = np.roll(ha_close, 2)
 
+        self.variables['PREV3_CLOSE'] = np.roll(close, 3)
+        self.variables['PREV3_OPEN'] = np.roll(open_, 3)
+        self.variables['PREV3_HIGH'] = np.roll(high, 3)
+        self.variables['PREV3_LOW'] = np.roll(low, 3)
+
+        # Intraday Time (HHMM format as float/int, e.g. 1400 for 14:00, 930 for 09:30)
+        if 'timestamp' in self.df.columns:
+            try:
+                dt_s = pd.to_datetime(self.df['timestamp'])
+                time_arr = (dt_s.dt.hour * 100 + dt_s.dt.minute).to_numpy(dtype=float)
+            except Exception:
+                time_arr = np.full(self.n, 1200.0)
+        else:
+            time_arr = np.full(self.n, 1200.0)
+        self.variables['TIME'] = time_arr
+        self.variables['CURRENT_TIME'] = time_arr
+
     def resolve_indicator(self, ind_call: str) -> np.ndarray:
         clean = ind_call.strip().upper()
         if clean in self.variables:
@@ -632,7 +712,6 @@ class CustomExecutionContext:
             res = calc_sma(base_data, period)
             self.variables[clean] = res
             return res
-
 
         # Check VWAP
         if clean in ["VWAP", "VWAP()"]:
@@ -711,6 +790,50 @@ class CustomExecutionContext:
             res = calc_atr(self.variables['HIGH'], self.variables['LOW'], self.variables['CLOSE'], p)
             self.variables[clean] = res
             return res
+
+        # Check ADX
+        m = re.match(r"^ADX(?:\s*\(\s*(\d+)\s*\))?$", clean)
+        if m:
+            p = int(m.group(1)) if m.group(1) else 14
+            res = calc_adx(self.variables['HIGH'], self.variables['LOW'], self.variables['CLOSE'], p)
+            self.variables[clean] = res
+            return res
+
+        # Check RVOL (Relative Volume)
+        m = re.match(r"^RVOL(?:\s*\(\s*(\d+)\s*\))?$", clean)
+        if m:
+            p = int(m.group(1)) if m.group(1) else 20
+            res = calc_rvol(self.variables['VOLUME'], p)
+            self.variables[clean] = res
+            return res
+
+        # Check ATR_MA / ATR_SMA
+        m = re.match(r"^ATR_MA\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)$", clean)
+        if m:
+            atr_p = int(m.group(1))
+            ma_p = int(m.group(2))
+            atr_vals = calc_atr(self.variables['HIGH'], self.variables['LOW'], self.variables['CLOSE'], atr_p)
+            res = calc_sma(atr_vals, ma_p)
+            self.variables[clean] = res
+            return res
+
+        # Check MAX_HIGH / HHV (highest high of previous N bars)
+        m = re.match(r"^(?:MAX_HIGH|HHV)\s*\(\s*(\d+)\s*\)$", clean)
+        if m:
+            p = int(m.group(1))
+            s_high = pd.Series(self.variables['HIGH'])
+            res = s_high.shift(1).rolling(window=p, min_periods=1).max().to_numpy()
+            self.variables[clean] = np.nan_to_num(res, nan=self.variables['HIGH'])
+            return self.variables[clean]
+
+        # Check MIN_LOW / LLV (lowest low of previous N bars)
+        m = re.match(r"^(?:MIN_LOW|LLV)\s*\(\s*(\d+)\s*\)$", clean)
+        if m:
+            p = int(m.group(1))
+            s_low = pd.Series(self.variables['LOW'])
+            res = s_low.shift(1).rolling(window=p, min_periods=1).min().to_numpy()
+            self.variables[clean] = np.nan_to_num(res, nan=self.variables['LOW'])
+            return self.variables[clean]
 
         try:
             val = float(clean)
@@ -880,8 +1003,29 @@ class SafeEvaluator(ast.NodeVisitor):
                 return self.ctx.resolve_indicator(f'{fname}({p}, {dev})')
 
             elif fname == 'ATR':
-                p = int(args[0][0])
+                p = int(args[0][0]) if args else 14
                 return self.ctx.resolve_indicator(f'ATR({p})')
+
+            elif fname == 'ADX':
+                p = int(args[0][0]) if args else 14
+                return self.ctx.resolve_indicator(f'ADX({p})')
+
+            elif fname == 'RVOL':
+                p = int(args[0][0]) if args else 20
+                return self.ctx.resolve_indicator(f'RVOL({p})')
+
+            elif fname == 'ATR_MA':
+                atr_p = int(args[0][0]) if len(args) > 0 else 14
+                ma_p = int(args[1][0]) if len(args) > 1 else 20
+                return self.ctx.resolve_indicator(f'ATR_MA({atr_p}, {ma_p})')
+
+            elif fname in ['MAX_HIGH', 'HHV']:
+                p = int(args[0][0]) if args else 3
+                return self.ctx.resolve_indicator(f'MAX_HIGH({p})')
+
+            elif fname in ['MIN_LOW', 'LLV']:
+                p = int(args[0][0]) if args else 3
+                return self.ctx.resolve_indicator(f'MIN_LOW({p})')
 
             raise ValueError(f"Unsupported indicator call: {fname}")
 
