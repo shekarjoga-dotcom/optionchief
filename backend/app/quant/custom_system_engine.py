@@ -167,7 +167,11 @@ def calc_adx(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int =
 def calc_rvol(volume: np.ndarray, period: int = 20) -> np.ndarray:
     """
     Calculates Relative Volume (RVOL) = Volume / SMA(Volume, period).
+    If volume series is all zeros (e.g., Cash Spot Index ^NSEI where volume is not reported by exchange),
+    gracefully returns 1.5 to allow rule execution without false blocking.
     """
+    if volume is None or len(volume) == 0 or np.all(volume <= 0):
+        return np.full(len(volume) if volume is not None else 1, 1.5)
     s_vol = pd.Series(volume)
     sma_vol = s_vol.rolling(window=period, min_periods=1).mean().to_numpy()
     return np.where(sma_vol > 0, volume / np.maximum(sma_vol, 1.0), 1.0)
